@@ -8,6 +8,12 @@ release/
 # 用户「安装本地识别」时服务端直接从这里下载（见 helper/asr/build.sh 的注释）。
 !helper/asr/release/
 !helper/asr/release/ASRBridge.zip
+# 例外之二：Agent Computer helper（桌面操作）同理。电脑控制面板里的「下载 Agent Computer.app」
+# 直接指 raw/main 上的这个 zip（见 server/computer/paths.ts），文件不在就是 404，功能装不上。
+!helper/agent-computer/release/
+!helper/agent-computer/release/Agent Computer.zip
+# 裸二进制是 build:helper 的中间产物，分发用上面的 zip，不必重复入库。
+helper/agent-computer/release/agent-computer
 # 打包期的临时产物（Node 运行时 / 生产依赖）：按需生成，不进库
 node-runtime/
 .pkg/
