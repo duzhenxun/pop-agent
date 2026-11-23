@@ -1,11 +1,13 @@
 # PopAgent
 
-[![npm version](https://img.shields.io/npm/v/pop-agent?style=flat-square&label=npm&logo=npm&color=cb3837)](https://www.npmjs.com/package/pop-agent)
+[![version](https://img.shields.io/badge/version-0.1.0-4f7cff?style=flat-square)](https://github.com/duzhenxun/pop-agent/releases)
 [![npm downloads](https://img.shields.io/npm/dm/pop-agent?style=flat-square&label=downloads%2Fmonth&color=2f5fe0)](https://www.npmjs.com/package/pop-agent)
 [![GitHub stars](https://img.shields.io/github/stars/duzhenxun/pop-agent?style=flat-square&color=f5c542&label=stars)](https://github.com/duzhenxun/pop-agent/stargazers)
 [![node](https://img.shields.io/badge/node-%E2%89%A522.19-3c873a?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![license](https://img.shields.io/badge/license-MIT-2f5fe0?style=flat-square)](LICENSE)
 [![site](https://img.shields.io/badge/site-live-7b5cf0?style=flat-square)](https://duzhenxun.github.io/pop-agent/zh.html)
+
+> 本项目分叉自 [oh-my-agent-web](https://github.com/duzhenxun/oh-my-agent-web)，版本号从 **0.1.0** 重新起（上游当时是 1.5.x）；README 与 ADR 里提到的旧版本号指的是上游历史。
 
 **中文** · [English](README.md) · [官网](https://duzhenxun.github.io/pop-agent/zh.html)
 
