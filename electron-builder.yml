@@ -8,6 +8,11 @@
 #   3. 不出 universal 包：arm64 / x64 各出一份（合并会翻到 ~250MB，见 canvas 上的体积结论）。
 appId: com.popagent.app
 productName: PopAgent
+# `main` 在 package.json 里必须是 npm 包用的入口（dist/server/index.js），不能指 electron-dist ——
+# 否则 npm tarball 里会塞进一个依赖缺失的孤儿文件。但 Electron 正好用 `main` 当应用入口，
+# 所以这里覆盖一次：只影响 app.asar 内的 package.json，发布到 npm 的那份不动。
+extraMetadata:
+  main: electron-dist/electron/main.js
 directories:
   output: release
   buildResources: build

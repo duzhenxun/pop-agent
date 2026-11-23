@@ -7,6 +7,10 @@
 #   npm run app:dist:thin 不带（实测 dmg ~130MB）—— 依赖用户自己装了 node 22+
 appId: com.popagent.app
 productName: PopAgent
+# 同 electron-builder.yml：Electron 的入口固定是 electron-dist，
+# 不跟 package.json 里的 npm 入口（dist/server/index.js）挤同一个字段。
+extraMetadata:
+  main: electron-dist/electron/main.js
 directories:
   output: release
   buildResources: build
