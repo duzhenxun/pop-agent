@@ -36,7 +36,7 @@
 		"desktop-app"
 	],
 	"type": "module",
-	"main": "electron-dist/electron/main.js",
+	"main": "dist/server/index.js",
 	"license": "MIT",
 	"engines": {
 		"node": ">=22.19.0",
@@ -70,6 +70,7 @@
 		"asr:release": "sh helper/asr/build.sh --release",
 		"runtime:fetch": "node scripts/fetch-node-runtime.mjs",
 		"package:prepare": "node scripts/prepare-package.mjs",
+		"prepack": "npm run build",
 		"app:dist:thin": "npm run build && npm run build:electron && npm run build:helper && npm run package:prepare && electron-builder --config electron-builder.thin.yml"
 	},
 	"devDependencies": {
