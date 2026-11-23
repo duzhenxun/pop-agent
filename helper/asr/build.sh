@@ -45,6 +45,29 @@ fi
 # 两处共用一个来源，改 plist 不会只改到一半。
 cp Info.plist "$APP/Contents/Info.plist"
 
+# 图标：与桌面 App 共用 web/public/icons 那一套，sips 缩十档 → iconutil 打包。
+# **必须在 codesign 之前**：先签名再往 bundle 里塞文件，签名就不覆盖这份资源了
+# （系统会当成「签名不完整」，TCC 也可能重新问授权）。
+# 没有图标时它在 Finder 和系统隐私授权列表里就是一块空白默认图标。
+ICON_SRC="../../web/public/icons/icon-1024.png"
+if [ -f "$ICON_SRC" ]; then
+	ICONSET_TMP="$(mktemp -d)"
+	ICONSET="$ICONSET_TMP/ASRBridge.iconset"
+	mkdir -p "$ICONSET"
+	for spec in "16:icon_16x16" "32:icon_16x16@2x" "32:icon_32x32" "64:icon_32x32@2x" \
+		"128:icon_128x128" "256:icon_128x128@2x" "256:icon_256x256" "512:icon_256x256@2x" \
+		"512:icon_512x512" "1024:icon_512x512@2x"; do
+		size="${spec%%:*}"
+		name="${spec#*:}"
+		sips -z "$size" "$size" "$ICON_SRC" --out "$ICONSET/$name.png" >/dev/null 2>&1
+	done
+	mkdir -p "$APP/Contents/Resources"
+	iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/ASRBridge.icns"
+	rm -rf "$ICONSET_TMP"
+else
+	echo "警告：找不到 $ICON_SRC，跳过图标（Finder / 隐私授权列表里会是默认空白图标）"
+fi
+
 codesign --force --sign - "$APP" >/dev/null 2>&1 \
 	|| echo "警告：ad-hoc 签名失败（不影响运行，但每次重编译 TCC 会重新问一次）"
 
