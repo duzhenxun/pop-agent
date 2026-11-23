@@ -5,6 +5,8 @@ import {
 	POINTER_SPEED_RANGE,
 	fetchComputerApps,
 	fetchComputerSettings,
+	openComputerPrivacyPane,
+	requestComputerAccess,
 	fetchComputerStatus,
 	saveComputerSettings,
 	setComputerSkill,
@@ -158,8 +160,8 @@ export function ComputerPanel() {
 			</header>
 			<p className="computer-hint">
 				{t(
-					"让 agent 在你的 Mac 上操作真实应用：读取界面、点击、输入、按快捷键。需要先安装 Agent Computer helper 并授权。",
-					"Lets the agent operate real apps on your Mac: read the UI, click, type, press keys. Needs the Agent Computer helper installed and granted permissions.",
+					"让 agent 在你的电脑上操作真实应用：读取界面、点击、输入、按快捷键。需要一个单独安装的 macOS 小工具 Agent Computer.app 在跑（还要授权辅助功能与屏幕录制）。",
+					"Lets the agent operate real apps on your computer: read the UI, click, type, press keys. Needs the separately installed macOS helper Agent Computer.app (plus Accessibility and Screen Recording grants).",
 				)}
 			</p>
 
@@ -169,9 +171,25 @@ export function ComputerPanel() {
 				</div>
 			) : null}
 
-			{status && !status.supported ? (
+			{status && status.comingSoon ? (
+				/*
+				 * Windows：**不是不支持，是还没做**（2026-11-24 用户：先不做 Windows 的电脑控制）。
+				 * 用一条中性的「敬请期待」说明，别让用户看到"这台机器不支持"这种像是自己装错东西的措辞。
+				 */
+				<div className="computer-notice" role="status">
+					{t(
+						"Windows 版的电脑控制敬请期待：macOS 上已经可用，Windows 还在做。",
+						"Computer control on Windows is coming soon — it already works on macOS.",
+					)}
+				</div>
+			) : status && !status.supported && status.platform !== "darwin" ? (
+				/* 只有**真·非 macOS**才说「不支持」。macOS 上没装 helper 是另一回事：下面那段安装指引会
+				 * 说清要装什么，别用这句吓人（2026-11-24 用户截图报过）。 */
 				<div className="computer-error" role="alert">
-					{t("电脑控制目前只支持 macOS。", "Computer control currently supports macOS only.")}
+					{t(
+						"这台机器上电脑控制不可用：目前只支持 macOS。",
+						"Computer control is unavailable on this machine: macOS only for now.",
+					)}
 				</div>
 			) : null}
 
@@ -195,7 +213,14 @@ export function ComputerPanel() {
 				</label>
 			</section>
 
-			{status && !status.helper.installed && status.install ? (
+			{/*
+			 * 没装 helper：给一套「自己装 Agent Computer.app」的指引。
+			 *
+			 * 2026-11-24 用户否掉了「内嵌 helper」那条路：
+			 * 「使用自己的 app 这种方案不好，我还是用原来那种安装 agent-computer.app 的方式」。
+			 * 所以这里恢复成 下载 + 右键打开 + 授权限 三步，装好后点「装好了，重新检测」。
+			 */}
+			{status?.install ? (
 				<section className="computer-section" aria-label={t("安装 helper", "Install the helper")}>
 					<h3>{t("还差一个本机 helper", "One local helper left")}</h3>
 					<p className="computer-hint">
@@ -213,7 +238,7 @@ export function ComputerPanel() {
 						<a className="computer-btn" href={status.install.downloadUrl} target="_blank" rel="noreferrer">
 							{t("下载 Agent Computer.app", "Download Agent Computer.app")}
 						</a>
-						<button type="button" className="computer-btn" onClick={() => void load()}>
+						<button type="button" className="computer-btn" onClick={() => void run(load)}>
 							{t("装好了，重新检测", "Installed — check again")}
 						</button>
 					</div>
@@ -234,10 +259,7 @@ export function ComputerPanel() {
 						<span className={status?.helper.installed ? "computer-ok" : "computer-bad"}>
 							{status?.helper.installed
 								? status.helper.path
-								: t(
-										"未安装（先下载 Agent Computer.app）",
-										"Not installed (download Agent Computer.app first)",
-									)}
+								: t("未安装（先下载 Agent Computer.app）", "Not installed (download Agent Computer.app first)")}
 						</span>
 					</li>
 					<li>
@@ -261,13 +283,67 @@ export function ComputerPanel() {
 						</span>
 					</li>
 				</ul>
+				{/*
+				 * 权限没给全时：别只写一句"去系统设置里开"就完事（用户 2026-11-24：
+				 * 「怎么样引导用户打开呢？或者有个按钮点一下可以自动打开」）。
+				 * 这里直接给两颗按钮深链到对应的设置页 —— 由服务端 `open` 打开，见 `/api/computer/open-privacy`。
+				 */}
 				{status && status.running && !permissionsOk ? (
-					<p className="computer-hint">
-						{t(
-							"在「系统设置 → 隐私与安全性」里给 Agent Computer 开启辅助功能与屏幕录制，然后重启 helper。",
-							"Allow Agent Computer under System Settings → Privacy & Security for Accessibility and Screen Recording, then restart the helper.",
-						)}
-					</p>
+					<>
+						<p className="computer-hint">
+							{t(
+								"还缺权限。点下面的按钮会直接跳到系统设置里对应的那一页；勾上之后回到这里点「刷新」。",
+								"Some permissions are missing. The buttons below open the right pane in System Settings; tick the app, then hit Refresh here.",
+							)}
+						</p>
+						<div className="computer-install-actions">
+							{!status.permissions?.accessibility ? (
+								<button
+									type="button"
+									className="computer-btn"
+									// 先申请（系统弹框 + 把 PopAgent 登记进列表），再打开设置页
+									onClick={() =>
+										void run(async () => {
+											await requestComputerAccess();
+											await openComputerPrivacyPane("accessibility");
+											await load();
+										})
+									}
+								>
+									{t("打开辅助功能设置", "Open Accessibility settings")}
+								</button>
+							) : null}
+							{!status.permissions?.screenRecording ? (
+								<button
+									type="button"
+									className="computer-btn"
+									onClick={() =>
+										void run(async () => {
+											await requestComputerAccess();
+											await openComputerPrivacyPane("screen");
+											await load();
+										})
+									}
+								>
+									{t("打开屏幕录制设置", "Open Screen Recording settings")}
+								</button>
+							) : null}
+							<button type="button" className="computer-btn" onClick={() => void run(load)}>
+								{t("刷新", "Refresh")}
+							</button>
+						</div>
+						{/*
+						 * 屏幕录制这条 macOS 有个额外动作：**授权后系统要求重启那个"负责进程"**才生效。
+						 * helper 每次请求都是新进程，所以只要刷新就会重读；但负责进程（PopAgent / node）
+						 * 没重启的话系统可能仍旧返回 false —— 这句是给那种情况兜底的，别让人以为是 bug。
+						 */}
+						<p className="computer-hint">
+							{t(
+								"屏幕录制勾上后如果仍显示未授予，把 PopAgent 完全退出再打开（macOS 要重启负责录屏的那个进程才认）。",
+								"If Screen Recording still shows as not granted, quit PopAgent completely and reopen it (macOS re-reads that grant on process start).",
+							)}
+						</p>
+					</>
 				) : null}
 			</section>
 
@@ -299,7 +375,9 @@ export function ComputerPanel() {
 					</label>
 
 					<label className="computer-row">
-						<span className="computer-row-label">{t("AI 操作水印（屏幕边缘 + 顶部提示）", "AI activity watermark")}</span>
+						<span className="computer-row-label">
+							{t("AI 操作水印（屏幕边缘 + 顶部提示）", "AI activity watermark")}
+						</span>
 						<input
 							type="checkbox"
 							checked={settings.watermarkEnabled}
@@ -398,7 +476,7 @@ export function ComputerPanel() {
 								className="computer-app-input"
 								value={appQuery}
 								disabled={busy}
-								placeholder={t("搜索应用名，比如「微信」，点候选直接加进去", "Search an app, e.g. \"WeChat\"")}
+								placeholder={t("搜索应用名，比如「微信」，点候选直接加进去", 'Search an app, e.g. "WeChat"')}
 								onChange={(e) => {
 									setAppQuery(e.target.value);
 									setAppMenuOpen(true);

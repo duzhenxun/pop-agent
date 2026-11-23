@@ -97,7 +97,7 @@ var _hmt = _hmt || [];
       </div>
       <div>
         <div class="frame">
-          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:25257 · demo-app</span></div>
+          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · demo-app</span></div>
           <img src="assets/en/hero.webp" width="1600" height="900" alt="A real session: projects and sessions on the left, thinking blocks and tool cards in the middle, the diff of the same repo on the right" data-zoom />
         </div>
         <p class="caption">A real session: thinking, tool calls, the diff and usage in one screen.</p>
@@ -295,7 +295,7 @@ var _hmt = _hmt || [];
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/mobile-drawer.webp" data-alt="The project drawer on mobile is an overlay" data-cap="On mobile the project sidebar is an overlay drawer">Mobile drawer</button>
         </div>
         <div class="tour-stage frame">
-          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:25257</span></div>
+          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090</span></div>
           <img id="tourImg" src="assets/en/overview.webp" width="1500" height="844" alt="Full UI" data-zoom />
         </div>
         <p class="caption" id="tourCap">Projects and sessions · transcript · source view · status bar</p>
@@ -346,7 +346,7 @@ var _hmt = _hmt || [];
       <div class="install">
         <div class="steps reveal">
           <div class="step"><div><b>Install</b><p><code>npm -g install pop-agent</code>, or the one-line script that keeps everything under <code>~/.pop-agent</code> without touching system npm.</p></div></div>
-          <div class="step"><div><b>Run</b><p>In your project, run <code>pop</code>: it starts in the foreground and opens the browser, listening only on <code>127.0.0.1:25257</code>.</p></div></div>
+          <div class="step"><div><b>Run</b><p>In your project, run <code>pop</code>: it starts in the foreground and opens the browser, listening only on <code>127.0.0.1:9090</code>.</p></div></div>
           <div class="step"><div><b>Use</b><p>Hit “New session” and send the first message. To reach it from a phone or another machine, use <code>-H 0.0.0.0</code> and set a password under Settings → Remote first.</p></div></div>
         </div>
         <div class="reveal">
@@ -365,7 +365,7 @@ pop status
 pop stop
 
 <span class="c"># another port / a specific workspace</span>
-pop -p 25258
+pop -p 9191
 POP_AGENT_CWD=~/code/my-proj pop</pre>
           </div>
           <div class="table-wrap cmd-table">

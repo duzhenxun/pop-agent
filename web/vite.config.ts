@@ -4,16 +4,16 @@ import { defineConfig, type Plugin } from "vite";
 import { mermaidSlim } from "./mermaid-slim-plugin.ts";
 
 /**
- * 前端构建/开发配置（ADR-0007：开发期 Vite 直接监听 25257，反代到内部后端 25258）。
+ * 前端构建/开发配置（ADR-0007：开发期 Vite 直接监听 9090，反代到内部后端 9091）。
  *
- * 生产期由后端自己监听 25257 并提供构建产物 —— 两种方式对外都是同一个地址：
+ * 生产期由后端自己监听 9090 并提供构建产物 —— 两种方式对外都是同一个地址：
  * `/` 是应用、`/api` 与 `/login` 归后端。`devAuthGate` 把「未登录先给登录页」
  * 这件事也从生产搬了过来（生产是后端在 `GET /` 上直接渲染登录页）。
  *
  * root 显式设为 web/：脚本从仓库根用 `--config web/vite.config.ts` 调用，cwd 是仓库根。
  * fs.allow 需要放开仓库根：`web/src/types.ts` 是 `server/protocol.ts` 的 shim（跨目录导入协议单源）。
  */
-const BACKEND_PORT = process.env.POP_AGENT_BACKEND_PORT ?? "25258";
+const BACKEND_PORT = process.env.POP_AGENT_BACKEND_PORT ?? "9091";
 const BACKEND_HOST = "127.0.0.1";
 
 /**
@@ -219,7 +219,7 @@ export default defineConfig({
 		},
 	},
 	server: {
-		port: 25257,
+		port: 9090,
 		strictPort: true,
 		// 隧道 / 自建域名访问 dev 时放行（见 devAllowedHosts 的注释）
 		allowedHosts: devAllowedHosts(),

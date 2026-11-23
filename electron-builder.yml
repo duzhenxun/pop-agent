@@ -32,6 +32,10 @@ extraResources:
     to: dist
   - from: web/dist
     to: web/dist
+  # Agent Computer helper **不进包**（2026-11-24 用户拍定：「使用自己的 app 这种方案不好，
+  # 我还是用原来那种安装 agent-computer.app 的方式」）。电脑控制走用户自己装的那份 .app + socket，
+  # 装法与下载入口在面板里（见 web/src/components/ComputerPanel.tsx）。别再往包里塞二进制：
+  # 塞了也不会被用到，只会让「两套 helper」的版本 / 签名 / TCC 权限混在一起。
   # 服务进程要 import pi 与 node-pty：把**只含生产依赖**的那份放到 resources/node_modules，
   # 从 `resources/dist/server/cli.js` 往上找正好命中（scripts/prepare-package.mjs 生成）。
   # 不能直接拷仓库的 node_modules —— 里面躺着一整套 devDependencies。

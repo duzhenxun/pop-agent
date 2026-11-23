@@ -1,8 +1,12 @@
 /**
  * 顶栏入口的**默认勾选**（`web/src/ui-prefs.ts`）。
  *
- * 钉住一条产品决定（用户 2026-10-30）：「刚装完只勾模型 / 技能 / 语音 / MCP，不要全都勾上」。
- * 推送 / 插件 / 子代理 / 临时会话默认不显示 —— 它们按需在 设置 → 界面 → 顶栏 里勾回来。
+ * 钉住一条产品决定（用户 2026-11-23）：「顶部默认只要 模型 / 定时任务 / 技能」。
+ * 其余入口（推送 / 语音 / 插件 / MCP / 子代理 / 设置 / 临时会话）默认不显示 ——
+ * 它们按需在 设置 → 界面 → 顶栏 里勾回来。
+ *
+ * 顺序也被钉住了：`APPBAR_ITEMS` 的顺序就是顶栏从左到右的顺序，
+ * 用户要的是「模型 → 定时任务 → 技能」，所以这三项排在最前。
  *
  * 这里只测**默认值**本身：存过值的优先级在 `readStoredBool` 里（存的值永远盖过默认），
  * 所以改这张表不会把老用户已经关掉的入口又打开。
@@ -17,13 +21,17 @@ import {
 } from "../../web/src/ui-prefs.ts";
 
 describe("顶栏默认勾选", () => {
-	it("默认勾上的正好是模型 / 技能 / 语音 / MCP", () => {
+	it("默认勾上的正好是模型 / 定时任务 / 技能（按这个顺序）", () => {
 		const on = APPBAR_ITEMS.filter((item) => appbarItemDefault(item));
-		assert.deepEqual(on, ["models", "skills", "voice", "mcp"]);
+		assert.deepEqual(on, ["models", "cron", "skills"]);
 	});
 
-	it("推送 / 插件 / 子代理 / Cron 默认不勾", () => {
-		for (const item of ["push", "plugins", "agents", "cron"] as const) {
+	it("顶栏默认从左到右就是 模型 → 定时任务 → 技能", () => {
+		assert.deepEqual(APPBAR_ITEMS.slice(0, 3), ["models", "cron", "skills"]);
+	});
+
+	it("推送 / 语音 / 插件 / MCP / 子代理 / 设置 默认不勾", () => {
+		for (const item of ["push", "voice", "plugins", "mcp", "agents", "settings"] as const) {
 			assert.equal(appbarItemDefault(item), false, `${item} 不该默认勾上`);
 		}
 	});

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-label="PopAgent">
+	<!-- PopAgent 横排字标（图标 + 文字）。图标与 App 同一枚（K6）；文字用系统无衬线的近似字形，
+	     正式物料里要更精确，请单独取 docs/brand/logo-mark.svg 再叠字体。 -->
+	<defs>
+		<linearGradient id="tile" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#1F2937" /><stop offset=".55" stop-color="#111827" /><stop offset="1" stop-color="#0B1220" />
+		</linearGradient>
+	</defs>
+	<g transform="translate(4 4) scale(2)">
+		<rect width="32" height="32" rx="7" fill="url(#tile)" />
+		<g fill="#F8FAFC">
+			<rect x="7.6" y="9" width="3.2" height="14" rx="1.6" />
+			<path d="M10.8 9h4.4a4.4 4.4 0 0 1 0 8.8h-4.4v-2.8h4.2a1.6 1.6 0 0 0 0-3.2h-4.2z" />
+		</g>
+		<polygon points="26.81,18.4 26.81,22.8 23,25 19.19,22.8 19.19,18.4 23,16.2" fill="none" stroke="#60A5FA" stroke-width="1.8" stroke-linejoin="round" />
+	</g>
+	<text x="84" y="47" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+		font-size="34" font-weight="700" letter-spacing="-0.6" fill="#F1F5F9">PopAgent</text>
+</svg>

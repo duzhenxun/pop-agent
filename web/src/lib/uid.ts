@@ -2,7 +2,7 @@
  * 生成一个随机 id（UUID v4 形状）。
  *
  * 为什么不能直接 `crypto.randomUUID()`：它是**安全上下文**（https / localhost）专属 API。
- * 用 `http://192.168.17.100:25257` 这种局域网 IP 打开时 `window.crypto.randomUUID` 是
+ * 用 `http://192.168.17.100:9090` 这种局域网 IP 打开时 `window.crypto.randomUUID` 是
  * undefined —— 调用直接抛 `crypto.randomUUID is not a function`，整个前端在启动时就挂了
  * （用户 2026-10-30 实测：远程用 IP 访问只看到「等待服务端快照…」）。
  *

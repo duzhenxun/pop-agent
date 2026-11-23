@@ -11,7 +11,7 @@ import { createEngineWiring } from "./engine/wiring.js";
 import type { EnginePort, EngineProviderCatalogEntry } from "./engine/port.js";
 import { createFileRuleStore } from "./approval/rules.js";
 import { existsSync, mkdirSync } from "node:fs";
-import { PROTOCOL_VERSION, type ProtocolError, type ServerReply } from "./protocol.js";
+import { PROTOCOL_VERSION, type ProtocolError } from "./protocol.js";
 import { acquireLock, describeHolder, releaseLock } from "./session/lock.js";
 import { createRuntime } from "./session/runtime.js";
 import { createFileSettingsStore, readSettingsSync } from "./session/settings.js";
@@ -56,6 +56,7 @@ import { registerAuxRoutes } from "./http/aux-routes.js";
 // ADR-0047：右侧「网页」页的代理（绕开 X-Frame-Options / CSP frame-ancestors）
 import { registerWebProxyRoutes } from "./web-proxy/proxy-routes.js";
 import { handleMessage, type ClientSink } from "./ws/handle-message.js";
+import { replyFrame } from "./ws/reply-frame.js";
 import { registerHealthAndStatic } from "./http/health-and-static.js";
 import { registerWebSocketRoutes } from "./http/ws-routes.js";
 import { decide, effectiveAddress, isCrossOriginRejected, isLoopback } from "./http/auth.js";
@@ -100,7 +101,7 @@ const HERE = fileURLToPath(new URL(".", import.meta.url));
  */
 const desktopRuntime = applyDesktopEnv();
 /** 开发态对外端口（Vite）；dev 脚本用它告诉后端可信来源 */
-const DEV_WEB_PORT = Number(process.env.POP_AGENT_DEV_PORT ?? 25257);
+const DEV_WEB_PORT = Number(process.env.POP_AGENT_DEV_PORT ?? 9090);
 /** 快照节流窗口（ADR-0004 §3） */
 const SNAPSHOT_WINDOW_MS = 60;
 const TICK_MS = 20;
@@ -529,10 +530,8 @@ function reply(
 	id: string,
 	result: { ok: true; result?: unknown } | { ok: false; error: ProtocolError },
 ): void {
-	const message: ServerReply = result.ok
-		? { type: "reply", id, ok: true, ...(result.result === undefined ? {} : { result: result.result }) }
-		: { type: "reply", id, ok: false, error: result.error };
-	socket.send(JSON.stringify(message));
+	// 帧的形状（尤其是「载荷放在 `result` 这一格」）在 `ws/reply-frame.ts`，那里有单测钉着
+	socket.send(JSON.stringify(replyFrame(id, result)));
 }
 
 // ------------------------------ HTTP ------------------------------
@@ -1037,7 +1036,7 @@ async function main(): Promise<void> {
 	 * 监听。开发态（`POP_AGENT_DEV=1`，dev.mjs 传）对 EADDRINUSE 短暂重试：
 	 * `tsx --watch` 改文件就重启，新进程经常赶在**旧进程还没放开端口**时就 listen ——
 	 * 以前直接报「已被占用」退出，而 tsx 那边只说 `Failed running … Waiting for file changes`，
-	 * 于是后端就真的没了：界面上每个请求都是 502（Vite 反代连不上 25258），
+	 * 于是后端就真的没了：界面上每个请求都是 502（Vite 反代连不上 9091），
 	 * 红条一直挂着，直到你再改一个文件把它撞活。这里把这个窗口吃掉。
 	 * 生产态不变：该报错就报错、退出。
 	 */

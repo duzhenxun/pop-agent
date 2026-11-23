@@ -358,7 +358,7 @@ export function buildSnapshot(
 		models: state.models.map((model) => ({ ...model })),
 		actions: actionsOf(state, activeId).map((action) => ({ ...action })),
 		settings: {
-			quickPhrases: [...state.settings.quickPhrases],
+			quickPhrases: state.settings.quickPhrases.map((phrase) => ({ ...phrase })),
 			quickPhrasesEnabled: state.settings.quickPhrasesEnabled,
 			templates: state.settings.templates.map((template) => ({ ...template })),
 			projectPrefs: {

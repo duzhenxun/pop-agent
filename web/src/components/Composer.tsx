@@ -17,16 +17,15 @@ import { ModelChips } from "./ModelChips.tsx";
 import { ProjectBranchChips } from "./ProjectBranchChips.tsx";
 import { ThinkButton } from "./ThinkButton.tsx";
 import { TemplateEditor, TemplateGallery } from "./TemplateModals.tsx";
-import { QuickPhraseEditor } from "./QuickPhraseEditor.tsx";
 import { setDraft as setStoreDraft, useAppState } from "../store.ts";
 import { textOfMessage } from "../message-text.ts";
-import { COMPOSER_ITEM_KEY, COMPOSER_TOGGLES } from "../ui-prefs.ts";
+import { COMPOSER_ITEM_KEY, COMPOSER_TOGGLES, composerItemDefault } from "../ui-prefs.ts";
 import { usePrefFlags } from "../use-pref-flags.ts";
-import { useSeedQuickFromServer } from "../use-quick-seed.ts";
 import type { AttachmentRef, PromptTemplate, SendMode } from "../types.ts";
 import { interrupt, sendMessage, createSessionAndSend } from "../ws.ts";
 import type { ChatSurface } from "../chat-surface.ts";
-import { useT } from "../use-language.ts";
+import { localizePhrase } from "../templates-lib.ts";
+import { useLanguage, useT } from "../use-language.ts";
 import {
 	bindVoiceBridge,
 	isVoiceListening,
@@ -144,6 +143,7 @@ export function Composer({
 	onOpenFile?: (path: string, root: string | null) => void;
 }) {
 	const t = useT();
+	const { language } = useLanguage();
 	const app = useAppState();
 	// 这几个原语是「这一面」的：主对话直接落到全局，临时聊天落到它自己的通道
 	const draft = surface ? surface.draft : app.draft;
@@ -264,18 +264,22 @@ export function Composer({
 			snapshot?.files?.root ??
 			null);
 	/**
-	 * 「模型 · 强度」这两颗要不要画在这一排：
-	 *  - **主对话（桌面和手机都是）：不画** —— 它们在**底部状态栏**，引擎那颗（`PI ▾`）的**右边**
-	 *    （用户 2026-10-29 定，跟审批 / 引擎算一类的：都是「这一步怎么跑」；手机也要，同一天补的）；
-	 *  - **临时聊天**（surface）：画 —— 那是**另一条对话**、另一个模型通道，状态栏那颗说的是主对话，
-	 *    在这儿换成它自己的才对，不能去共用底下那颗。
+	 * 「模型 · 强度」这两颗画在输入框上方、**提示词前面**（2026-11-23 用户定），
+	 * 显隐由设置 → 界面 → **对话窗口** 里的那两个勾选控制（跟提示词 / 想想 / 快捷指令同一组）。
+	 *
+	 * 来龙去脉：本来是「桌面放底部状态栏、手机放输入框上方、临时聊天放自己那一排」三处不同；
+	 * 用户 2026-11-23 问「放输入框里好还是放提示词前面」，选了后者 ——
+	 * 于是**三处统一**成这一排，状态栏那两颗撤掉（那里只留引擎 / 放行 / 排队 / 上下文 / 终端）。
+	 * 理由：模型与强度是**每轮都可能改**的，动作顺序是「选模型 → 敲需求 → 发送」，
+	 * 贴着输入框比在底部状态栏更顺手，也不会跟状态栏那些「会话级 / 全局」的开关混在一起。
 	 */
-	const chipsHere = surface !== undefined;
+	const chipsHere = true;
 	/** 这一排左边已经有没有东西（决定分隔标要不要画，免得最左边飘一根竖线） */
 	const leading = Boolean(chipsHere || newSession || projectChips);
 	// 「模板 / 想想 / 快捷指令」三块要不要显示：默认都显示，开关在设置 → 界面 → 对话窗口。
 	// 纯本机偏好（localStorage）：手机和桌面各一份，一边关掉不会带走另一边。
-	const [showBlocks] = usePrefFlags(COMPOSER_TOGGLES, COMPOSER_ITEM_KEY);
+	// 默认值交给 `composerItemDefault`（「快捷指令」默认关，其余默认开）
+	const [showBlocks] = usePrefFlags(COMPOSER_TOGGLES, COMPOSER_ITEM_KEY, composerItemDefault);
 	/**
 	 * 斜杠命令面板：输入框里打 `/` 开头就弹，**选中只是把命令补全**（不直接执行），
 	 * 执行发生在发送时（见 submit）：带参数的命令得让人先把参数敲完。
@@ -679,14 +683,30 @@ export function Composer({
 	};
 
 	// 老版本把这一项存在服务端（`quickPhrasesEnabled`，多设备一致）：本机没写过就抄一次旧值
-	useSeedQuickFromServer(snapshot?.settings.quickPhrasesEnabled);
-	// 关掉时连短语都不取，下面 `quickPhrases.length > 0` 那个判断就顺手把整行和分隔线收掉了
-	const quickPhrases = showBlocks.quick && !tempChat ? (snapshot?.settings.quickPhrases ?? []) : [];
+	/**
+	 * 老的一次性迁移（服务端 `quickPhrasesEnabled` → 本机偏好）**2026-11-23 停用**：
+	 * 那一项现在的语义变成「快捷指令要不要在输入框上方再排一排」，**默认关**
+	 * （短语的主入口已经搬进「提示词」弹窗）。继续沿用旧值会把默认关的人重新打开 ——
+	 * 想开的人在 设置 → 对话 里勾一下即可。函数还留在 `use-quick-seed.ts`（没有别的调用点）。
+	 */
+	// useSeedQuickFromServer(snapshot?.settings.quickPhrasesEnabled);
+	/** 全部短语：**弹窗里永远可用**（那是唯一必达的入口） */
+	/**
+	 * 快捷指令存的是**两份**（中文原文 + 英文副本，见 `QuickPhrase`）：
+	 * 这里按界面语言取那一条 —— 胶囊上显示的和点下去发出去的必须是同一句。
+	 * 用户自己写的短语没有英文副本，两种语言下都原样显示（不偷着翻）。
+	 */
+	const phraseEntries = snapshot?.settings.quickPhrases ?? [];
+	const allPhrases = phraseEntries.map((phrase) => localizePhrase(phrase, language));
+	/**
+	 * 外面那排 chip：**可选**，由设置 → 对话 的「快捷指令（显示在输入框上方）」决定（默认关）。
+	 * 以前没有这个开关时这里是硬编码常显；现在短语的主入口在「提示词」弹窗里，外面只是快捷键式的便利。
+	 */
+	const quickPhrases = showBlocks.quick && !tempChat ? allPhrases : [];
 	const templates = snapshot?.settings.templates ?? [];
 	// 模板库 / 模板编辑两个弹窗（P5）
 	const [galleryOpen, setGalleryOpen] = useState(false);
 	// 快捷指令的单独编辑弹窗（入口在快捷胶囊后面那颗粒子上）
-	const [quickEditOpen, setQuickEditOpen] = useState(false);
 	const [editing, setEditing] = useState<{ template: PromptTemplate | null } | null>(null);
 
 	const addFiles = async (files: File[]) => {
@@ -863,49 +883,47 @@ export function Composer({
 							{chipsHere ? <span className="tool-sep" aria-hidden="true" /> : null}
 						</>
 					) : null}
-					{/* 模型 / 强度：手机上（以及临时聊天）在这一排；桌面上它们在底部状态栏的引擎右边 */}
-					{chipsHere ? <ModelChips surface={surface} /> : null}
+					{/* 模型 / 强度：**三处统一在这一排**（2026-11-23），显隐由设置 → 对话窗口控制 */}
+					{chipsHere && showBlocks.model ? <ModelChips surface={surface} part="model" /> : null}
+					{chipsHere && showBlocks.thinking ? <ModelChips surface={surface} part="thinking" /> : null}
 					{/* 下面两块的显隐由设置控制；隐藏时分隔线跟着一起消失，免得留下一根悬空的竖线 */}
-					{showBlocks.templates && !tempChat ? (
+					{/* 想想 | 提示词：2026-11-23 用户要求**换个位置**（想想在前、提示词在后） */}
+					{showBlocks.think ? (
 						<>
 							{leading ? <span className="tool-sep" aria-hidden="true" /> : null}
+							<ThinkButton conversationId={conversationId} running={running} />
+						</>
+					) : null}
+					{showBlocks.templates && !tempChat ? (
+						<>
+							{leading || showBlocks.think ? <span className="tool-sep" aria-hidden="true" /> : null}
 							<button
 								type="button"
 								className="tool-chip composer-template-btn"
 								onClick={() => setGalleryOpen(true)}
-								title={t("提示词模板库", "Prompt template library")}
+								title={t("提示词模板库（含快捷指令）", "Prompt templates (with quick commands)")}
 							>
-								🧩 {t("提示词", "Prompts")}
+								✏️ {t("提示词", "Prompts")}
 							</button>
 						</>
 					) : null}
-					{showBlocks.think ? (
-						<>
-							{leading || (showBlocks.templates && !tempChat) ? <span className="tool-sep" aria-hidden="true" /> : null}
-							<ThinkButton conversationId={conversationId} running={running} />
-						</>
-					) : null}
-					{/* 右侧扩展位：工具范围 / 压缩（P4 待做，先占位保持排布稳定） */}
-					<span className="topbar-spacer" />
+					{/* 以前这里有个 `topbar-spacer`（右侧"工具范围 / 压缩"占位，P4 一直没做）：
+					 * 它 `flex: 1 1 auto`，只要这一行有剩余宽度就会把空隙撑出来 ——
+					 * 表现就是「提示词后面空一大块」（用户 2026-11-23）。
+					 * 现在这一排的宽度由内容决定，右边留白交给 `.composer-topbar` 的 `gap`。 */}
 				</div>
 
+				{/* 外面这排：**可选**（设置 → 对话 →「快捷指令（显示在输入框上方）」）。
+				    主入口在「提示词」弹窗里；勾上这一项才会在这里再排一排，点一下直接发送、
+				    Shift+点击只填入（守卫仍在下面那个 onClick 里）。 */}
 				{quickPhrases.length > 0 ? (
 					<>
-						<span className="tool-sep" aria-hidden="true" />
 						<div className="quick-row">
-							{/* 就地编辑：放在最左边（快捷短语前面），不跑设置面板，单独弹一个小窗改这一排短语（数据同一份） */}
-							<button
-								type="button"
-								className="quick-chip quick-edit"
-								title={t("编辑快捷指令", "Edit quick commands")}
-								onClick={() => setQuickEditOpen(true)}
-							>
-								✏️ {t("编辑", "Edit")}
-							</button>
-							{quickPhrases.map((phrase) => (
+							<span className="tool-sep" aria-hidden="true" />
+							{quickPhrases.map((phrase, index) => (
 								<button
 									type="button"
-									key={phrase}
+									key={`${phrase}-${index}`}
 									className="quick-chip"
 									disabled={running}
 									title={t(
@@ -922,7 +940,6 @@ export function Composer({
 										const now = Date.now();
 										if (now - lastQuickSend.current < QUICK_SEND_GUARD_MS) return; // 连点第二下：忽略
 										lastQuickSend.current = now;
-										// 新会话界面里点快捷短语 = 用这句话发起这条新会话（跟回车发送同一个落点）
 										deliver(phrase);
 									}}
 								>
@@ -932,6 +949,12 @@ export function Composer({
 						</div>
 					</>
 				) : null}
+				{/*
+				 * 快捷短语那排 chip **2026-11-23 搬进「提示词」弹窗**（用户：「外面这些放到里面去，
+				 * 弹窗里面，在里面点」）：输入框上方只留「项目 · 模型 · 强度 · 想想 · 提示词」，
+				 * 短语变成弹窗里「快捷指令」那一排可点的胶囊 —— 点一下直接发送，Shift+点击只填入。
+				 * 行为通过 `onQuickPhrase` 传下去，守卫（连点 / 正在跑）仍然留在这一层。
+				 */}
 			</div>
 
 			{pending.length > 0 || uploading || uploadError ? (
@@ -1001,7 +1024,7 @@ export function Composer({
 
 			<div className="composer" ref={composerRef}>
 				{annotationSummary}
-				{/* 麦克风与输入框同一个 flex 行：对齐交给布局，不用绝对定位去凑像素 */}
+				{/* 麦克风与输入框同一个 flex 行（在输入框**里面**的左侧）：对齐交给布局，不用绝对定位去凑像素 */}
 				<div className="composer-row">
 					{surface ? null : <VoiceInputBadge inline />}
 					<textarea
@@ -1187,6 +1210,20 @@ export function Composer({
 			{galleryOpen ? (
 				<TemplateGallery
 					templates={templates}
+					phrases={phraseEntries}
+					running={running}
+					onQuickPhrase={(phrase, mode) => {
+						if (mode === "fill") {
+							setDraft(phrase);
+							inputRef.current?.focus();
+							return;
+						}
+						if (running) return;
+						const now = Date.now();
+						if (now - lastQuickSend.current < QUICK_SEND_GUARD_MS) return; // 连点第二下：忽略
+						lastQuickSend.current = now;
+						deliver(phrase);
+					}}
 					onEdit={(template) => setEditing({ template })}
 					onCreate={() => setEditing({ template: null })}
 					onClose={() => setGalleryOpen(false)}
@@ -1200,7 +1237,6 @@ export function Composer({
 					onClose={() => setEditing(null)}
 				/>
 			) : null}
-			{quickEditOpen ? <QuickPhraseEditor phrases={quickPhrases} onClose={() => setQuickEditOpen(false)} /> : null}
 		</div>
 	);
 }

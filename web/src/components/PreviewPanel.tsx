@@ -5,7 +5,7 @@ import { TerminalPanel } from "./TerminalPanel.tsx";
 import { SideChat } from "./SideChat.tsx";
 import { WebTool } from "./WebTool.tsx";
 import type { WebNoteWithNumber } from "../web-note.ts";
-import { FilesTool } from "./FilesTool.tsx";
+import { FilesTool, type FilesToolProps } from "./FilesTool.tsx";
 import { FilesRail } from "./FilesRail.tsx";
 import { SessionHistory } from "./SessionHistory.tsx";
 import { SystemPromptView } from "./SystemPromptView.tsx";
@@ -216,6 +216,7 @@ export function PreviewPanel({
 	onToggleSplit,
 	onWideChange,
 	root,
+	files,
 	onOpenFile,
 	onOpenFilePath,
 	revealSeq = 0,
@@ -247,6 +248,11 @@ export function PreviewPanel({
 	onToggleSplit?: () => void;
 	/** 文件树工具用：当前工作区 */
 	root: string | null;
+	/**
+	 * 「文件」工具页要的那一整套（工作区根、项目下拉、开文件、git、搜索、改动清单、终端…）。
+	 * 2026-11-23 从侧栏搬过来：**功能一项不减**，所以直接把 `SidebarFiles` 的 props 传下来。
+	 */
+	files: FilesToolProps;
 	onOpenFile: (path: string) => void;
 	/**
 	 * 预览里「路径对不上唯一文件」时点候选用：要带上**那个标签自己的根**
@@ -836,7 +842,7 @@ export function PreviewPanel({
 								onClose={() => onCloseTabs([item.id])}
 							/>
 						) : item.kind === "files" ? (
-							<FilesTool root={root} onOpenFile={onOpenFile} />
+							<FilesTool {...files} />
 						) : item.kind === "web" ? (
 							<WebTool initialUrl={item.url} onAddNote={onWebNote} />
 						) : item.kind === "history" ? (

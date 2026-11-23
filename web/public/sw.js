@@ -13,8 +13,8 @@ self.addEventListener("push", (event) => {
 	event.waitUntil(
 		self.registration.showNotification(data.title, {
 			body: data.body,
-			icon: "/icons/icon-192.png?v=4",
-			badge: "/icons/icon-192.png?v=4",
+			icon: "/icons/icon-192.png?v=9",
+			badge: "/icons/icon-192.png?v=9",
 			// 同 tag 的通知会互相替换，避免攒一堆
 			tag: data.tag || "pop-agent",
 			data: { url: data.url || "/" },

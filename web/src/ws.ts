@@ -22,6 +22,7 @@ import type {
 	ClientRequestType,
 	ProjectPrefs,
 	PromptTemplate,
+	QuickPhrase,
 	SendMode,
 	ServerMessage,
 	SessionPrefs,
@@ -37,6 +38,7 @@ import { promoteNewSession } from "./session-order.ts";
 import { newId } from "./lib/uid.ts";
 import { openStream, type Stream } from "./stream.ts";
 import { tNow } from "./use-language.ts";
+import { requestStopManualSpeech } from "./speech-control.ts";
 
 const MAX_BACKOFF_MS = 8000;
 const BASE_BACKOFF_MS = 500;
@@ -63,7 +65,7 @@ let emptyFirstSnapshot = false;
 /**
  * 「这次打开页面不恢复到任何会话」：地址栏**没有** `?session=` 时，由 `main.tsx` 在 `connect()` 之前调一次。
  *
- * 用户 2026-11-04：直接进 `http://127.0.0.1:25257` 时不必替人打开「默认会话」，空着就好，
+ * 用户 2026-11-04：直接进 `http://127.0.0.1:9090` 时不必替人打开「默认会话」，空着就好，
  * 长得跟点一下「新会话」一样。这里做两件事：
  *
  *   1. **忘掉这个标签页记住的「我在看哪条会话」**（`sessionStorage` 那份 id）。服务端给
@@ -244,7 +246,7 @@ export function send(requestMessage: ClientRequest): Promise<void> {
 				/**
 				 * 502 / 503 / 504 几乎都是「后端刚好不在」：开发态 `tsx --watch` 重启的那一两秒，
 				 * 或者 `pop restart` 的空窗。此时 Vite / 反向代理连不上后端，回的就是 502
-				 * （终端里那行 `http proxy error: connect ECONNREFUSED 127.0.0.1:25258`）。
+				 * （终端里那行 `http proxy error: connect ECONNREFUSED 127.0.0.1:9091`）。
 				 * 这**不是**模型报错，也不是请求本身错了 —— 文案要说清，别让人去查 provider。
 				 * 红条会在 SSE 重新连上时自动清掉（见 `connect()` 里的 lastError: null）。
 				 */
@@ -577,6 +579,8 @@ export function switchConversation(conversationId: string): void {
 	 * 等它回来才换草稿的话，用户点完会先看到「B 的标题 + A 的半句话」—— 那半句话正是要治的 bug。
 	 */
 	handoffDraft(conversationId);
+	// 换会话 = 人已经在看别处了：手动点的那条朗读停掉（自动播报那边由流式队列自己按会话切）
+	requestStopManualSpeech();
 	// 先乐观高亮：外网往返几百毫秒，点下去没有反馈会以为没点上
 	// （顺手关掉「新会话」那一屏：人已经明确要看另一条会话了，没填的东西不再算数）
 	setAppState({ pendingActive: conversationId, preview: null, newSession: null });
@@ -933,7 +937,7 @@ export function upsertProvider(payload: UpsertProviderPayload): void {
 }
 
 export function setSettings(payload: {
-	quickPhrases?: string[];
+	quickPhrases?: QuickPhrase[];
 	/** @deprecated 显隐已改本机偏好（`pop-agent.composer.quick`）：这里只为老客户端兼容 */
 	quickPhrasesEnabled?: boolean;
 	/** null = 恢复默认模板库（服务端专门处理这个手势） */

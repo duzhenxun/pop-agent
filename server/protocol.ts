@@ -253,7 +253,14 @@ export type SessionStats = {
 	cost?: number;
 };
 
-export type { AppearanceView, ProjectPrefs, PromptTemplate, SessionPrefs, SettingsView } from "./protocol-settings.js";
+export type {
+	AppearanceView,
+	ProjectPrefs,
+	PromptTemplate,
+	QuickPhrase,
+	SessionPrefs,
+	SettingsView,
+} from "./protocol-settings.js";
 import type { PromptTemplate, SettingsView } from "./protocol-settings.js";
 import type { PriceSegment } from "./util/pricing.js";
 

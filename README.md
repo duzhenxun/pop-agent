@@ -109,7 +109,7 @@ Two behavioural rules:
 
 | Flag | Env var | Default | Notes |
 |---|---|---|---|
-| `-p, --port` | `POP_AGENT_PORT` | `25257` | Listen port |
+| `-p, --port` | `POP_AGENT_PORT` | `9090` | Listen port |
 | `-H, --host` | `POP_AGENT_HOST` | `127.0.0.1` | Listen address; only change it for remote access |
 | `-P, --password` | `POP_AGENT_PASSWORD` | none | Login password; unset = loopback only (remote cannot enter). A value given here is saved into `<dataDir>/password`, **and that file is the single source of truth afterwards** (the env var is only used when the file does not exist yet); Settings → Remote edits the same file |
 | `-d, --detach` | — | off (foreground by default) | Background run, detached, logs go to `~/.pop-agent/daemon.log`; `-f` / `--foreground` is the old spelling and now equals the default |
@@ -129,7 +129,7 @@ Two behavioural rules:
 ```bash
 pop-agent                                    # foreground + open the page (the usual one, Ctrl-C to quit)
 pop-agent -d                                 # background, terminal handed straight back
-pop-agent -p 25258                           # different port (when 25257 is taken)
+pop-agent -p 9191                           # different port (when 9090 is taken)
 pop-agent status && pop-agent restart  # check, then restart
 pop-agent stop                               # stop it (works for foreground and background)
 pop-agent --data-dir ~/pop-agent-data             # different data directory
@@ -138,7 +138,7 @@ pop-agent -H 0.0.0.0                           # reachable outside (set the pass
 pop-agent -H 0.0.0.0 -P 'my-pass'             # start with a password — saved, so restarts keep it
 ```
 
-> **Reaching it from your phone**: `pop-agent -H 0.0.0.0`. Set the password **on the machine running it first**: open `http://127.0.0.1:25257/` and use the field in **Settings → Remote** (or open `/setup`, or start with `-P`).
+> **Reaching it from your phone**: `pop-agent -H 0.0.0.0`. Set the password **on the machine running it first**: open `http://127.0.0.1:9090/` and use the field in **Settings → Remote** (or open `/setup`, or start with `-P`).
 > The password lives in the data directory's `password` file (default `~/.pop-agent/password`) — no environment variable needed. Afterwards **a LAN IP, a public IP or a domain** all work by entering that password; **no `--allow-host` allowlist** is required.
 > It can only be set locally: while unset, remote visitors just see "set it on the host machine" (`/setup`, `/api/auth/setup` and `/api/auth/password` return 403 for remote). Otherwise whoever scanned the port first would take over. Reverse proxies / tunnels should pass `X-Forwarded-For` (origin checking looks at it).
 > **Login protection**: after **3** wrong passwords from the same source, sign-in is paused for **30 minutes** (the password is not even compared while locked). Change both numbers in **Settings → Remote** (1–20 tries, 1–1440 minutes); the policy and any live locks are stored in `<data dir>/login-guard.json`, so a restart does not unlock anyone. Settings → Remote also lists recent **login activity** (source IP, success, which wrong try, lockouts — newest first), kept in `<data dir>/login-activity.json` (last 200 events).
@@ -437,15 +437,15 @@ A task is a prompt plus a five-field cron expression and a timezone. The panel's
 
 ![Settings → Appearance: three font sizes, content width in 4 steps, 6 palettes](docs/site/assets/en/settings.webp)
 
-The top bar is the entry point for every panel, and **each entry can be hidden in Settings → Interface** (settings and the split toggle are exempt — they're the only way back to the others). A fresh install ticks only **models / skills / voice / MCP**; push, plugins, subagents, scheduled tasks and the temp session are ticked back on when you want them. The sidebar and the right pane both drag wider and collapse, and their widths are remembered locally in `localStorage`.
+The top bar is the entry point for every panel, and **each entry can be hidden in Settings → Interface**. A fresh install ticks only **models / scheduled tasks (cron) / skills**; push, voice, plugins, MCP, subagents, settings and the temp session are ticked back on when you want them (the top-bar Settings button starts hidden — the leftmost chip in the bottom status bar opens the same panel). The bottom status bar starts with **settings / engine / approval mode** only; queued, running, context, full history, system prompt, terminal and the top toggle come back from Settings → Interface → Bottom, where you can also drag to reorder. The sidebar and the right pane both drag wider and collapse, and their widths are remembered locally in `localStorage`.
 
 The "settings" button opens six pages, and the tabs themselves drag to reorder — **whichever sits first is the page that opens next time**:
 
 | Page | Contents |
 |---|---|
 | **Interface** | The frame: which top-bar entries show (text and icon ticked separately), which status-bar chunks show (queue / working / context usage), how many sessions each project lists in the sidebar, and the max width of images in the chat |
-| **Conversation** | What the chat area itself looks like: which blocks sit above the composer (templates / think / quick commands), the text of your quick phrases and the default thinking level (these two are saved server-side, identical on every device), whether cost shows in the conversation, and whether thinking blocks and tool cards start expanded |
-| **Appearance** | Sizes only: three font sizes (chat body / sidebar project names / sidebar session names, slider 2–20px), content width in 4 steps (720 / 900 / 1100 / full), top-bar height, and the top-bar name and logo (hideable, or replaced with your own) |
+| **Conversation** | What the chat area itself looks like: which blocks sit above the composer (templates / think / quick commands), the text of your quick phrases and the default thinking level (these two are saved server-side, identical on every device), whether cost shows in the conversation, and whether thinking blocks and tool cards start expanded. **Built-in prompt templates and the default quick phrases (Continue / Summarize) are stored twice — Chinese original plus English**: an English UI shows the English copy (and inserts / sends it, not just the card titles); templates and phrases you edited or created yourself are never auto-translated |
+| **Appearance** | Sizes only: three font sizes (chat body / sidebar project names / sidebar session names, slider 2–30px, default “Default” 14px), content width in 4 steps (720 / 900 / 1100 / full, default “Default” 900px), top-bar height (default 100% = standard), and the top-bar logo and name (both hideable, logo replaceable; custom renaming is gone — the bar shows the product name) |
 | **Theme** | 6 palettes (bright white, warm paper, mist teal, Tokyo night, mocha, nord) — one click and it applies |
 | **Language** | Chinese / English, applied immediately |
 | **Shortcuts** | 12 actions, rebindable, clearable and restorable to defaults, plus a cheat sheet |
@@ -577,7 +577,7 @@ From the repo root, run `npm install` first, then:
 npm run dev          # starts both processes with one command
 ```
 
-- Externally there is still a single port **25257** (Vite listens and proxies); the backend hides on internal **25258**, so dev and production use the same address.
+- Externally there is still a single port **9090** (Vite listens and proxies); the backend hides on internal **9091**, so dev and production use the same address.
 - Frontend HMR via Vite; the backend auto-restarts through `tsx --watch`.
 - Phone debugging: `npm run dev -- --host 0.0.0.0`.
 
@@ -606,11 +606,11 @@ Unit tests are run locally: `node --import tsx --test tests/unit/*.test.ts`.
 2. `EBADENGINE` / a Node version complaint at startup → you need Node ≥ 22.19 (check with `node -v`).
 3. `node-pty` fails to build (mostly on Linux) → install `python3` / `make` / `g++` before `npm -g install`, or let the one-line installer handle it with `--with-build-tools`.
 4. It won't start but `pop-agent status` mentions a stale lock → a previous process didn't exit cleanly; the next `start` takes over automatically. If it's truly stuck, delete `<dataDir>/server.lock`.
-5. Port already in use → `pop-agent -p 25258`, or run `pop-agent stop` first.
+5. Port already in use → `pop-agent -p 9191`, or run `pop-agent stop` first.
 6. The built-in web page is blank → that site needs a login or heavy scripts, and the proxy does not tunnel cookies; hit `⧉` to use the system browser.
 7. `engine.provider_error: This operation was aborted` (occasional) → the **transport** was cut (the model had just connected, a proxy swapped connections, the request body was reclaimed), not the model refusing. Transient errors like this are now retried twice automatically (1 s / 3 s backoff, with only one "retrying" line in the UI) and a successful retry ends with no error at all. If it still fails, search `<dataDir>/logs/pop-agent.log` for `provider 报错` / `模型调用失败` — every entry carries `sessionId`, `attempt`, `code` and the raw `message` (before this, such errors left nothing in the log at all). Interrupts you caused by pressing Stop are never retried and never turn into a red bar.
 8. To see what the engine is actually doing → `POP_AGENT_LOG=info pop`: the SDK's own retry (`pi 自动重试`), a successful retry (`自动重试成功`) and `这一轮被中断` all land in the log.
-9. `请求失败：HTTP 502` (or "the backend is restarting or not up yet (HTTP 502)") → this is the **frontend → backend** hop, not a model error: under `npm run dev`, Vite (25257) proxies the backend (25258), and saving a file under `server/` restarts the backend — in that one-or-two-second window `POST /api/rpc` returns 502 (the terminal shows `http proxy error: connect ECONNREFUSED 127.0.0.1:25258`), and the running turn is cut with it (the tell: the last message in the session is a `toolUse` with no `errorMessage`). In dev the backend now retries for 6 seconds when the port isn't released yet, and the red bar clears itself once SSE reconnects; **run long turns with `pop`** (the built `dist`, with no watch restart).
+9. `请求失败：HTTP 502` (or "the backend is restarting or not up yet (HTTP 502)") → this is the **frontend → backend** hop, not a model error: under `npm run dev`, Vite (9090) proxies the backend (9091), and saving a file under `server/` restarts the backend — in that one-or-two-second window `POST /api/rpc` returns 502 (the terminal shows `http proxy error: connect ECONNREFUSED 127.0.0.1:9091`), and the running turn is cut with it (the tell: the last message in the session is a `toolUse` with no `errorMessage`). In dev the backend now retries for 6 seconds when the port isn't released yet, and the red bar clears itself once SSE reconnects; **run long turns with `pop`** (the built `dist`, with no watch restart).
 
 Windows differences in shell resolution, process-tree teardown, path handling, permissions and CRLF are all centralised in three modules: `server/util/spawn-cli.ts` (PATH/PATHEXT, `.cmd` via `cmd.exe`, `killTree`), `server/util/paths.ts` and `web/src/path-utils.ts` (separators and absolute paths), and `server/util/file-mode.ts` (`icacls` on Windows). Read those headers before touching cross-platform code.
 

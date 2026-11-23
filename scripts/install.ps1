@@ -278,6 +278,6 @@ else {
 	Write-Host '        pop -d         （后台运行；日志在 %USERPROFILE%\.pop-agent\daemon.log）'
 }
 Write-Host ''
-Write-Host '  然后打开 http://127.0.0.1:25257'
+Write-Host '  然后打开 http://127.0.0.1:9090'
 Write-Host '  常用：pop status · pop restart · pop stop · pop upgrade · pop --help' -ForegroundColor DarkGray
 Write-Host ''

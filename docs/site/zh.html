@@ -93,7 +93,7 @@ var _hmt = _hmt || [];
       </div>
       <div>
         <div class="frame">
-          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:25257 · demo-app</span></div>
+          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · demo-app</span></div>
           <img src="assets/zh/hero.webp" width="1600" height="900" alt="一次真实会话：左侧项目与会话，中间过程里的思考段与工具卡，右侧同一个仓库的改动对比" data-zoom />
         </div>
         <p class="caption">一次真实会话：思考、工具、改动、用量，都在同一屏里。</p>
@@ -291,7 +291,7 @@ var _hmt = _hmt || [];
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/mobile-drawer.webp" data-alt="手机上的项目侧栏是覆盖式抽屉" data-cap="手机上的项目侧栏是覆盖式抽屉">手机抽屉</button>
         </div>
         <div class="tour-stage frame">
-          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url" id="tourUrl">127.0.0.1:25257</span></div>
+          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url" id="tourUrl">127.0.0.1:9090</span></div>
           <img id="tourImg" src="assets/zh/overview.webp" width="1500" height="844" alt="界面全景" data-zoom />
         </div>
         <p class="caption" id="tourCap">左栏项目与会话 · 中间对话 · 右栏源码 · 底栏状态</p>
@@ -342,7 +342,7 @@ var _hmt = _hmt || [];
       <div class="install">
         <div class="steps reveal">
           <div class="step"><div><b>装</b><p><code>npm -g install pop-agent</code>，或一行脚本装到 <code>~/.pop-agent</code>，不碰系统全局目录。</p></div></div>
-          <div class="step"><div><b>起</b><p>进到你的项目目录敲 <code>pop</code>：前台运行并打开浏览器，默认只监听 <code>127.0.0.1:25257</code>。</p></div></div>
+          <div class="step"><div><b>起</b><p>进到你的项目目录敲 <code>pop</code>：前台运行并打开浏览器，默认只监听 <code>127.0.0.1:9090</code>。</p></div></div>
           <div class="step"><div><b>用</b><p>点「新会话」发第一句。想从手机或别的电脑进，就 <code>-H 0.0.0.0</code>，并且先在本机「设置 → 远程」设好密码。</p></div></div>
         </div>
         <div class="reveal">
@@ -361,7 +361,7 @@ pop status
 pop stop
 
 <span class="c"># 换端口 / 指定工作区</span>
-pop -p 25258
+pop -p 9191
 POP_AGENT_CWD=~/code/my-proj pop</pre>
           </div>
           <div class="table-wrap cmd-table">

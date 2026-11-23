@@ -12,7 +12,10 @@
 	   统一成 `--border-strong`，两条线才看着是同一根 */
 	border-right-color: var(--border-strong);
 	border-radius: var(--radius);
-	background: var(--bg-elev);
+	/* 2026-11-23（用户：「网页中，右边的背景要统一颜色」）：从 `--bg-elev`（#f7f8fa）换成
+	 * 跟顶栏、对话区同一个 `--bg`（#ffffff）。原来是三块两种颜色 —— 顶栏白、侧栏灰、对话白，
+	 * 顶栏那条线去掉之后就成了一道看得见的色阶。现在整屏一个白，只靠 1px 分割线分区。 */
+	background: var(--bg);
 	/* 内边距抽成变量：底部分隔线要「顶满整条侧栏」，得靠负 margin 抵消它 */
 	--side-pad: 10px;
 	padding: var(--side-pad);
@@ -31,12 +34,13 @@
 	container-name: sidebar-head;
 }
 
-/* ---- 抬头里的「新会话」（`NewChatButton variant="sidebar"`）----
- * **只是备胎**：平时「新会话」在顶栏（App.tsx），侧栏展开 / 收起都是那一颗；
- * 只有顶栏被藏起来（`appbarHidden`，状态栏那颗 ▴/▾）时，侧栏抬头才补这一颗 ——
- * 位置就在「项目」这一行、紧跟标题（`▾ 项目 ⇕ 〔新会话〕 〔＋〕`），跟原来一样。
+/* ---- 侧栏里的「新会话」（`NewChatButton variant="sidebar"`）----
+ * **主入口**：从 2026-11-23 起，它跟品牌一起在侧栏最上面那条 `.sidebar-brand`（用户：「这2块放到项管理里上面就行」），
+ * 侧栏收起时才回顶栏左段（那时 Sidebar 整个不挂载）。
+ * 这套样式也蹭给了 `.sidebar-head`（「项目」那一行）—— 两者共用同一套紧凑胶囊，
+ * 只是因为容器查询按 `.sidebar-head` 的宽度算，两边都能用。
  * 观感跟顶栏那颗同一套（实心主色胶囊 + `--ab` 缩放），但更紧凑 ——
- * 这一行还要装下「＋ 新建项目」、「⇕ 全部收起」，所以不画 💬 气泡，只留文字。
+ * 这条行还要装得下品牌名，所以不画 💬 气泡，只留文字。
  *
  * **为什么是实心主色**（用户：「这个不太明显」）：以前是「主色 12% 底 + 主色字」，
  * 浅色主题下那块底几乎与侧栏同色，只剩一行蓝字，和上面「项目」标题、旁边一排灰图标混在一起，
@@ -71,6 +75,22 @@
 .sidebar-head .newchat-pill:hover {
 	background: color-mix(in srgb, var(--accent) 88%, var(--text));
 	box-shadow: 0 calc(2px * var(--ab)) calc(6px * var(--ab)) color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ---- 品牌行里那颗「新会话」：比抬头那颗**淡一档** ----
+ * 用户 2026-11-23（截图指着品牌右边那颗蓝胶囊）：「颜色变淡一些」。
+ * 抬头那颗是「整条栏里唯一的实色块」（当时的理由是它跟一排灰图标混在一起看不清）；
+ * 现在它贴在品牌名旁边，实心主色显得太冲，所以只给品牌行这一颗掺一点底色：
+ * 主色 72% + 侧栏底色，白字仍然够读，胶囊也不再抢品牌名的注意力；投影一起去掉（那层投影也在加重观感）。
+ * hover 回到 88%，保留「碰一下有反馈」。 */
+.sidebar-brand .newchat-pill {
+	background: color-mix(in srgb, var(--accent) 72%, var(--bg-elev));
+	box-shadow: none;
+}
+
+.sidebar-brand .newchat-pill:hover {
+	background: color-mix(in srgb, var(--accent) 88%, var(--text));
+	box-shadow: none;
 }
 
 /* 气泡：跟顶栏那颗**同一枚 💬**（用户要求「前面也加一个会话的小图标」）。
@@ -704,3 +724,60 @@
  * 位置还差一整个栏高，反而让人犹豫点哪颗。
  * `.sidebar-foot-row` / `.sidebar-collapse` 的样式随之删掉；想放回来就照 App.tsx 里
  * `.side-collapse` 那颗拼一个（16 格线性 SVG、类 `files-tool` 那套尺寸）。 */
+
+/* ---- 侧栏最上面那条：品牌 + 新会话（用户 2026-11-23 从顶栏左段搬下来）----
+ *
+ * 为什么搬到侧栏：「项目管理」那一栏本来就全是「在哪干活 / 开哪一条」，
+ * 新建会话跟它是同一件事，放在它头上最顺；顶栏左段从此只在侧栏收起时出现（见 app-bar.css）。
+ *
+ * 尺寸 / 胶囊样式全部蹭 `.sidebar-head` 那一套（同一行高、同一个实心主色胶囊，
+ * 窄侧栏时胶囊自动收起图标）—— 这里只补左右对齐和上下留白：
+ * 左沿跟下面的「项目」「会话行」同一条线，所以横向不倒内边距，靠 `.sidebar` 自己的 `--side-pad`。 */
+/* ---- 侧栏顶上的拖动带（只在桌面壳里）----
+ * 侧栏通到窗口顶之后，红绿灯那一行归侧栏这一列；顶栏只在右列，
+ * 所以这一条得由侧栏自己提供拖动区（用户 2026-11-23：「这个位置的拖动有时不灵敏」）。
+ * 高度跟顶栏一致（`--appbar-h`），正好盖住红绿灯那一行；品牌行因此不用再写 `margin-top`。 */
+.sidebar-drag {
+	display: none;
+}
+
+/* 品牌那一行也当拖动区（用户 2026-11-23：「光标放这里要变成可拖动的光标」）——
+ * 它就在红绿灯下面，是最顺手的抓手；里面只有那颗「新会话」胶囊要能点，
+ * 所以只把它的**字形与文字**挖出来（跟顶栏那套一样），胶囊的内边距照样可拖。 */
+:root[data-shell="electron-mac"] .sidebar-brand {
+	-webkit-app-region: drag;
+	cursor: grab;
+}
+
+:root[data-shell="electron-mac"] .sidebar-brand .newchat-pill-icon,
+:root[data-shell="electron-mac"] .sidebar-brand .newchat-pill-label {
+	-webkit-app-region: no-drag;
+}
+
+:root[data-shell="electron-mac"] .sidebar-brand:active {
+	cursor: grabbing;
+}
+
+:root[data-shell] .sidebar-drag {
+	display: block;
+	flex: none;
+	height: var(--appbar-h, 33px);
+	/* 顶到侧栏左右两边（侧栏自己有 10px 内边距）：否则最左那 10px 还是拖不动 ——
+	 * 而红绿灯正好压在这一段上，用户最可能就是从那儿抓。跟 `.side-files` 同一套负 margin 做法。 */
+	margin-left: calc(-1 * var(--side-pad, 10px));
+	margin-right: calc(-1 * var(--side-pad, 10px));
+	-webkit-app-region: drag;
+}
+
+/* **只在桌面壳里显示**（用户 2026-11-23：「网页的太丑了，网页的能把图还是放上面去吗」）——
+ * 浏览器仍然用顶栏左段那份（`.appbar-side` 里的 `.brand` + 新会话胶囊），
+ * 这边整条不画，不给侧栏顶部多塞一行。 */
+.sidebar-brand {
+	display: none;
+}
+
+:root[data-shell] .sidebar-brand {
+	display: flex;
+	/* 与 `.sidebar` 的 8px gap 叠起来略大一点，视觉上跟「项目管理」那一行分得开 */
+	padding-bottom: 2px;
+}

@@ -26,9 +26,23 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const TARGET = join(ROOT, "node-runtime");
 const MIRROR = (process.env.NODE_MIRROR ?? "https://nodejs.org/dist").replace(/\/+$/, "");
 
-function platformTriple() {
-	const platform = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "win" : "linux";
-	const arch = process.arch === "arm64" ? "arm64" : process.arch === "x64" ? "x64" : process.arch;
+/**
+ * 目标平台/架构：**默认宿主，可用参数覆盖**（2026-11-24 加）。
+ *
+ * 为什么需要覆盖：交叉出包（在 mac 上打 Windows 包）时，运行时必须是**目标**那一份 ——
+ * 用宿主的 darwin 运行时装进 Windows 包，用户双击就是「服务起不来」。
+ *   node scripts/fetch-node-runtime.mjs --platform win --arch x64
+ * 平台名照 Node 官方发行包的写法：darwin / win / linux（`win` 不是 `win32`）。
+ */
+function platformTriple(argv = process.argv.slice(2), env = process.env) {
+	const flag = (name) => {
+		const i = argv.indexOf(name);
+		return i >= 0 ? argv[i + 1] : undefined;
+	};
+	const rawPlatform = flag("--platform") ?? env.POP_AGENT_NODE_PLATFORM ?? process.platform;
+	const rawArch = flag("--arch") ?? env.POP_AGENT_NODE_ARCH ?? process.arch;
+	const platform = rawPlatform === "win32" ? "win" : rawPlatform === "darwin" || rawPlatform === "linux" ? rawPlatform : rawPlatform;
+	const arch = rawArch === "arm64" ? "arm64" : rawArch === "x64" || rawArch === "x86_64" ? "x64" : rawArch;
 	return { platform, arch };
 }
 

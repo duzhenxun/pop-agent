@@ -275,8 +275,8 @@ const SETUP_SCRIPT = `
  */
 export function renderSetupPage(options: { brandName?: string; locked?: boolean; host?: string } = {}): string {
 	const brand = escapeHtml(options.brandName ?? BRAND_NAME);
-	// 端口照实际请求的（默认 25257）：远程看到的提示里得是本机能打开的那个地址
-	const port = /:(\d+)$/.exec(options.host ?? "")?.[1] ?? "25257";
+	// 端口照实际请求的（默认 9090）：远程看到的提示里得是本机能打开的那个地址
+	const port = /:(\d+)$/.exec(options.host ?? "")?.[1] ?? "9090";
 	const sub = options.locked ? "还没设访问密码：请在本机打开设置它" : "先设一个访问密码，之后远程访问都用它登录";
 	const body = options.locked ? lockedBody(`http://127.0.0.1:${port}/setup`) : SETUP_FORM;
 	return `<!doctype html>

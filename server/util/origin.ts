@@ -16,7 +16,7 @@
 const LOOPBACK_HOSTNAMES = ["127.0.0.1", "localhost", "::1", "[::1]"];
 
 export type OriginPolicy = {
-	/** 服务自己的端口（默认 25257；开发态同样用它） */
+	/** 服务自己的端口（默认 9090；开发态同样用它） */
 	port: number;
 	/** 额外放行的端口（vite 开发服务器） */
 	devPorts?: number[];
@@ -87,7 +87,7 @@ function normalizePort(port: string, protocol: string): string {
 }
 
 /**
- * `Host` 头是不是「本机回环」（`127.0.0.1:25257` / `localhost:25257` / `[::1]:25257`）。
+ * `Host` 头是不是「本机回环」（`127.0.0.1:9090` / `localhost:9090` / `[::1]:9090`）。
  *
  * 为什么鉴权要用它：只看 TCP 对端地址是不够的 —— **同机反代 / 隧道**
  * （nginx、cloudflared、tailscale serve、frp…）打过来的连接，对端永远是 127.0.0.1。

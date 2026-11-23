@@ -51,6 +51,7 @@
 @import "./styles/work-panel.css"; /* 分栏工作区：工具落地页 / 网页 / 临时聊天 / 文件树 */
 @import "./styles/canvas.css"; /* 画布：把会话摊在可平移缩放的平面上 */
 @import "./styles/overlay.css";
+@import "./styles/first-run.css"; /* 首启向导：选引擎 / 填 key / 建第一条会话（App 根节点那次性的三步浮层） */
 @import "./styles/templates.css";
 @import "./styles/model-picker.css";
 @import "./styles/highlight.css";

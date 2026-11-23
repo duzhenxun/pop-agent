@@ -422,7 +422,7 @@ main() {
 		say "        pop -d                     （后台运行；日志在 ~/.pop-agent/daemon.log）"
 	fi
 	say ""
-	say "  然后打开 ${BOLD}http://127.0.0.1:25257${OFF}"
+	say "  然后打开 ${BOLD}http://127.0.0.1:9090${OFF}"
 	say "  ${DIM}常用：pop status · pop restart · pop stop · pop upgrade · pop --help${OFF}"
 	say ""
 }

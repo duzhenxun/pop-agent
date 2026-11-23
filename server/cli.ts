@@ -10,7 +10,7 @@
  * 里记的 pid —— 不去猜、不去扫端口。
  *
  * 选项（也可用同名环境变量，命令行优先）：
- *   -p, --port <n>        POP_AGENT_PORT       默认 25257
+ *   -p, --port <n>        POP_AGENT_PORT       默认 9090
  *   -H, --host <addr>     POP_AGENT_HOST       默认 127.0.0.1
  *   -P, --password <pwd>  POP_AGENT_PASSWORD   非本机访问时的登录密码（写进 <dataDir>/password，之后以那份为准）
  *                                              给了就存进数据目录，下次重启不必再给
@@ -42,7 +42,7 @@ import { fetchHealth, showEngines, showStatus, showVersion, upgrade } from "./cl
 import { checkForUpdate, describeUpdate } from "./update-check.js";
 import { offerUpgrade } from "./update-prompt.js";
 import { defaultIsAlive, describeHolder, readLock } from "./session/lock.js";
-import { applyDesktopEnv, nodeExec } from "./util/desktop.js";
+import { applyDesktopEnv, isDesktopMode, nodeExec, readyLine } from "./util/desktop.js";
 import { piMissing, startPiGate } from "./pi-gate.js";
 
 const USAGE = `用法: pop-agent [命令] [选项]        （pop-agent / pop 两个命令完全等价）
@@ -59,7 +59,7 @@ const USAGE = `用法: pop-agent [命令] [选项]        （pop-agent / pop 两
   help               显示本帮助（-h / --help 同义）
 
 选项（也可以用环境变量）:
-  -p, --port <n>       监听端口            POP_AGENT_PORT（默认 25257）
+  -p, --port <n>       监听端口            POP_AGENT_PORT（默认 9090）
   -H, --host <addr>    监听地址            POP_AGENT_HOST（默认 127.0.0.1）
   -P, --password <pwd> 访问密码            POP_AGENT_PASSWORD（给了就存进数据目录；之后一律以数据目录那份为准）
       --allow-host <h> 跨源白名单（少见）    POP_AGENT_ALLOWED_HOSTS（可多次 / 逗号分隔）
@@ -426,6 +426,16 @@ async function detectRunning(open: boolean): Promise<boolean> {
 	const url = `http://${probeHost}:${lock.port}`;
 	const stop = stopHint(process.argv.slice(2));
 	if (await fetchHealth(probeHost, lock.port, 1500)) {
+		/**
+		 * 桌面模式（ADR-0051）：壳 spawn 的是这个文件（`cli.js`），它只认 `__POP_AGENT_READY__`
+		 * 那一行 —— 这里如果只打印人话就返回，壳会看到「进程退出 code=0 但没给地址」而弹
+		 * 「PopAgent 启动失败」（真实踩过：先用 `pop -d` 起过服务，再双击 App）。
+		 * 所以复用别人时也必须把地址说出来；窗口由壳自己开，这里不再开浏览器。
+		 */
+		if (isDesktopMode()) {
+			console.log(readyLine({ port: lock.port, pid: lock.pid, url, reused: true }));
+			return true;
+		}
 		console.log(`已经有一个在跑，不再起第二个：\n  ${describeHolder(lock)}\n  → 打开 ${url}\n  → 停止：${stop}`);
 		if (open) openBrowser(url);
 		return true;
@@ -551,7 +561,8 @@ async function main(): Promise<void> {
 		if (line) console.log(line);
 		return;
 	}
-	if (parsed.open) openWhenReady();
+	// 桌面模式由壳开窗口，不再额外弹一个系统浏览器（同一个页面开两处只会让人以为起了两个）
+	if (parsed.open && !isDesktopMode()) openWhenReady();
 	// 告诉服务层「终端在看着」：只留 warn / error，正常日志光进文件（见 index.ts 的 quietConsole）。
 	// 必须看 isTTY：后台子进程也走这个分支，但它的 stdout 是 daemon.log —— 那里要保留全部日志。
 	if (process.stdout.isTTY) process.env.POP_AGENT_FOREGROUND = "1";
@@ -572,7 +583,7 @@ async function main(): Promise<void> {
 	 */
 	if (piMissing()) {
 		await startPiGate({
-			port: Number(process.env.POP_AGENT_PORT ?? 25257) || 25257,
+			port: Number(process.env.POP_AGENT_PORT ?? 9090) || 9090,
 			host: process.env.POP_AGENT_HOST ?? "127.0.0.1",
 			dataDir: dataDir(),
 			openUrl: parsed.open ? openBrowser : undefined,

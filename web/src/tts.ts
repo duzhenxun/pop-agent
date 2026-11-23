@@ -96,12 +96,41 @@ export function loadTtsSettings(): TtsSettings {
 	}
 }
 
+/**
+ * 语音设置变了（同页广播）。
+ *
+ * 为什么需要它：这些设置存在**本机 localStorage**（`pop-agent.voice.tts`），不是服务端快照 ——
+ * 消息尾注那边要跟着「启用语音播报」这个开关显隐（用户 2026-11-24：「没启动的话就不显示」），
+ * 而它没有 snapshot 可订阅。存完派一个事件，`useTtsSettings()` 订阅它；跨标签页靠 `storage`。
+ */
+const TTS_EVENT = "pop-agent:tts-settings";
+
 export function saveTtsSettings(settings: TtsSettings): void {
 	try {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 	} catch {
 		// 存不了就只对本次生效
 	}
+	try {
+		window.dispatchEvent(new CustomEvent<TtsSettings>(TTS_EVENT, { detail: settings }));
+	} catch {
+		// 没有 window（SSR / 单测）就算了，本页自己已经拿到新值
+	}
+}
+
+/** 订阅语音设置的变化（同页自定义事件 + 跨标签页 `storage`） */
+export function onTtsSettingsChange(callback: (settings: TtsSettings) => void): () => void {
+	const onCustom = (event: Event) => callback((event as CustomEvent<TtsSettings>).detail);
+	const onStorage = (event: StorageEvent) => {
+		if (event.key !== STORAGE_KEY) return;
+		callback(loadTtsSettings());
+	};
+	window.addEventListener(TTS_EVENT, onCustom);
+	window.addEventListener("storage", onStorage);
+	return () => {
+		window.removeEventListener(TTS_EVENT, onCustom);
+		window.removeEventListener("storage", onStorage);
+	};
 }
 
 /** 浏览器到底有没有语音合成（Safari/Firefox/Chrome 都有；极老的没有） */

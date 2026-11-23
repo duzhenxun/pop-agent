@@ -15,5 +15,11 @@
 		"verbatimModuleSyntax": true,
 		"types": ["node"]
 	},
-	"include": ["./**/*.ts", "../server/brand.ts", "../server/util/desktop.ts", "../server/util/env.ts"]
+	"include": [
+		"./**/*.ts",
+		"../server/brand.ts",
+		"../server/util/desktop.ts",
+		"../server/util/env.ts",
+		"../server/util/version.ts"
+	]
 }

@@ -118,23 +118,24 @@ export const SHORTCUT_DEFS: readonly ShortcutDefinition[] = [
 		defaultCombo: "Mod+Alt+L",
 	},
 	/*
-	 * 「项目管理」紧贴在「文件管理」上方（用户 2026-11-04：「跟文件管理上下靠着」）：
-	 * 这两个都是**左栏里的一轤**（管理哪几个项目 / 看哪个文件树），而上面两条是「整栏收起 / 展开」——
+	 * 「项目」紧贴在「文件」上方（2026-11-04 用户要求这两个上下靠着；2026-11-23 两者都改了短名）：
+	 * 这两个都是**内容区里的一块**（管哪几个项目 / 看哪个文件树），而上面两条是「整栏收起 / 展开」——
 	 * 两种粒度分开排，看的时候不用在一排里找。
+	 * 文件那一页 2026-11-23 搬到了右侧面板的工具里，快捷键仍然有效（现在开 / 关面板里的「文件」页）。
 	 */
 	{
 		id: "projects",
-		label: "项目管理",
+		label: "项目",
 		labelEn: "Projects",
-		hint: "侧栏里「项目管理」那一栏的开关；侧栏收着时会先展开",
+		hint: "侧栏里「项目」那一栏的开关；侧栏收着时会先展开",
 		hintEn: "Toggles the Projects section in the sidebar; expands the sidebar if it was collapsed",
 		defaultCombo: "Mod+Alt+P",
 	},
 	{
 		id: "files",
-		label: "文件管理",
+		label: "文件",
 		labelEn: "Files",
-		hint: "同一个键开 / 关：树开着就收起；侧栏收着时会先展开",
+		hint: "同一个键开 / 关：右侧面板里的「文件」页开着就收起",
 		hintEn: "Opens and closes with the same key; expands the sidebar if it was collapsed",
 		defaultCombo: "Mod+Alt+F",
 	},

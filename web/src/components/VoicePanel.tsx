@@ -40,6 +40,12 @@ import { voiceChannelOf } from "../voice-cue-logic.ts";
 import { forgetLocalUnavailable, saveVoiceInputSettings, useVoiceInputSettings } from "../voice-input.ts";
 import { useAppSelector } from "../store.ts";
 import { useT } from "../use-language.ts";
+import {
+	PET_ANIMALS,
+	PET_ENABLED_KEY,
+	usePetAnimal,
+} from "../speech-pet-prefs.ts";
+import { useStoredBool } from "../use-stored-bool.ts";
 
 const SOUND_KINDS: SoundKind[] = ["start", "steer", "done", "error", "approval"];
 
@@ -70,6 +76,9 @@ type AsrStatus = {
 
 export function VoicePanel() {
 	const t = useT();
+	/** 朗读小宠物：开不开 + 选哪只（本机偏好，见 speech-pet-prefs.ts） */
+	const [petOn, setPetOn] = useStoredBool(PET_ENABLED_KEY, true);
+	const [petAnimal, setPetAnimal] = usePetAnimal();
 	const [sound, setSound] = useState<SoundSettings>(() => loadSoundSettings());
 	const [tts, setTts] = useState<TtsSettings>(() => loadTtsSettings());
 	// 语音输入是**听**（麦克风 → 文字），和上面这套播报（文字 → 声音）是两块，所以单独一份设置
@@ -416,7 +425,9 @@ export function VoicePanel() {
 					<label className="voice-row" key={kind}>
 						<span className="voice-row-label">
 							{t(SOUND_LABEL[kind].title, SOUND_LABEL[kind].titleEn)}
-							<span className="voice-row-hint">{t(SOUND_LABEL[kind].hint, SOUND_LABEL[kind].hintEn)}</span>
+							{/* 解释并进括号（用户 2026-11-24：「有解释的放 () 中，文案要减少」）：
+							 * 原来每个提示音占两行（标题 + 说明），五行就是十行。 */}
+							（{t(SOUND_LABEL[kind].hint, SOUND_LABEL[kind].hintEn)}）
 						</span>
 						<button
 							type="button"
@@ -441,26 +452,15 @@ export function VoicePanel() {
 			<section className="voice-section">
 				<label className="voice-row">
 					<span className="voice-row-label">
-						<span aria-hidden="true">🔊</span> {t("启用语音播报", "Enable speech")}
-						<span className="voice-row-hint">
-							{t(
-								"完成 / 插队 / 出错 / 等待审批播本地音频（中文、英文各一套，不联网、不依赖系统音色）",
-								"Plays bundled audio clips on finish / steer / error / approval (Chinese and English, no network, no system voices)",
-							)}
-						</span>
+						<span aria-hidden="true">🔊</span>{" "}
+						{t("启用语音播报（完成 / 出错播提示音）", "Enable speech (cue on finish / error)")}
 					</span>
 					<input type="checkbox" checked={tts.enabled} onChange={() => patchTts({ enabled: !tts.enabled })} />
 				</label>
 
 				<label className="voice-row">
 					<span className="voice-row-label">
-						{t("朗读回复", "Read replies aloud")}
-						<span className="voice-row-hint">
-							{t(
-								"开启后，回答边输出边按句朗读（不用等整条写完）",
-								"Reads each sentence as the answer streams in, instead of waiting for the whole reply",
-							)}
-						</span>
+						{t("朗读回复（边输出边按句念）", "Read replies aloud (as it streams)")}
 					</span>
 					<input
 						type="checkbox"
@@ -470,7 +470,15 @@ export function VoicePanel() {
 				</label>
 
 				<label className="voice-row voice-row-select voice-row-stacked">
-					<span className="voice-row-label">{t("语音引擎", "Speech engine")}</span>
+					{/* 引擎说明原来单独占一行（「本机 MLX 模型，不联网；首次合成要加载模型…」），
+					 * 现在缩成标签后面的括号（用户 2026-11-24：「有解释的放 () 中，文案要减少」）。 */}
+					<span className="voice-row-label">
+						{isRemote
+							? remoteProvider === "edge"
+								? t("语音引擎（在线，文字发到微软）", "Speech engine (online, text goes to Microsoft)")
+								: t("语音引擎（本机 MLX，不联网）", "Speech engine (local MLX, offline)")
+							: t("语音引擎", "Speech engine")}
+					</span>
 					<select
 						className="voice-select"
 						value={tts.provider ?? "browser"}
@@ -482,58 +490,10 @@ export function VoicePanel() {
 						<option value="qwen3">{t("Qwen3-TTS（本地）", "Qwen3-TTS (local)")}</option>
 					</select>
 				</label>
-				{isRemote ? (
-					<div className="voice-issue voice-status" role="status">
-						{remoteProvider === "edge"
-							? t(
-									"无需 API Key，需联网；朗读文字会发送到微软语音服务。",
-									"No API key needed; requires internet. Text is sent to Microsoft's speech service.",
-								)
-							: t(
-									"本机 MLX 模型，不联网；首次合成要加载模型，会慢几秒。",
-									"Runs on this Mac with MLX, no network; the first synthesis loads the model and takes a few seconds.",
-								)}
-					</div>
-				) : null}
 
-				{/* 语速与提示音音量并排一行：两块都是滑杆，竖着排白占一屏（用户 2026-11-21：「语速跟提示音可以放成一行」） */}
-				<div className="voice-row-pair">
-					<div className="voice-row voice-row-stacked">
-						<span className="voice-row-label">{t("语速", "Rate")}</span>
-						<span className="voice-slider-line">
-							<input
-								type="range"
-								min={0.5}
-								max={2}
-								step={0.1}
-								value={tts.rate}
-								onChange={(event) => patchTts({ rate: Number(event.target.value) })}
-							/>
-							<span className="voice-value mono">{tts.rate.toFixed(1)}×</span>
-						</span>
-					</div>
-
-					{/* 音量跟着「语速」放：两块都是滑杆，挨在一起才好对比着调。
-				    它管的是**提示音**（提示音走 WebAudio，播报的是浏览器自己的响度），
-				    标签写成「提示音音量」，免得被当成语音播报的音量。 */}
-					<div className="voice-row voice-row-stacked">
-						<span className="voice-row-label">{t("提示音音量", "Cue volume")}</span>
-						<span className="voice-slider-line">
-							<input
-								type="range"
-								min={0}
-								max={100}
-								step={5}
-								value={sound.volume}
-								onChange={(event) => patchSound({ volume: Number(event.target.value) })}
-								onMouseUp={() => preview("done")}
-								title={t("调完松手会试听一声", "Plays a sample when you let go")}
-							/>
-							<span className="voice-value mono">{sound.volume}%</span>
-						</span>
-					</div>
-				</div>
-
+				{/* 「语音」（挑音色）紧跟在「语音引擎」下面（用户 2026-11-24：「这块放到语音引擎下面」）：
+				 * 顺序变成「选引擎 → 选音色 → 调语速/音量」，跟人实际的动作一致；
+				 * 以前它在语速下面，选完音色还要往上回去调语速。 */}
 				{isRemote ? (
 					<label className="voice-row voice-row-select voice-row-stacked">
 						<span className="voice-row-label">{t("语音", "Voice")}</span>
@@ -603,18 +563,76 @@ export function VoicePanel() {
 						 *  但能力不能被藏死：取消勾选还能看到全部，排查时用。 */}
 						<label className="voice-row voice-row-stacked">
 							<span className="voice-row-label">
-								{t("只列在线音色", "Online voices only")}
-								<span className="voice-row-hint">
-									{t(
-										"本机音色在这台机器上念不出来，所以默认只列在线的（如「Google 普通话」）；取消勾选可看全部",
-										"Local voices never start on this machine, so only online ones are listed; uncheck to see all",
-									)}
-								</span>
+								{t("只列在线音色（本机音色念不出来）", "Online voices only (local ones never start)")}
 							</span>
 							<input type="checkbox" checked={tts.allowOnline} onChange={() => patchAllowOnline(!tts.allowOnline)} />
 						</label>
 					</>
 				)}
+				{/* 朗读小宠物（用户 2026-11-24：「宠物可选，设置里给宠物加个开关和动物选择」）：
+				 * 它是右下角那只「在念的时候会说话」的小家伙，纯本机偏好、跟语音开关分开。 */}
+				<label className="voice-row">
+					<span className="voice-row-label">{t("朗读小宠物（一直待在右下角，可拖动）", "Reading pet (always in the bottom-right, draggable)")}</span>
+					<input type="checkbox" checked={petOn} onChange={(event) => setPetOn(event.target.checked)} />
+				</label>
+				{petOn ? (
+					<div className="voice-row">
+						<span className="voice-row-label">{t("宠物形象", "Pet")}</span>
+						<div className="speech-pet-picker">
+							{PET_ANIMALS.map((item) => (
+								<button
+									key={item.emoji}
+									type="button"
+									className={`speech-pet-pick${petAnimal === item.emoji ? " is-on" : ""}`}
+									onClick={() => setPetAnimal(item.emoji)}
+									aria-pressed={petAnimal === item.emoji}
+									title={t(item.zh, item.en)}
+								>
+									{item.emoji}
+								</button>
+							))}
+						</div>
+					</div>
+				) : null}
+
+				{/* 语速与提示音音量并排一行：两块都是滑杆，竖着排白占一屏（用户 2026-11-21：「语速跟提示音可以放成一行」） */}
+				<div className="voice-row-pair">
+					<div className="voice-row voice-row-stacked">
+						<span className="voice-row-label">{t("语速", "Rate")}</span>
+						<span className="voice-slider-line">
+							<input
+								type="range"
+								min={0.5}
+								max={2}
+								step={0.1}
+								value={tts.rate}
+								onChange={(event) => patchTts({ rate: Number(event.target.value) })}
+							/>
+							<span className="voice-value mono">{tts.rate.toFixed(1)}×</span>
+						</span>
+					</div>
+
+					{/* 音量跟着「语速」放：两块都是滑杆，挨在一起才好对比着调。
+				    它管的是**提示音**（提示音走 WebAudio，播报的是浏览器自己的响度），
+				    标签写成「提示音音量」，免得被当成语音播报的音量。 */}
+					<div className="voice-row voice-row-stacked">
+						<span className="voice-row-label">{t("提示音音量", "Cue volume")}</span>
+						<span className="voice-slider-line">
+							<input
+								type="range"
+								min={0}
+								max={100}
+								step={5}
+								value={sound.volume}
+								onChange={(event) => patchSound({ volume: Number(event.target.value) })}
+								onMouseUp={() => preview("done")}
+								title={t("调完松手会试听一声", "Plays a sample when you let go")}
+							/>
+							<span className="voice-value mono">{sound.volume}%</span>
+						</span>
+					</div>
+				</div>
+
 				{isRemote && voicesIssue ? (
 					<div className="voice-issue" role="status">
 						{voicesIssue}
@@ -722,24 +740,15 @@ export function VoicePanel() {
 			<section className="voice-section">
 				<div className="voice-row">
 					<span className="voice-row-label">
-						<span aria-hidden="true">🎤</span> {t("语音输入", "Voice input")}
-						<span className="voice-row-hint">
-							{t(
-								"点页面上的麦克风浮条说话，文字实时进输入框（浮条可以拖到任意位置）",
-								"Tap the microphone bubble to dictate; text lands in the composer as you speak (drag the bubble anywhere)",
-							)}
-						</span>
+						<span aria-hidden="true">🎤</span> {t("语音输入（点麦克风浮条说话）", "Voice input (tap the mic bubble)")}
 					</span>
 				</div>
 				<label className="voice-row">
 					<span className="voice-row-label">
-						{t("说完自动发送", "Send when I stop talking")}
-						<span className="voice-row-hint">
-							{t(
-								`停 ${(voiceInput.silenceMs / 1000).toFixed(1)} 秒没说话就发（句中停顿不会被打断）。关掉后只写进输入框，按回车才发`,
-								`Sends after ${(voiceInput.silenceMs / 1000).toFixed(1)}s of silence (mid-sentence pauses won't cut you off). Off = dictation only fills the composer`,
-							)}
-						</span>
+						{t(
+							`说完自动发送（停 ${(voiceInput.silenceMs / 1000).toFixed(1)} 秒就发）`,
+							`Send when I stop talking (after ${(voiceInput.silenceMs / 1000).toFixed(1)}s)`,
+						)}
 					</span>
 					<input
 						type="checkbox"
@@ -750,13 +759,7 @@ export function VoicePanel() {
 				{/* 静音时长：用户 2026-11-21「设成几秒你就几秒再发送」—— 按秒调，0.2 秒一档 */}
 				<label className="voice-row">
 					<span className="voice-row-label">
-						{t("等多久发送", "Silence before sending")}
-						<span className="voice-row-hint">
-							{t(
-								"停顿超过这个时长才算说完。说话慢、爱停顿就调大一点；越大越不容易被切断",
-								"Longer means a pause must last longer to count as done — safer if you speak slowly or pause often",
-							)}
-						</span>
+						{t("等多久发送（停顿多长算说完）", "Silence before sending (how long counts)")}
 					</span>
 					<span className="voice-slider-line voice-slider-compact">
 						<input
@@ -773,33 +776,10 @@ export function VoicePanel() {
 					</span>
 				</label>
 
-				<label className="voice-row">
-					<span className="voice-row-label">
-						{t("显示朗读控制条", "Show reading controls")}
-						<span className="voice-row-hint">
-							{t(
-								"关掉后消息下面那条「暂停 / 停止」就不显示（快捷键仍然可用）",
-								"Hides the pause/stop bar under messages (keyboard shortcuts still work)",
-							)}
-						</span>
-					</span>
-					<input
-						type="checkbox"
-						checked={voiceInput.showReadingDock}
-						onChange={() => saveVoiceInputSettings({ ...voiceInput, showReadingDock: !voiceInput.showReadingDock })}
-					/>
-				</label>
-
 				{/* 朗读恢复延迟：和上面那个发送阈值拆开（发送要快、朗读恢复要慢） */}
 				<label className="voice-row">
 					<span className="voice-row-label">
-						{t("朗读恢复延迟", "Resume reading after")}
-						<span className="voice-row-hint">
-							{t(
-								"你说话时朗读会暂停；安静满这个时长它才继续念（和上面的发送阈值互不影响）",
-								"Reading pauses while you speak and resumes after this much silence (independent from the send threshold above)",
-							)}
-						</span>
+						{t("朗读恢复延迟（安静多久后接着念）", "Resume reading after (silence needed)")}
 					</span>
 					<span className="voice-slider-line voice-slider-compact">
 						<input
@@ -818,13 +798,7 @@ export function VoicePanel() {
 
 				<label className="voice-row">
 					<span className="voice-row-label">
-						{t("连续听写", "Keep listening")}
-						<span className="voice-row-hint">
-							{t(
-								"发完一句自动继续听，不用每次点麦克风。麦克风会一直占用（系统灯常亮），手动点停后不再自动恢复",
-								"Keeps the mic open after each send so you never tap again. The mic stays busy (system light on) and a manual stop is respected",
-							)}
-						</span>
+						{t("连续听写（发完继续听，麦克风常亮）", "Keep listening (mic stays open)")}
 					</span>
 					<input
 						type="checkbox"
@@ -834,13 +808,7 @@ export function VoicePanel() {
 				</label>
 				<label className="voice-row voice-row-select">
 					<span className="voice-row-label">
-						{t("近讲灵敏度", "Near-field only")}
-						<span className="voice-row-hint">
-							{t(
-								"数字越大，越只认离麦克风近的声音（旁边同事说话会被挡掉）。离得远 / 说话轻就选小一档：0 = 关闭门限并打开自动增益",
-								"Higher = only near-field voice gets through (blocks colleagues next to you). Sitting farther away or speaking softly: pick a lower step — 0 = gate off and auto gain on",
-							)}
-						</span>
+						{t("近讲灵敏度（越大越只认近处；0 = 关闭）", "Near-field only (higher = nearer only; 0 = off)")}
 					</span>
 					{/*
 					 * 滑杆换成下拉（用户 2026-11-21：「感觉现在这个不太好，要不你有那种下拉框的形式，让我选数字也行」）：
@@ -868,13 +836,7 @@ export function VoicePanel() {
 
 				<label className="voice-row voice-row-select">
 					<span className="voice-row-label">
-						{t("识别引擎", "Recognition engine")}
-						<span className="voice-row-hint">
-							{t(
-								"自动 = 优先本地离线识别（不依赖 Google，带标点）；本地不可用时退回 Chrome",
-								"Auto prefers the local offline engine (no Google, keeps punctuation) and falls back to Chrome",
-							)}
-						</span>
+						{t("识别引擎（自动 = 先本地，带标点）", "Recognition engine (auto = local first)")}
 					</span>
 					<select
 						className="voice-select"

@@ -296,7 +296,7 @@ export function authMiddleware(options: {
 		 *
 		 * WS 握手一直有这道门，**HTTP 面以前一条都没有** —— 回环地址在 `decide()` 里是无条件放行的，
 		 * 于是浏览器里任何一个网页都能对 `http://127.0.0.1:<port>` 发 no-cors POST：
-		 *   `<script>fetch('http://127.0.0.1:25257/api/terminal/start',{method:'POST',mode:'no-cors'})</script>`
+		 *   `<script>fetch('http://127.0.0.1:9090/api/terminal/start',{method:'POST',mode:'no-cors'})</script>`
 		 * no-cors 的请求**不带 cookie 也能到达服务端**，所以 `SameSite=Lax` 挡不住它；
 		 * 不带 body 的端点（起终端、停终端、启动订阅登录…）照样会被执行。
 		 *

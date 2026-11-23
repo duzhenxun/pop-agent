@@ -51,9 +51,10 @@
 		"build:server": "tsc -p tsconfig.server.json",
 		"build:web": "vite build --config web/vite.config.ts",
 		"build:electron": "tsc -p electron/tsconfig.json",
-		"app": "npm run build && npm run build:electron && electron .",
-		"app:dev": "npm run build:server && npm run build:electron && electron .",
-		"app:dist": "npm run build && npm run build:electron && npm run runtime:fetch && npm run package:prepare && electron-builder",
+		"app": "npm run build && npm run build:electron && npm run app:name && electron .",
+		"app:dev": "npm run build:server && npm run build:electron && npm run app:name && electron .",
+		"app:name": "node scripts/app-name.mjs",
+		"app:dist": "npm run build && npm run build:electron && npm run build:helper && npm run runtime:fetch && npm run package:prepare && electron-builder",
 		"start": "node dist/server/cli.js",
 		"stop": "node dist/server/cli.js stop",
 		"restart": "node dist/server/cli.js restart",
@@ -65,10 +66,11 @@
 		"icons": "node scripts/make-icons.mjs",
 		"cues": "node scripts/make-voice-cues.mjs",
 		"build:asr": "sh helper/asr/build.sh",
+		"build:helper": "node scripts/build-helper.mjs",
 		"asr:release": "sh helper/asr/build.sh --release",
 		"runtime:fetch": "node scripts/fetch-node-runtime.mjs",
 		"package:prepare": "node scripts/prepare-package.mjs",
-		"app:dist:thin": "npm run build && npm run build:electron && npm run package:prepare && electron-builder --config electron-builder.thin.yml"
+		"app:dist:thin": "npm run build && npm run build:electron && npm run build:helper && npm run package:prepare && electron-builder --config electron-builder.thin.yml"
 	},
 	"devDependencies": {
 		"@types/express": "^5.0.0",

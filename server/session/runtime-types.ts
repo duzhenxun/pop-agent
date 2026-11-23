@@ -71,8 +71,15 @@ export type Runtime = {
 	persistConversation(conversationId: string): Promise<Result>;
 	/** 关闭临时会话：内存里的内容直接丢弃（没有磁盘文件，关掉就真没了） */
 	closeEphemeral(conversationId: string): Result;
-	/** 从某条消息派生新会话（分支）；原会话不动，自动切到新的那条 */
-	forkSession(conversationId: string, messageId?: string, clientId?: string): Promise<Result>;
+	/**
+	 * 从某条消息派生新会话（分支）；原会话不动，自动切到新的那条。
+	 * 成功时带回新会话 id 与工作区（界面要拿它把这条分支顶到侧栏第一位）。
+	 */
+	forkSession(
+		conversationId: string,
+		messageId?: string,
+		clientId?: string,
+	): Promise<{ ok: true; conversationId: string; workspace: string } | { ok: false; error: ProtocolError }>;
 	/** 改会话显示名（写进 pi 的会话文件；成功后重扫列表把新名字带回来） */
 	renameSession(conversationId: string, title: string): Promise<Result>;
 	/**

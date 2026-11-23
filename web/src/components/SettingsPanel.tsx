@@ -34,10 +34,12 @@ import {
 	COMPOSER_ITEM_LABEL,
 	COMPOSER_ITEM_LABEL_EN,
 	COMPOSER_TOGGLES,
+	composerItemDefault,
 	STATUSBAR_ITEM_KEY,
 	STATUSBAR_ITEM_LABEL,
 	STATUSBAR_ITEM_LABEL_EN,
 	STATUSBAR_TOGGLES,
+	statusbarItemDefault,
 	SESSIONS_PER_PROJECT_DEFAULT,
 	SESSIONS_PER_PROJECT_KEY,
 	SESSIONS_PER_PROJECT_MAX,
@@ -57,14 +59,12 @@ import { useStoredBool } from "../use-stored-bool.ts";
 import { useStoredNumber } from "../use-stored-number.ts";
 import { useAppbarItems } from "../use-appbar-items.ts";
 import { useBrandName } from "../use-brand-name.ts";
-import { BRAND_NAME_MAX } from "../brand-name.ts";
-import { BRAND_NAME } from "../brand.ts";
 import { readLogoFile } from "../brand-logo.ts";
 import { showToast } from "../toast.ts";
 import { moveStatusbarItem, useStatusbarOrder } from "../statusbar-order.ts";
 
 /** 产品自带那张图标（public/favicon.svg）：没换过 logo 时预览里显示它 */
-const DEFAULT_LOGO = "/favicon.svg?v=4";
+const DEFAULT_LOGO = "/favicon.svg?v=9";
 import { useLanguage, useT } from "../use-language.ts";
 import { LANGUAGES, type Language } from "../language.ts";
 import { PanelIcon } from "./PanelIcon.tsx";
@@ -81,9 +81,7 @@ import {
 } from "../access-password.ts";
 import { ShortcutsPane } from "./ShortcutsPane.tsx";
 
-const DEFAULT_PLACEHOLDER = "继续\n总结一下\n详细解释一下";
 /** 上面那串占位示例的英文（三行示例，分行和中文那串一一对应） */
-const DEFAULT_PLACEHOLDER_EN = "Continue\nSummarize\nExplain in detail";
 
 type SettingsTab = "general" | "appearance" | "theme" | "language" | "ui" | "shortcuts" | "remote";
 
@@ -545,21 +543,6 @@ function LanguageSettings() {
 function GeneralSettings() {
 	const t = useT();
 	const snapshot = useAppSelector((state) => state.snapshot);
-	const [text, setText] = useState("");
-	const [dirty, setDirty] = useState(false);
-
-	const phrases = snapshot?.settings.quickPhrases ?? [];
-
-	// 打开面板时用当前设置初始化；服务端推回新设置时若用户没在编辑，就跟着更新
-	useEffect(() => {
-		if (dirty) return;
-		setText(phrases.join("\n"));
-	}, [phrases, dirty]);
-
-	const save = () => {
-		setSettings({ quickPhrases: text.split(/\r?\n/) });
-		setDirty(false);
-	};
 
 	// ---- 想想 ----
 	const thinkCount = snapshot?.settings.thinkCount ?? 5;
@@ -581,33 +564,11 @@ function GeneralSettings() {
 		<>
 			{/* 勾选控件放最前：它是下面两块的“总开关”（不显示那排，下面的内容也就无所谓了） */}
 			<ComposerSettings />
-			<div className="settings-panel">
-				<div className="settings-head">
-					<span>{t("快捷短语", "Quick phrases")}</span>
-					<span className="settings-sub">{t("输入框上方那一排按钮", "The row of buttons above the input")}</span>
-					{/* 保存放在标题行：它只管这一块，且改完多数字段一眼就想点 —— 压在说明下面还得先找到底 */}
-					<button type="button" className="btn btn-tiny settings-head-action" onClick={save} disabled={!dirty}>
-						{t("保存", "Save")}
-					</button>
-				</div>
-				<textarea
-					className="settings-textarea"
-					value={text}
-					placeholder={t(DEFAULT_PLACEHOLDER, DEFAULT_PLACEHOLDER_EN)}
-					onChange={(event) => {
-						setText(event.target.value);
-						setDirty(true);
-					}}
-					rows={5}
-				/>
-				<div className="settings-hint">
-					{t(
-						"一行一条（最多 30 条，每条 200 字）。保存后立即生效。",
-						"One per line (up to 30, 200 characters each). Saved changes apply immediately.",
-					)}
-				</div>
-			</div>
-
+			{/*
+			 * 「快捷短语」这一块 **2026-11-23 撤掉**（用户：「设置对话里的就不需要了」）：
+			 * 短语的编辑已经并进「提示词」那个模板库里（模板下面就是快捷指令，带输入框），
+			 * 少一个入口就不用两处维护同一份数据。
+			 */}
 			<div className="settings-panel">
 				<div className="settings-head">
 					<span>{t("想想", "Think")}</span>
@@ -981,7 +942,7 @@ function AppbarPartsSettings() {
 /** 底部：所有状态栏项目的显隐与顺序（纯本机偏好）。设置入口始终保留。 */
 function StatusbarSettings() {
 	const t = useT();
-	const [visible, setVisible] = usePrefFlags(STATUSBAR_TOGGLES, STATUSBAR_ITEM_KEY);
+	const [visible, setVisible] = usePrefFlags(STATUSBAR_TOGGLES, STATUSBAR_ITEM_KEY, statusbarItemDefault);
 	const [order, setOrder] = useStatusbarOrder();
 	const [dragging, setDragging] = useState<StatusbarToggle | null>(null);
 	const [dragOver, setDragOver] = useState<StatusbarToggle | null>(null);
@@ -989,8 +950,6 @@ function StatusbarSettings() {
 		settings: "⚙️",
 		approval: "🔓",
 		engine: "◉",
-		model: "▣",
-		thinking: "⚡",
 		queued: "⏳",
 		running: "◌",
 		context: "◔",
@@ -1068,8 +1027,15 @@ function StatusbarSettings() {
 /** 对话窗口：输入框上方那三块（提示词 / 想想 / 快捷指令）的显隐 —— 都是本机偏好 */
 function ComposerSettings() {
 	const t = useT();
-	const [visible, setVisible] = usePrefFlags(COMPOSER_TOGGLES, COMPOSER_ITEM_KEY);
-	const icons: Record<ComposerToggle, string> = { templates: "🧩", think: "💡", quick: "⚡" };
+	const [visible, setVisible] = usePrefFlags(COMPOSER_TOGGLES, COMPOSER_ITEM_KEY, composerItemDefault);
+	// 2026-11-23：「模型 / 思考强度」从状态栏并进这一组（它们已经挪到输入框上方了）
+	const icons: Record<ComposerToggle, string> = {
+		model: "▣",
+		thinking: "⚡",
+		templates: "✏️",
+		think: "💡",
+		quick: "💬",  // 跟「思考强度」的 ⚡ 区分开（那个表示档位，这个表示一句快捷话）
+	};
 	return (
 		<div className="settings-panel">
 			<div className="settings-head">
@@ -1102,27 +1068,18 @@ function ComposerSettings() {
 }
 
 /**
- * 顶栏自称：logo 后面那串名字的**显示 / 隐藏**与**改名**（纯本机偏好，跟主题同一类）。
+ * 顶栏自称：logo 与名字的**显示 / 隐藏**，以及换 logo（纯本机偏好，跟主题同一类）。
  *
- * 不用保存按钮：输入框每敲一个字就写本机、顶栏立刻跟着变 —— 想看到效果不用先按保存。
- * 隐藏只管顶栏那一处（省宽度）；名字本身还会出现在浏览器标签页和新会话抬头，
- * 那里换的是"叫什么"，不是"露不露脸"。
- *
- * 留空 = 恢复默认名（而不是显示一片空白）：placeholder 里就是那个默认名字，
- * 所以"清空输入框"这个动作的含义一眼看得出来。
+ * **自定义改名已经去掉**（用户 2026-11-24：「重命名可以不要了」）：顶栏就叫产品名
+ * `BRAND_NAME`，不再提供输入框和「恢复默认」——那一格常年空着、还要解释"留空会怎样"，
+ * 而真正会改名字的人（换品牌 / 白标）本来也得改代码里的 `brand.ts`。
+ * 以前存过的自定义名字**仍按原样显示**（不在这次里清数据）：想连它一起作废就说一声。
  */
 function BrandSettings() {
 	const t = useT();
-	const { custom, shown, logo, logoShown, setName, setShown, setLogo, setLogoShown, reset } = useBrandName();
-	// 输入框自己拿着一份草稿：用户正在敲的时候不被自己的 round-trip 覆盖（尾部空格会被清洗掉）
-	const [draft, setDraft] = useState(custom);
+	const { shown, logo, logoShown, setShown, setLogo, setLogoShown } = useBrandName();
 	/** 「更换 logo」那个隐藏的文件选择框 */
 	const fileRef = useRef<HTMLInputElement | null>(null);
-	const [editing, setEditing] = useState(false);
-	useEffect(() => {
-		if (editing) return;
-		setDraft(custom);
-	}, [custom, editing]);
 	return (
 		<div className="settings-panel">
 			<div className="settings-head">
@@ -1176,40 +1133,16 @@ function BrandSettings() {
 					}}
 				/>
 			</div>
-			<div className="brand-name-row">
 			<label className="settings-toggle">
 				<input type="checkbox" checked={shown} onChange={(event) => setShown(event.target.checked)} />
 				{t("在顶栏显示名称", "Show the name in the top bar")}
 			</label>
-			<input
-				className="settings-input"
-				type="text"
-				value={draft}
-				maxLength={BRAND_NAME_MAX}
-				placeholder={BRAND_NAME}
-				aria-label={t("顶栏名称", "Top-bar name")}
-				onFocus={() => setEditing(true)}
-				onBlur={() => setEditing(false)}
-				onChange={(event) => {
-					setDraft(event.target.value);
-					setName(event.target.value);
-				}}
-			/>
-			{/* 没改过名就不占位：常驻一个永远灰着的按钮，只会让人以为「还能恢复到别的什么」 */}
-			{custom === "" ? null : (
-				<div className="settings-actions">
-					<button
-						type="button"
-						className="btn btn-tiny"
-						onClick={() => {
-							setDraft("");
-							reset();
-						}}
-					>
-						{t("恢复默认", "Restore default")}
-					</button>
-				</div>
-			)}
+			{/* 名字不再可改（见上面的注释）：这一格只留显示 / 隐藏 */}
+			<div className="settings-hint">
+				{t(
+					"顶栏显示的就是产品名，不再支持自定义改名。",
+					"The top bar shows the product name; custom renaming is no longer available.",
+				)}
 			</div>
 		</div>
 	);
@@ -1573,8 +1506,8 @@ function AppearanceSettings() {
 			 * 这一页只管“字多大 / 多宽 / 顶栏多高”这类尺寸。 */}
 			<div className="settings-hint">
 				{t(
-					"点一下立即生效，不用保存。选择存在本机（localStorage），刷新后保持，不影响服务端和其它设备；首次是标准字号 + 满宽。",
-					"Takes effect immediately, nothing to save. Stored on this machine (localStorage); it survives reloads and does not touch the server or other devices. The first run uses the standard size and full width.",
+					"点一下立即生效，不用保存。选择存在本机（localStorage），刷新后保持，不影响服务端和其它设备；首次是标准字号 + 标准宽度。",
+					"Takes effect immediately, nothing to save. Stored on this machine (localStorage); it survives reloads and does not touch the server or other devices. The first run uses the standard size and standard width.",
 				)}
 			</div>
 		</>

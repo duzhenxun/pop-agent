@@ -104,8 +104,25 @@ function pruneModuleTree(dir, removed) {
  * 其余三个纯属白送 —— 只留当前平台这一份（同一份在 mac arm64/x64 之间也不通用）。
  */
 const prebuilds = join(STAGE, "node_modules", "node-pty", "prebuilds");
+/**
+ * 保留哪一份预编译：默认宿主，可用参数覆盖（2026-11-24 加）。
+ * 交叉出包时（mac 上打 Windows 包）必须传 `--platform win32 --arch x64`，
+ * 否则留下的是 darwin 那份 —— 打进 Windows 包后终端一开就崩。
+ *   node scripts/prepare-package.mjs --platform win32 --arch x64
+ */
+function targetTriple(argv = process.argv.slice(2), env = process.env) {
+	const flag = (name) => {
+		const i = argv.indexOf(name);
+		return i >= 0 ? argv[i + 1] : undefined;
+	};
+	const platform = flag("--platform") ?? env.POP_AGENT_TARGET_PLATFORM ?? process.platform;
+	const arch = flag("--arch") ?? env.POP_AGENT_TARGET_ARCH ?? process.arch;
+	return { platform, arch };
+}
+
 if (existsSync(prebuilds)) {
-	const keep = `${process.platform}-${process.arch}`;
+	const target = targetTriple();
+	const keep = `${target.platform}-${target.arch}`;
 	for (const entry of readdirSync(prebuilds)) {
 		if (entry !== keep) rmSync(join(prebuilds, entry), { recursive: true, force: true });
 	}
@@ -146,7 +163,15 @@ const smoke = spawnSync(process.execPath, [join(STAGE, "dist", "server", "cli.js
 		POP_AGENT_CWD: join(STAGE, ".smoke-data"),
 		POP_AGENT_UPDATE_CHECK: "off",
 	},
-	timeout: 60_000,
+	/**
+	 * `killSignal: "SIGKILL"` 是必须的（2026-11-24 修）：
+	 * 这个自检进程**起来之后不会自己退**（服务在跑），只能由超时兜底。
+	 * 而默认的 `SIGTERM` 会走 `cli.ts` 的优雅退出，那条路在打包后的布局里会卡住 ——
+	 * `spawnSync` 等不到子进程退出，整个打包就永久挂在这一步（实测挂了 6 分钟）。
+	 * 超时缩到 30s：READY 行通常 3~5 秒就出来了，30 秒足够。
+	 */
+	timeout: 30_000,
+	killSignal: "SIGKILL",
 	encoding: "utf8",
 });
 const smokeOutput = `${smoke.stdout ?? ""}${smoke.stderr ?? ""}`;

@@ -2,7 +2,7 @@
  * 配置与环境变量（ADR-0007 §环境变量、ADR-0011 命名）。
  *
  * 核心几个（默认值都在这份文件里）：
- *   POP_AGENT_PORT             默认 25257
+ *   POP_AGENT_PORT             默认 9090
  *   POP_AGENT_CWD              默认 process.cwd()
  *   POP_AGENT_DATA_DIR         默认 ~/.pop-agent
  *   POP_AGENT_HOST             默认 127.0.0.1（对外监听需要它）
@@ -86,7 +86,7 @@ export type Config = {
 	allowedHosts: string[];
 };
 
-const DEFAULT_PORT = 25257;
+const DEFAULT_PORT = 9090;
 /**
  * 默认审批模式（ADR-0034：单机单用户 → 默认全部放行，提示仍然可见）。
  * 在意「危险命令要不要先问一句」的人可以用 `POP_AGENT_APPROVAL_MODE=ask` 改默认值。
