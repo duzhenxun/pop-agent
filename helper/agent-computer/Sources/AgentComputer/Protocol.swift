@@ -146,6 +146,48 @@ enum Protocol {
 			AgentHUD.finish()
 			return ["ok": true]
 
+		// ---- 本地语音识别（原 ASRBridge.app，已合并进来）----
+		// 结果不推送：partial 由 asr.feed 的返回值带走，final 由 asr.end 的返回值带走。
+		// 协议保持一问一答 —— 加事件推送要改 Framing 与客户端两侧，不值得。
+		case "asr.status": do {
+			let status = AsrSession.shared.status()
+			return [
+				"authorized": status.authorized,
+				"locale": status.locale,
+				"onDevice": status.onDevice,
+				"message": status.message ?? "",
+			]
+		}
+
+		case "asr.start": do {
+			if let locale = payload["locale"] as? String { AsrSession.shared.setLocale(locale) }
+			let status = try AsrSession.shared.prepare()
+			try AsrSession.shared.begin()
+			return [
+				"authorized": status.authorized,
+				"locale": status.locale,
+				"onDevice": status.onDevice,
+			]
+		}
+
+		case "asr.feed": do {
+			guard let base64 = payload["audio"] as? String,
+				let data = Data(base64Encoded: base64)
+			else {
+				throw HelperError("badArguments", "asr.feed 需要 audio（base64 的 PCM16 小端）", retryable: false)
+			}
+			return ["text": AsrSession.shared.feed(data)]
+		}
+
+		case "asr.end": do {
+			let timeout = (payload["timeoutSeconds"] as? Double) ?? 8
+			return ["text": AsrSession.shared.end(timeout: timeout)]
+		}
+
+		case "asr.cancel":
+			AsrSession.shared.cancel()
+			return ["ok": true]
+
 		default:
 			throw HelperError("noSuchMethod", "不支持的 requestType：\(type)", retryable: false)
 		}

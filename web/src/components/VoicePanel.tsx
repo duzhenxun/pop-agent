@@ -91,8 +91,7 @@ export function VoicePanel() {
 	 */
 	const [asr, setAsr] = useState<AsrStatus | null>(null);
 	/** 正在下载/安装本地识别程序（这期间按钮置灰，避免连点） */
-	const [installingAsr, setInstallingAsr] = useState(false);
-	const [asrInstallError, setAsrInstallError] = useState<string | null>(null);
+	const [asrInstallError] = useState<string | null>(null);
 	const refreshAsr = useCallback((start = false) => {
 		void fetch(`/api/asr/status${start ? "?start=1" : ""}`)
 			.then(async (response) => {
@@ -131,24 +130,9 @@ export function VoicePanel() {
 	 * 装完直接拉起：用户点了这个按钮，意思就是「我要用本地识别」，不用再点一次「启动」。
 	 */
 	const installAsr = () => {
-		if (installingAsr) return;
-		setInstallingAsr(true);
-		setAsrInstallError(null);
-		void fetch("/api/asr/install", { method: "POST", credentials: "same-origin" })
-			.then(async (response) => {
-				const body = (await response.json().catch(() => ({}))) as { ok?: boolean; message?: string };
-				if (!response.ok || body.ok !== true) {
-					setAsrInstallError(body.message ?? t("安装失败", "Install failed"));
-					return;
-				}
-				// 之前探到过 missing（auto 就一直在走 Chrome）：装好了要把这条记忆清掉
-				forgetLocalUnavailable();
-				refreshAsr(true);
-			})
-			.catch((error: unknown) =>
-				setAsrInstallError(error instanceof Error ? error.message : t("安装请求失败了", "The install request failed")),
-			)
-			.finally(() => setInstallingAsr(false));
+		const url = asr?.install?.downloadUrl;
+		if (!url) return;
+		window.open(url, "_blank", "noopener,noreferrer");
 	};
 	useEffect(() => refreshAsr(), []);
 	const [voices, setVoices] = useState<VoiceOption[]>(() => listVoices());
@@ -875,8 +859,8 @@ export function VoicePanel() {
 													? t("正在启动…", "Starting…")
 													: asr.state === "missing"
 														? t(
-																"还没装：一个后台小工具，点一下就能装好",
-																"Not installed yet — a small background helper, one click installs it",
+																"还没装：本地识别在 Agent Computer 里（和电脑控制同一个程序）",
+																"Not installed — local recognition lives in Agent Computer (same helper as computer control)",
 															)
 														: (asr.message ?? asr.state)}
 								</span>
@@ -885,11 +869,11 @@ export function VoicePanel() {
 								<button
 									type="button"
 									className="btn btn-tiny"
-									disabled={installingAsr || asr.install?.canAutoInstall === false}
+									disabled={asr.install?.canAutoInstall === false}
 									onClick={installAsr}
 									title={t("下载并装好本地识别（不用装 Xcode）", "Download and install it — no Xcode needed")}
 								>
-									{installingAsr ? t("正在安装…", "Installing…") : t("安装本地识别", "Install it")}
+									{t("下载 Agent Computer.app", "Download Agent Computer.app")}
 								</button>
 							) : asr?.state === "ready" ? null : (
 								/* 已就绪就不需要这颗按钮了（用户 2026-11-22：「已启动的话都不需要有这个」） */
@@ -917,14 +901,14 @@ export function VoicePanel() {
 								<ol className="voice-install-steps">
 									<li>
 										{t(
-											"点「安装本地识别」：服务端会下载并解压到 Application Support（可离线、不联网识别）",
-											"Click “Install it” — the server downloads and unpacks it into Application Support (recognition itself stays offline)",
+											"点「下载 Agent Computer.app」，解压后右键打开（首次打开若被系统拦，右键 →「打开」）",
+											"Click “Download Agent Computer.app”, unzip, then right-click → Open (macOS blocks the first launch otherwise)",
 										)}
 									</li>
 									<li>
 										{t(
-											"装好后这里会变成「就绪」；第一次说话会弹一次系统授权，点「允许」即可",
-											"This row turns into “Ready”. The first time you speak, macOS asks once for permission — click Allow",
+											"打开后会要麦克风与语音识别授权，允许之后这里变成「就绪」",
+											"It asks for microphone and speech recognition permission — after Allow, this row turns into “Ready”",
 										)}
 									</li>
 								</ol>

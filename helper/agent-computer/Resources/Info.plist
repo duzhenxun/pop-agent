@@ -29,5 +29,11 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<!-- 语音输入（听写）：2026-11 从 ASRBridge.app 合并进来。
+	     这两项缺任何一个，SFSpeechRecognizer 都会直接 SIGABRT（TCC 拒绝无说明的调用）。 -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>用麦克风采集你说的话，离线转成 pop-agent 输入框里的文字。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>用系统自带的离线语音识别，把你说的话转成文字（不联网，音频不外传）。</string>
 </dict>
 </plist>

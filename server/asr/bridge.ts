@@ -1,24 +1,24 @@
 /**
- * 本地语音识别桥（macOS 原生 SFSpeechRecognizer，离线）的服务端这一半。
+ * 本地语音识别（macOS 原生 SFSpeechRecognizer，离线）的服务端这一半。
  *
- * 为什么这么绕：Apple 的离线识别只在原生侧可用，而 TCC（隐私授权）认的"主体"是
- * **被 LaunchServices 启动的那个 app**，不是终端拉起的子进程。所以流程是：
+ * 2026-11 合并：原先这里会自己 bind 一个 unix socket、再用
+ * `open -n -a ASRBridge.app` 拉起一支独立的桥进程。识别能力现在搬进了
+ * Agent Computer helper（`helper/agent-computer`），走它已有的 JSON-RPC：
  *
- *   1. 服务端先 bind 一个 unix socket；
- *   2. 用 `open -n -a ASRBridge.app --args --socket <path>` 让系统启动那个 app
- *      （它有自己的 Info.plist + NSSpeechRecognitionUsageDescription，首次会弹一次授权）；
- *   3. app 连回来，双方用「4 字节大端长度 + 操作码 + 载荷」分帧：`'A'` 音频、`'E'` 说完；
- *   4. app 用 JSON 行吐 `partial` / `final`。
+ *   asr.status → { authorized, locale, onDevice, message }
+ *   asr.start  → 触发系统授权 + 建识别器 + 开一句
+ *   asr.feed   → 送一块 base64 的 PCM16，返回当前 partial
+ *   asr.end    → 结束这句，等 final 落地（超时就用已有结果）
+ *   asr.cancel → 丢弃当前这句
  *
- * 一个进程一句一句地用：同一时间只有一段话。浏览器侧的点按 → 一句话 → 发送，
- * 所以不需要多路复用；真要并行再加 session id 也不难。
+ * 对外的 7 个方法（current / latestText / ensureStarted / startUtterance /
+ * pushAudio / endUtterance / dispose）和状态机都保持原样 —— 路由层和前端
+ * 不需要跟着改语义，只是 `missing` 的含义从「ASRBridge.app 没装」变成
+ * 「Agent Computer 没装/没在跑」。
  */
-import { spawn } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
-import { createServer, type Server, type Socket } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { resolveAsrAppPath } from "./paths.js";
+import { existsSync } from "node:fs";
+import { HelperClient } from "../computer/helper-client.js";
+import { helperBinaryPath, helperTransport, socketPath } from "../computer/paths.js";
 
 export type AsrBridgeState = "missing" | "idle" | "starting" | "authorizing" | "ready" | "error";
 
@@ -32,46 +32,48 @@ export type AsrBridgeStatus = {
 
 type Logger = { warn: (message: string, ctx?: Record<string, unknown>) => void };
 
-/** 与 Swift 那边的操作码对应 */
-const OP_AUDIO = 0x41;
-const OP_END = 0x45;
-const OP_QUIT = 0x58;
-
 /** 一次听写最多攒多久的音频（兜底，正常一句话远小于这个数） */
 const MAX_UTTERANCE_BYTES = 16 * 1024 * 1024;
 
+const CONNECT_TIMEOUT_MS = 3000;
+/** `asr.start` 可能弹系统授权框，用户不点就一直等（helper 侧 60s 兜底） */
+const START_TIMEOUT_MS = 90_000;
+const FEED_TIMEOUT_MS = 15_000;
+const CONTROL_TIMEOUT_MS = 5000;
+const CLIENT_NAME = "pop-agent-asr";
+
 export class AsrBridge {
-	/** 显式指定 .app（测试 / `OH_MY_AGENT_ASR_APP` 走的是 resolveAsrAppPath）；不给就每次启动时现找 */
-	private readonly appPathOverride?: string;
-	private readonly socketPath: string;
 	private readonly log: Logger;
-	private server: Server | null = null;
-	private socket: Socket | null = null;
+	private client: HelperClient | null = null;
 	private status: AsrBridgeStatus = { state: "idle" };
 	private text = "";
 	private audioBytes = 0;
-	private tail = "";
-	private launching = false;
-	private finalWaiter: { resolve: (text: string) => void; timer: NodeJS.Timeout } | null = null;
+	private connecting = false;
+	/**
+	 * feed 串行：浏览器每 ~300ms 发一块、不等响应，乱序会让 partial 倒退。
+	 * cancel / end 也排在这条链上，保证「上一句收尾」一定发生在「下一句喂音频」之前。
+	 */
+	private chain: Promise<unknown> = Promise.resolve();
 
-	constructor(options: { appPath?: string; path?: string; log: Logger }) {
-		this.appPathOverride = options.appPath;
+	constructor(options: { log: Logger }) {
 		this.log = options.log;
-		// 放在临时目录：unix socket 路径有 104 字节上限，数据目录可能很深
-		this.socketPath = options.path ?? join(tmpdir(), "pop-agent-asr.sock");
+	}
+
+	/** helper 在不在（内嵌二进制，或用户自己装的那份 app 的 socket） */
+	private helperAvailable(): boolean {
+		const binary = helperBinaryPath();
+		if (binary && existsSync(binary)) return true;
+		return existsSync(socketPath());
 	}
 
 	current(): AsrBridgeStatus {
-		if (this.status.state !== "idle" || this.socket !== null || this.launching) return this.status;
-		const appPath = this.appPathOverride ?? resolveAsrAppPath();
-		// 一次都没启动过、程序也不在：如实说「没装」，别让它显示「正在启动…」
-		// （面板据此立刻给出安装按钮；语音输入的 auto 探测也因此直接走 Chrome，不白试一轮）
-		return existsSync(appPath) ? this.status : this.missingStatus(appPath);
-	}
-
-	/** 没装时的那句话：说清楚点哪儿，以及装好之后会在哪 */
-	private missingStatus(appPath: string): AsrBridgeStatus {
-		return { state: "missing", message: `本地识别程序还没装：点「安装本地识别」下载（装好后在 ${appPath}）` };
+		if (this.status.state !== "idle") return this.status;
+		// 一次都没启动过、helper 也不在：如实说「没装」，别让面板显示「就绪」
+		if (this.helperAvailable()) return this.status;
+		return {
+			state: "missing",
+			message: "本地识别已经并进 Agent Computer：先在「电脑控制」里安装并打开它，再回来试",
+		};
 	}
 
 	/** 当前这句到目前为止的文字（partial 也在内） */
@@ -80,184 +82,130 @@ export class AsrBridge {
 	}
 
 	/**
-	 * 确保桥在跑：没连上就（异步）启动，然后立刻返回当前状态。
+	 * 确保 helper 连上并准备好识别器：没连就（异步）启动，然后立刻返回当前状态。
 	 * **不要 await 到 ready**：首次授权要等用户在系统弹框里点一下，可能几十秒，
 	 * HTTP 请求不该挂在那儿 —— 前端轮询状态即可。
 	 */
 	ensureStarted(): AsrBridgeStatus {
-		if (this.socket) return this.status;
-		if (this.launching) return this.status;
-		// 每次启动都重新找一遍：用户可能刚在面板上点完「安装」，不该为此重启服务
-		const appPath = this.appPathOverride ?? resolveAsrAppPath();
-		if (!existsSync(appPath)) {
-			this.status = this.missingStatus(appPath);
-			return this.status;
-		}
-		this.launching = true;
+		if (this.client) return this.status;
+		if (this.connecting) return this.status;
+		this.connecting = true;
 		this.status = { state: "starting" };
-		void this.listen(appPath).catch((error: unknown) => {
-			this.launching = false;
-			this.status = { state: "error", message: error instanceof Error ? error.message : String(error) };
-			this.log.warn("本地识别桥启动失败", { message: this.status.message });
-		});
+		void this.connect();
 		return this.status;
 	}
 
-	/** bind socket → 用 LaunchServices 拉起 app → 等它连回来 */
-	private async listen(appPath: string): Promise<void> {
-		rmSync(this.socketPath, { force: true });
-		await new Promise<void>((resolve, reject) => {
-			const server = createServer((socket) => this.attach(socket));
-			server.once("error", reject);
-			server.listen(this.socketPath, () => {
-				this.server = server;
-				resolve();
-			});
+	private async connect(): Promise<void> {
+		const binary = helperBinaryPath();
+		const client = new HelperClient({
+			socketPath: socketPath(),
+			binaryPath: binary,
+			transport: helperTransport(process.env, binary),
+			clientName: CLIENT_NAME,
+			session: { sessionId: `asr-${process.pid}`, turnId: null },
 		});
-		// `-n` = 新实例；`-a` 接 **绝对路径**（相对路径会被当成 app 名字去找，直接失败）
-		spawn("open", ["-n", "-a", appPath, "--args", "--socket", this.socketPath], {
-			stdio: "ignore",
-			detached: true,
-		}).unref();
-		// 连不上（app 没跑起来 / 被 Gatekeeper 拦了）时别一直显示 starting
-		const timer = setTimeout(() => {
-			if (this.socket) return;
-			// 把「正在起」的标志和监听 socket 一起放开：否则「重试」会直接返回旧状态，点了没反应
-			this.launching = false;
-			this.server?.close();
-			this.server = null;
-			this.status = {
-				state: "error",
-				message: "本地识别进程没有连回来（可能是首次运行被系统拦截，或 .app 被移动了）",
-			};
-		}, 20_000);
-		timer.unref();
-	}
-
-	private attach(socket: Socket): void {
-		this.launching = false;
-		this.socket = socket;
-		this.status = { state: "authorizing" };
-		socket.setEncoding("utf8");
-		socket.on("data", (chunk: string) => this.onData(chunk));
-		socket.on("close", () => this.detach());
-		socket.on("error", () => this.detach());
-	}
-
-	private detach(): void {
-		this.socket = null;
-		this.tail = "";
-		// 进程没了 → 回到「没启动」而不是「正在启动」：否则面板会卡在「正在启动…」一直转
-		if (this.status.state === "ready" || this.status.state === "authorizing") {
-			this.status = { state: "idle" };
-		}
-		this.resolveFinal(this.text);
-	}
-
-	/** stdout 是 JSON 行；这里按行切开再解析（一个 chunk 里可能有好几行） */
-	private onData(chunk: string): void {
-		this.tail += chunk;
-		let index = this.tail.indexOf("\n");
-		while (index >= 0) {
-			const line = this.tail.slice(0, index).trim();
-			this.tail = this.tail.slice(index + 1);
-			if (line !== "") this.onEvent(line);
-			index = this.tail.indexOf("\n");
-		}
-	}
-
-	private onEvent(line: string): void {
-		let event: { type?: string; text?: string; message?: string; status?: string; locale?: string; onDevice?: boolean };
 		try {
-			event = JSON.parse(line) as typeof event;
-		} catch {
-			return; // 不是 JSON 就忽略（别因为一行杂音把整条通道废掉）
+			await client.connect(CONNECT_TIMEOUT_MS);
+		} catch (error) {
+			client.close();
+			this.connecting = false;
+			this.status = {
+				state: "missing",
+				message: "本地识别已经并进 Agent Computer：先在「电脑控制」里安装并打开它，再回来试",
+			};
+			this.log.warn("ASR：连不上 Agent Computer helper", {
+				message: error instanceof Error ? error.message : String(error),
+			});
+			return;
 		}
-		switch (event.type) {
-			case "starting":
-				this.status = { state: "authorizing" };
-				return;
-			case "auth":
-				// 授权还没完；ready 才是「能用了」
-				this.status = { state: "authorizing" };
-				return;
-			case "ready":
-				this.status = { state: "ready", locale: event.locale, onDevice: event.onDevice === true };
-				return;
-			case "partial":
-				this.text = event.text ?? "";
-				return;
-			case "final":
-				this.text = event.text ?? this.text;
-				this.resolveFinal(this.text);
-				return;
-			case "error":
-				this.status = { state: "error", message: event.message ?? "本地识别进程报错" };
-				this.resolveFinal(this.text);
-				return;
-			default:
-				return;
+
+		this.client = client;
+		// 建识别器 + 开一句：首次会弹系统授权（麦克风 / 语音识别）
+		try {
+			const result = (await client.request("asr.start", {}, START_TIMEOUT_MS)) as {
+				authorized?: boolean;
+				locale?: string;
+				onDevice?: boolean;
+			};
+			this.status = { state: "ready", locale: result?.locale, onDevice: result?.onDevice === true };
+		} catch (error) {
+			// 授权被拒 / 该语言不支持离线：照实报，别假装就绪
+			this.status = { state: "error", message: error instanceof Error ? error.message : String(error) };
+			this.log.warn("ASR：helper 拒绝启动识别", { message: this.status.message });
+		} finally {
+			this.connecting = false;
 		}
 	}
 
-	private resolveFinal(text: string): void {
-		const waiter = this.finalWaiter;
-		if (!waiter) return;
-		this.finalWaiter = null;
-		clearTimeout(waiter.timer);
-		waiter.resolve(text);
+	/** 连接断了（helper 被关掉 / 崩了）：回到可重试的状态 */
+	private fail(error: unknown): void {
+		this.client?.close();
+		this.client = null;
+		this.status = {
+			state: "error",
+			message: "本地识别连接断了（Agent Computer 可能被关掉了），重新开始听写会自动重连",
+		};
+		this.log.warn("ASR：helper 请求失败", {
+			message: error instanceof Error ? error.message : String(error),
+		});
 	}
 
-	/** 开一段新的听写（清掉上一句的残留文字） */
+	/** 开一段新的听写（清掉上一句的残留文字，并让 helper 丢弃上一句） */
 	startUtterance(): void {
 		this.text = "";
 		this.audioBytes = 0;
+		const client = this.client;
+		if (!client) return;
+		this.chain = this.chain
+			.catch(() => undefined)
+			.then(() => client.request("asr.cancel", {}, CONTROL_TIMEOUT_MS));
+		this.chain.catch(() => undefined);
 	}
 
-	/** 送一段 16k 单声道 int16 PCM */
-	pushAudio(pcm: Buffer): void {
-		const socket = this.socket;
-		if (!socket) return;
-		if (this.audioBytes + pcm.length > MAX_UTTERANCE_BYTES) return; // 兜底：别把整个进程喂爆
+	/** 送一段 16k 单声道 int16 PCM；返回当前 partial（到这块为止识别出的文字） */
+	async pushAudio(pcm: Buffer): Promise<string> {
+		const client = this.client;
+		if (!client || pcm.length === 0) return this.text;
+		if (this.audioBytes + pcm.length > MAX_UTTERANCE_BYTES) return this.text; // 兜底：别把进程喂爆
 		this.audioBytes += pcm.length;
-		const body = Buffer.concat([Buffer.from([OP_AUDIO]), pcm]);
-		const header = Buffer.alloc(4);
-		header.writeUInt32BE(body.length, 0);
-		socket.write(Buffer.concat([header, body]));
-	}
 
-	/** 说完：让 app `endAudio()`，等 final（超时就用已经识别到的部分） */
-	async endUtterance(timeoutMs = 8000): Promise<string> {
-		const socket = this.socket;
-		if (!socket) return this.text;
-		const body = Buffer.from([OP_END]);
-		const header = Buffer.alloc(4);
-		header.writeUInt32BE(body.length, 0);
-		socket.write(Buffer.concat([header, body]));
-		return await new Promise<string>((resolve) => {
-			const timer = setTimeout(() => {
-				this.finalWaiter = null;
-				resolve(this.text);
-			}, timeoutMs);
-			this.finalWaiter = { resolve, timer };
+		const audio = pcm.toString("base64");
+		this.chain = this.chain.catch(() => undefined).then(async () => {
+			const result = (await client.request("asr.feed", { audio }, FEED_TIMEOUT_MS)) as { text?: string };
+			if (typeof result?.text === "string") this.text = result.text;
 		});
+		try {
+			await this.chain;
+		} catch (error) {
+			this.fail(error);
+		}
+		return this.text;
 	}
 
-	/** 服务端退出时收摊：让 app 自己退出，并删掉 socket 文件 */
-	dispose(): void {
+	/** 说完：让 helper `endAudio()`，等 final（超时就用已经识别到的部分） */
+	async endUtterance(timeoutMs = 8000): Promise<string> {
+		const client = this.client;
+		if (!client) return this.text;
 		try {
-			if (this.socket) {
-				const body = Buffer.from([OP_QUIT]);
-				const header = Buffer.alloc(4);
-				header.writeUInt32BE(body.length, 0);
-				this.socket.write(Buffer.concat([header, body]));
-			}
-		} catch {
-			// 进程已经没了就算了
+			await this.chain.catch(() => undefined); // 先把音频送完
+			const result = (await client.request(
+				"asr.end",
+				{ timeoutSeconds: timeoutMs / 1000 },
+				timeoutMs + CONTROL_TIMEOUT_MS,
+			)) as { text?: string };
+			if (typeof result?.text === "string") this.text = result.text;
+		} catch (error) {
+			this.fail(error);
 		}
-		this.server?.close();
-		this.server = null;
-		this.socket = null;
-		rmSync(this.socketPath, { force: true });
+		return this.text;
+	}
+
+	/** 服务端退出时收摊：只断开连接 —— helper 常驻与否由它自己的菜单栏决定，不归我们管 */
+	dispose(): void {
+		this.client?.close();
+		this.client = null;
+		if (this.status.state === "ready" || this.status.state === "authorizing") {
+			this.status = { state: "idle" };
+		}
 	}
 }

@@ -4,11 +4,7 @@ dist/
 web/dist/
 electron-dist/
 release/
-# 例外：语音识别桥的预编译产物必须入库 —— npm 发布流水线在 Linux 上编不了 Swift，
-# 用户「安装本地识别」时服务端直接从这里下载（见 helper/asr/build.sh 的注释）。
-!helper/asr/release/
-!helper/asr/release/ASRBridge.zip
-# 例外之二：Agent Computer helper（桌面操作）同理。电脑控制面板里的「下载 Agent Computer.app」
+# 例外：Agent Computer helper（桌面操作 + 本地语音识别）。电脑控制面板里的「下载 Agent Computer.app」
 # 直接指 raw/main 上的这个 zip（见 server/computer/paths.ts），文件不在就是 404，功能装不上。
 !helper/agent-computer/release/
 !helper/agent-computer/release/Agent Computer.zip
