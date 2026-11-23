@@ -1,0 +1,350 @@
+/**
+ * 导入模型的 HTTP 路由（ADR-0026 B 期）。
+ *
+ *   GET  /api/providers/:provider/remote-models  拉远端模型清单（只读，不写盘）
+ *   POST /api/providers/:provider/import         { ids: string[] } 批量追加
+ *
+ * 走 HTTP 而不是 WS：这是"按需查目录"的一次性数据，不属于会话状态。
+ */
+import type { Express } from "express";
+import type { ModelProbeResult } from "../engine/port.js";
+import { listCodexModels } from "./codex-models.js";
+import { testCodex } from "./codex-test.js";
+import { listRemoteModels } from "./import-models.js";
+import { verifyProviderConfig } from "./probe.js";
+import type { BuiltinProvider } from "./provider-store.js";
+import type { ProviderCredential, ProviderStore } from "./provider-store.js";
+
+/**
+ * 「没有可用凭证」时给界面的人话：
+ * 订阅登录（OAuth）与 api key 是两条路，错误文案必须分开说，
+ * 否则用户会以为自己的 ChatGPT Plus/Pro 登录白做了（历史 bug：一律报 provider.no_key）。
+ */
+/** 引擎侧测出的结果 → 一行人话（首字 / 出字速度，拿不到就不写，不编数字） */
+function probeSummary(result: { ttftMs: number | null; tps: number | null; averageTps: number | null }): string {
+	const parts: string[] = [];
+	if (result.ttftMs !== null) parts.push(`首字 ${result.ttftMs >= 1000 ? `${(result.ttftMs / 1000).toFixed(2)}s` : `${result.ttftMs}ms`}`);
+	const speed = result.tps ?? result.averageTps;
+	if (speed !== null) parts.push(`出字 ${Math.round(speed)} tok/s${result.tps === null ? "（均速）" : ""}`);
+	return parts.join(" · ");
+}
+
+function noCredentialMessage(credential: ProviderCredential): string {
+	return credential.kind === "oauth"
+		? "这个 provider 走的是订阅登录（没有 api key）：拉取 / 验证走订阅额度时需要单独的协议支持"
+		: "这个 provider 还没有 api key";
+}
+
+/** 拉远端模型清单：api key 走 OpenAI 兼容的 /models；订阅登录（Codex）走 /codex/models */
+async function remoteModels(
+	options: { store: ProviderStore },
+	provider: string,
+	view: { baseUrl: string; api: string },
+	credential: ProviderCredential,
+): Promise<Awaited<ReturnType<typeof listRemoteModels>> | Awaited<ReturnType<typeof listCodexModels>>> {
+	const headers = await options.store.readHeaders(provider);
+	if (credential.kind === "oauth") {
+		return listCodexModels({
+			baseUrl: view.baseUrl,
+			access: credential.access,
+			accountId: credential.accountId,
+			headers,
+		});
+	}
+	if (credential.kind === "apiKey") {
+		return listRemoteModels({ baseUrl: view.baseUrl, api: view.api, apiKey: credential.key, headers });
+	}
+	return { ok: false, message: noCredentialMessage(credential) };
+}
+
+export function registerImportRoutes(
+	app: Express,
+	options: {
+		store: ProviderStore;
+		onChange?: () => void | Promise<void>;
+		/** 内置 provider 池：store.get 不传就查不到「官方内置」（opencode-go 这类） */
+		builtinProviders?: () => Promise<BuiltinProvider[]>;
+		/**
+		 * 模型规格查询（models.dev）：导入时顺手把**新加的**模型规格填上。
+		 * 查不到就留空（不猜），结果里用 `notFound` 告诉界面；已存在的模型（skipped）不动，保留用户填过的值。
+		 */
+		catalog?: (modelId: string) => Promise<{
+			name: string;
+			contextWindow: number | null;
+			maxTokens: number | null;
+			reasoning: boolean;
+			imageInput: boolean;
+			cost: { input: number; output: number; cacheRead: number; cacheWrite: number } | null;
+		} | null>;
+	},
+): void {
+	const views = async (provider: string) => options.store.get(provider, (await options.builtinProviders?.()) ?? []);
+	app.get("/api/providers/:provider/remote-models", async (request, response) => {
+		const provider = request.params.provider;
+		const view = await views(provider);
+		if (!view) {
+			response.status(404).json({ error: { code: "provider.not_found", message: "没有这个 provider" } });
+			return;
+		}
+		const credential = await options.store.readCredential(provider);
+		if (credential.kind === "none") {
+			response.status(400).json({ error: { code: "provider.no_key", message: noCredentialMessage(credential) } });
+			return;
+		}
+		const result = await remoteModels(options, provider, view, credential);
+		if (!result.ok) {
+			response.status(502).json({ error: { code: "provider.remote_failed", message: result.message } });
+			return;
+		}
+		// 已经导入过的标出来，界面置灰（避免重复导入）
+		const imported = new Set(view.models.map((model) => model.id));
+		response.json({ models: result.models.map((model) => ({ ...model, imported: imported.has(model.id) })) });
+	});
+
+	/** 保存前先探测模型清单：用**表单里还没保存**的值（新 provider 不用先存一次） */
+	app.post("/api/providers/remote-models", async (request, response) => {
+		const body = request.body as
+			| { provider?: string; baseUrl?: string; api?: string; apiKey?: string; headers?: Record<string, string> }
+			| undefined;
+		// 表单没填 baseUrl 时回落到已保存的配置（内置 provider 就是这样：界面上不重复填）
+		const stored = body?.provider ? await options.store.get(body.provider) : null;
+		const baseUrl = (typeof body?.baseUrl === "string" ? body.baseUrl.trim() : "") || stored?.baseUrl || "";
+		if (baseUrl === "") {
+			response.status(400).json({ error: { code: "remote.no_base_url", message: "先填 base url" } });
+			return;
+		}
+		const credential = body?.apiKey?.trim()
+			? ({ kind: "apiKey", key: body.apiKey.trim() } as const)
+			: await options.store.readCredential(body?.provider ?? "");
+		if (credential.kind === "none") {
+			response.status(400).json({ error: { code: "remote.no_key", message: noCredentialMessage(credential) } });
+			return;
+		}
+		const headers = body?.headers ?? (body?.provider ? await options.store.readHeaders(body.provider) : {});
+		// 订阅登录（Codex）：没有 /v1/models，只能走 /codex/models
+		const result =
+			credential.kind === "oauth"
+				? await listCodexModels({
+						baseUrl,
+						access: credential.access,
+						accountId: credential.accountId,
+						...(Object.keys(headers ?? {}).length > 0 ? { headers } : {}),
+					})
+				: await listRemoteModels({
+						baseUrl,
+						api: (body?.api ?? stored?.api) || undefined,
+						apiKey: credential.key,
+						...(Object.keys(headers ?? {}).length > 0 ? { headers } : {}),
+					});
+		if (!result.ok) {
+			response.status(502).json({ error: { code: "remote.failed", message: result.message } });
+			return;
+		}
+		response.json({ models: result.models });
+	});
+
+	/** 保存前先验证：用**表单里还没保存**的值试一次（key 留空则用已存的那把） */
+	app.post("/api/providers/verify", async (request, response) => {
+		const body = request.body as
+			| {
+					provider?: string;
+					baseUrl?: string;
+					api?: string;
+					apiKey?: string;
+					headers?: Record<string, string>;
+					modelId?: string;
+			  }
+			| undefined;
+		const baseUrl = typeof body?.baseUrl === "string" ? body.baseUrl.trim() : "";
+		if (baseUrl === "") {
+			response.status(400).json({ error: { code: "verify.no_base_url", message: "先填 base url" } });
+			return;
+		}
+		const credential = body?.apiKey?.trim()
+			? ({ kind: "apiKey", key: body.apiKey.trim() } as const)
+			: await options.store.readCredential(body?.provider ?? "");
+		if (credential.kind === "none") {
+			response.status(400).json({ error: { code: "verify.no_key", message: noCredentialMessage(credential) } });
+			return;
+		}
+		const headers = body?.headers ?? (body?.provider ? await options.store.readHeaders(body.provider) : {});
+		// 订阅登录（Codex）：/models 不存在，得发一次最小的 /codex/responses
+		if (credential.kind === "oauth") {
+			const modelId = body?.modelId?.trim() ?? "";
+			if (modelId === "") {
+				response.status(400).json({ error: { code: "verify.no_model", message: "先填一个模型 id 再测试" } });
+				return;
+			}
+			const result = await testCodex({
+				baseUrl,
+				modelId,
+				access: credential.access,
+				accountId: credential.accountId,
+				...(Object.keys(headers ?? {}).length > 0 ? { headers } : {}),
+			});
+			response.status(result.ok ? 200 : 400).json(result);
+			return;
+		}
+		const apiKey = credential.key;
+		const result = await verifyProviderConfig({
+			baseUrl,
+			...(body?.api ? { api: body.api } : {}),
+			apiKey,
+			...(Object.keys(headers ?? {}).length > 0 ? { headers } : {}),
+			...(body?.modelId ? { modelId: body.modelId } : {}),
+		});
+		response.status(result.ok ? 200 : 400).json(result);
+	});
+
+	app.post("/api/providers/:provider/import", async (request, response) => {
+		const body = request.body as { ids?: unknown } | undefined;
+		const ids = Array.isArray(body?.ids)
+			? body.ids.filter((item): item is string => typeof item === "string" && item.trim() !== "")
+			: [];
+		if (ids.length === 0) {
+			response.status(400).json({ error: { code: "import.no_ids", message: "没有勾选任何模型" } });
+			return;
+		}
+		const provider = request.params.provider;
+		const result = await options.store.addModels(provider, ids);
+		if (!result.ok) {
+			response.status(400).json({ error: { code: "import.failed", message: result.error } });
+			return;
+		}
+		// 新加的模型逐个查 models.dev 填规格；查不到的留空，结果里说清楚（不猜）
+		const filled: string[] = [];
+		const notFound: string[] = [];
+		if (options.catalog) {
+			for (const id of result.added) {
+				const spec = await options.catalog(id).catch(() => null);
+				const written = spec
+					? await options.store.updateModel(provider, {
+							id,
+							name: spec.name || id,
+							reasoning: spec.reasoning,
+							imageInput: spec.imageInput,
+							contextWindow: spec.contextWindow,
+							maxTokens: spec.maxTokens,
+							cost: spec.cost,
+							costSchedule: null,
+						})
+					: null;
+				(written?.ok ? filled : notFound).push(id);
+			}
+		}
+		await options.onChange?.();
+		response.json({ ...result, filled, notFound });
+	});
+}
+
+/** 「填入模型信息」与逐模型测试（ADR-0026 C 期）：两条都很轻，和导入放在一起注册 */
+export function registerCatalogRoutes(
+	app: Express,
+	options: {
+		store: ProviderStore;
+		/** 内置 provider 池：与 registerImportRoutes 同理，没有它查不到「官方内置」 */
+		builtinProviders?: () => Promise<BuiltinProvider[]>;
+		catalog: (modelId: string) => Promise<unknown>;
+		testModel: (input: {
+			baseUrl: string;
+			api?: string;
+			apiKey: string;
+			modelId: string;
+			headers?: Record<string, string>;
+		}) => Promise<unknown>;
+		/**
+		 * 引擎自己跑一次最小请求（`Port.probeModel`）。
+		 *
+		 * 只在「工作台手里没有凭证」时用：pi 的凭证还可能来自**环境变量**（opencode 读的是
+		 * `OPENCODE_API_KEY`），而且 provider 会要求自己的 header（opencode 的 `x-opencode-session`）。
+		 * 这两样只有引擎知道 —— 工作台硬直连只会得到 401，或者看上去像「没配 key」。
+		 */
+		probeModel?: (modelId: string) => Promise<ModelProbeResult>;
+		/** 引擎当前报上来的模型 id（`provider/model`）：判断这个模型引擎跑不跑得起来 */
+		engineModels?: () => { id: string }[];
+	},
+): void {
+	const views = async (provider: string) => options.store.get(provider, (await options.builtinProviders?.()) ?? []);
+	app.get("/api/providers/:provider/catalog", async (request, response) => {
+		const modelId = typeof request.query.model === "string" ? request.query.model : "";
+		if (modelId === "") {
+			response.status(400).json({ error: { code: "catalog.no_model", message: "缺少 model 参数" } });
+			return;
+		}
+		const spec = await options.catalog(modelId);
+		if (!spec) {
+			response
+				.status(404)
+				.json({ error: { code: "catalog.not_found", message: "models.dev 里没有这个模型，请手动填写" } });
+			return;
+		}
+		response.json({ source: "models.dev", spec });
+	});
+
+	app.post("/api/providers/:provider/models/:modelId/test", async (request, response) => {
+		const provider = request.params.provider;
+		const view = await views(provider);
+		if (!view) {
+			response.status(404).json({ error: { code: "provider.not_found", message: "没有这个 provider" } });
+			return;
+		}
+		// 凭证可能是 api key，也可能是订阅登录写进去的 OAuth access token（Codex 就是后者）。
+		// 两条路的端点/鉴权头完全不同，不能拿 `/chat/completions` 去测 Codex。
+		const credential = await options.store.readCredential(provider);
+		if (credential.kind === "none") {
+			/**
+			 * 工作台手里没有凭证 —— **不代表用不了**：opencode 的 key 在环境变量 `OPENCODE_API_KEY` 里，
+			 * 而且它还要自己的 `x-opencode-session` 头，这两样只有 pi 知道。
+			 * 所以：引擎当前报了这个模型，就让它自己跑一次（见 options.probeModel）；
+			 * 引擎连报都没报（没登录的 provider），才回「还没配凭证」那句人话。
+			 */
+			const full = `${provider}/${request.params.modelId}`;
+			const engineCanRun = options.engineModels?.().some((model) => model.id === full) ?? false;
+			if (options.probeModel && engineCanRun) {
+				const probed = await options.probeModel(full);
+				response.json(
+					probed.ok
+						? {
+								ok: true,
+								// 面板上显示「多久才动」：首字延迟优先，拿不到才退回整轮耗时
+								latencyMs: probed.ttftMs ?? probed.totalMs,
+								source: "engine",
+								message: probeSummary(probed),
+							}
+						: { ok: false, source: "engine", message: probed.message },
+				);
+				return;
+			}
+			response
+				.status(400)
+				.json({ error: { code: "provider.no_key", message: "这个 provider 还没有凭证（订阅登录或 api key）" } });
+			return;
+		}
+		const headers = await options.store.readHeaders(provider);
+		/**
+		 * 逐模型试连：**优先用模型自己的协议 / 端点**。
+		 * OpenCode Go 这种同一 provider 下混了 anthropic / openai / gemini 三种协议，
+		 * 拿 provider 级的 api 去测必然报「协议不支持」。
+		 */
+		const modelView = view.models.find((model) => model.id === request.params.modelId);
+		const baseUrl = modelView?.baseUrl ?? view.baseUrl;
+		const api = modelView?.api ?? view.api;
+		const result =
+			credential.kind === "oauth"
+				? await testCodex({
+						baseUrl,
+						modelId: request.params.modelId,
+						access: credential.access,
+						accountId: credential.accountId,
+						...(Object.keys(headers).length > 0 ? { headers } : {}),
+					})
+				: await options.testModel({
+						baseUrl,
+						api,
+						apiKey: credential.key,
+						modelId: request.params.modelId,
+						headers,
+					});
+		response.json(result);
+	});
+}

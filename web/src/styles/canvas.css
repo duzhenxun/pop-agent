@@ -1,0 +1,1169 @@
+/**
+ * 画布：agent 把「接下来要做什么」画成的一张图。
+ *
+ * 只有两层要用 transform：
+ *   .canvas-viewport —— 视口，固定不动，负责裁剪与接手势，网格也跟着它走；
+ *   .canvas-world    —— 世界，**唯一**带 transform 的那层，transform-origin 必须是 0 0。
+ * 节点用世界坐标（left/top），拖动时只改 translate 变量，不动 left/top —— 见 CanvasView.tsx。
+ */
+
+.canvas-view {
+	position: relative;
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.canvas-viewport {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	cursor: grab;
+	touch-action: none;
+	background-color: var(--bg);
+	background-image:
+		linear-gradient(color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px),
+		linear-gradient(90deg, color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px);
+	background-size: 24px 24px;
+}
+
+.canvas-viewport.is-panning {
+	cursor: grabbing;
+}
+
+/* 按住 Shift / Alt：本次拖是框选 */
+.canvas-viewport.can-marquee {
+	cursor: crosshair;
+}
+
+/* 框选放大模式（按住 Z / 点工具条按钮）：放大镜光标 */
+.canvas-viewport.can-zoom,
+.canvas-viewport.is-zooming {
+	cursor: zoom-in;
+}
+
+.canvas-world {
+	position: absolute;
+	top: 0;
+	left: 0;
+	transform-origin: 0 0;
+	will-change: transform;
+}
+
+/* 泳道底色带：铺在节点和连线下面，标出"这一摊事" */
+.canvas-lane {
+	position: absolute;
+	box-sizing: border-box;
+	border: 1px dashed color-mix(in srgb, var(--border-strong) 95%, transparent);
+	border-radius: 12px;
+	background: color-mix(in srgb, var(--bg-elev) 78%, transparent);
+	pointer-events: none;
+}
+
+.canvas-lane-label {
+	position: absolute;
+	left: 10px;
+	top: 5px;
+	padding: 1px 7px;
+	border-radius: 999px;
+	background: var(--bg-elev-2);
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-dim);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: calc(100% - 24px);
+}
+
+/* 连线层：在世界坐标系里，1px 描边跟着缩放 */
+.canvas-edges {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 1px;
+	height: 1px;
+	overflow: visible;
+	pointer-events: none;
+}
+
+.canvas-edges path {
+	fill: none;
+	stroke: var(--border-strong);
+	stroke-width: 1.5;
+	stroke-linecap: round;
+}
+
+/* 一个任务节点：世界坐标定位；拖动位移走独立的 translate，React 重渲染不会把它冲掉 */
+.canvas-node {
+	position: absolute;
+	width: 240px;
+	box-sizing: border-box;
+	translate: var(--card-dx, 0px) var(--card-dy, 0px);
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	border-left: 3px solid var(--border-strong);
+	border-radius: 10px;
+	padding: 9px 11px 10px;
+	cursor: grab;
+	user-select: none;
+	box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+}
+
+.canvas-node.is-dragging {
+	cursor: grabbing;
+	z-index: 10;
+	box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+}
+
+.canvas-node:hover {
+	border-color: var(--border-strong);
+}
+
+/* 选中态用 outline 而不是换 border：换 border 会让节点尺寸变 1px，吸附计算会跟着抖 */
+.canvas-node.is-selected {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+/* 状态色落在左边那条竖线上 —— 一眼扫过去就知道哪几步在动、哪步卡了 */
+.canvas-node.is-doing {
+	border-left-color: var(--accent);
+}
+
+.canvas-node.is-done {
+	border-left-color: #16a34a;
+	background: color-mix(in srgb, var(--bg-elev) 88%, #16a34a);
+}
+
+.canvas-node.is-blocked {
+	border-left-color: #d97706;
+	background: color-mix(in srgb, var(--bg-elev) 90%, #d97706);
+}
+
+.canvas-node-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+}
+
+.canvas-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+	margin-top: 5px;
+	background: var(--text-whisper);
+}
+
+.canvas-dot.is-doing {
+	background: var(--accent);
+	animation: canvas-pulse 1.4s ease-in-out infinite;
+}
+
+.canvas-dot.is-done {
+	background: #16a34a;
+}
+
+.canvas-dot.is-blocked {
+	background: #d97706;
+	animation: canvas-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes canvas-pulse {
+	50% {
+		opacity: 0.3;
+	}
+}
+
+.canvas-node-title {
+	font-size: 12.5px;
+	font-weight: 600;
+	line-height: 1.4;
+	color: var(--text);
+	word-break: break-word;
+}
+
+.canvas-node-detail {
+	margin-top: 5px;
+	font-size: 11.5px;
+	line-height: 1.45;
+	color: var(--text-dim);
+	word-break: break-word;
+}
+
+.canvas-node-state {
+	margin-top: 7px;
+	font-size: 11px;
+	color: var(--text-faint);
+}
+
+.canvas-node-state.is-doing {
+	color: var(--accent);
+}
+
+.canvas-node-state.is-done {
+	color: #16a34a;
+}
+
+.canvas-node-state.is-blocked {
+	color: #b45309;
+}
+
+/* 框选矩形：屏幕坐标，永远 1px 边框（不跟缩放走，缩得很小时也看得见） */
+.canvas-marquee {
+	display: none;
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 0;
+	height: 0;
+	border: 1px solid var(--accent);
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+	pointer-events: none;
+	z-index: 15;
+}
+
+/* 远距离（缩到 0.5 以下）的缩略视图：
+ * 这个尺寸下节点只有 80 多像素宽，字再大也是 4–5px —— 保留文字只是噪声。
+ * 所以只留一个顺序号 + 状态色块，结构一眼看清；要看内容靠悬停预览。 */
+.canvas-node-index {
+	display: none;
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+.canvas-view.is-far .canvas-node {
+	padding: 6px 8px;
+	min-height: 34px;
+	display: flex;
+	align-items: center;
+	border-left-width: 4px;
+}
+
+/* 缩略状态下用**状态色填充整块**：远看就是一张颜色地图，
+ * 哪段已完成、哪里卡住一眼就看出来，而不是一排空白细条。 */
+.canvas-view.is-far .canvas-node.is-done {
+	background: color-mix(in srgb, #16a34a 24%, var(--bg-elev));
+}
+
+.canvas-view.is-far .canvas-node.is-doing {
+	background: color-mix(in srgb, var(--accent) 24%, var(--bg-elev));
+}
+
+.canvas-view.is-far .canvas-node.is-blocked {
+	background: color-mix(in srgb, #d97706 26%, var(--bg-elev));
+}
+
+.canvas-view.is-far .canvas-node-index {
+	font-size: 12px;
+	color: var(--text-dim);
+}
+
+/* 节点类型：不同类型给不同颜色和图标，避免整张图都是一模一样的卡片 */
+.canvas-node-kind {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 15px;
+	height: 15px;
+	flex: 0 0 auto;
+	margin-top: 1px;
+	border-radius: 4px;
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 1;
+	background: var(--bg-elev-2);
+	color: var(--text-faint);
+}
+
+.canvas-node-kind.kind-milestone {
+	background: color-mix(in srgb, #7c3aed 18%, var(--bg-elev));
+	color: #7c3aed;
+}
+
+.canvas-node-kind.kind-risk {
+	background: color-mix(in srgb, #dc2626 16%, var(--bg-elev));
+	color: #dc2626;
+}
+
+.canvas-node-kind.kind-doc {
+	background: color-mix(in srgb, #0891b2 16%, var(--bg-elev));
+	color: #0891b2;
+}
+
+.canvas-node-kind.kind-decision {
+	background: color-mix(in srgb, #d97706 18%, var(--bg-elev));
+	color: #b45309;
+}
+
+/* 里程碑在卡片左侧加一颗小菱形，扫一眼就能找到交付点 */
+.canvas-node.kind-milestone {
+	border-left-color: #7c3aed;
+}
+
+.canvas-node.kind-risk {
+	border-left-color: #dc2626;
+}
+
+.canvas-node.kind-doc {
+	border-left-color: #0891b2;
+}
+
+.canvas-node.kind-decision {
+	border-left-color: #d97706;
+}
+
+/* 右键菜单 */
+.canvas-menu-backdrop {
+	position: absolute;
+	inset: 0;
+	z-index: 40;
+}
+
+/* 节点上的产出徽标（可点开看清单） */
+.canvas-node-artifacts {
+	margin-left: 6px;
+	font: inherit;
+	font-size: 11px;
+	padding: 0 4px;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-dim);
+	font-variant-numeric: tabular-nums;
+	cursor: pointer;
+}
+
+.canvas-node-artifacts:hover {
+	background: var(--bg-elev-2);
+	color: var(--accent);
+}
+
+/* 预览卡里的产出清单 */
+.canvas-preview-artifacts {
+	margin-top: 8px;
+	padding-top: 7px;
+	border-top: 1px solid var(--border);
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+}
+
+.canvas-preview-artifacts-head {
+	font-size: 10.5px;
+	color: var(--text-faint);
+	margin-bottom: 2px;
+}
+
+.canvas-artifact {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	font: inherit;
+	font-size: 11.5px;
+	padding: 3px 6px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	background: var(--bg-elev-2);
+	color: var(--text-dim);
+	text-align: left;
+	cursor: default;
+	min-width: 0;
+}
+
+.canvas-artifact.can-open {
+	cursor: pointer;
+}
+
+.canvas-artifact.can-open:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.canvas-artifact-icon {
+	font-size: 10px;
+	flex: 0 0 auto;
+	opacity: 0.85;
+}
+
+.canvas-artifact-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 11px;
+}
+
+.canvas-artifact.is-note .canvas-artifact-label {
+	font-family: inherit;
+	white-space: normal;
+}
+
+.canvas-artifact-detail {
+	flex: 0 0 auto;
+	font-size: 10px;
+	color: #b45309;
+}
+
+/* 「就这几步说两句」的输入框 */
+.canvas-ask {
+	position: absolute;
+	z-index: 43;
+	width: 288px;
+	box-sizing: border-box;
+	padding: 8px;
+	border-radius: 10px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border-strong);
+	box-shadow: 0 14px 36px rgb(0 0 0 / 22%);
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.canvas-ask-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	font-size: 11px;
+	color: var(--text-faint);
+}
+
+.canvas-ask-refresh {
+	font: inherit;
+	font-size: 10.5px;
+	padding: 1px 6px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-ask-refresh:hover:not(:disabled) {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.canvas-ask-refresh:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+/* 候选指令：点一下直接填进输入框 */
+.canvas-ask-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.canvas-ask-chip {
+	font: inherit;
+	font-size: 11.5px;
+	max-width: 100%;
+	padding: 3px 8px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--bg-elev-2);
+	color: var(--text-dim);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.canvas-ask-chip:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.canvas-ask-input {
+	font: inherit;
+	font-size: 12.5px;
+	box-sizing: border-box;
+	width: 100%;
+	padding: 6px 8px;
+	border: 1px solid var(--border-strong);
+	border-radius: 7px;
+	background: var(--bg);
+	color: var(--text);
+	resize: vertical;
+}
+
+.canvas-ask-actions {
+	display: flex;
+	gap: 6px;
+	justify-content: flex-end;
+}
+
+.canvas-ask-actions button {
+	font: inherit;
+	font-size: 11.5px;
+	padding: 3px 10px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-ask-actions button.is-primary {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: #fff;
+}
+
+/* 菜单里那个"对选区说话"的项：稍微突出一点 */
+.canvas-menu-item.is-accent {
+	color: var(--accent);
+}
+
+/* 右键落点：一个从点击处扩散淡出的圈（菜单可能盖住那一点，所以圈要明显） */
+.canvas-rt-marker {
+	position: absolute;
+	z-index: 42;
+	width: 14px;
+	height: 14px;
+	margin: -7px 0 0 -7px;
+	border-radius: 50%;
+	border: 2px solid var(--accent);
+	pointer-events: none;
+	animation: canvas-rt-pop 900ms ease-out forwards;
+}
+
+@keyframes canvas-rt-pop {
+	0% {
+		transform: scale(0.4);
+		opacity: 0.95;
+	}
+	60% {
+		transform: scale(1.5);
+		opacity: 0.5;
+	}
+	100% {
+		transform: scale(2.1);
+		opacity: 0;
+	}
+}
+
+.canvas-menu {
+	position: absolute;
+	z-index: 41;
+	/* 菜单偏开右键点 10px，留出小三角的位置 */
+	min-width: 176px;
+	max-width: 240px;
+	padding: 4px;
+	border-radius: 9px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border-strong);
+	box-shadow: 0 12px 32px rgb(0 0 0 / 20%);
+}
+
+/* 小尾巴：指向右键那一点，一眼看出"我是在哪儿点的" */
+.canvas-menu::before {
+	content: "";
+	position: absolute;
+	left: -5px;
+	top: -5px;
+	width: 10px;
+	height: 10px;
+	background: var(--bg-elev);
+	border-left: 1px solid var(--border-strong);
+	border-top: 1px solid var(--border-strong);
+	transform: rotate(45deg);
+}
+
+.canvas-menu-item {
+	display: block;
+	width: 100%;
+	text-align: left;
+	font: inherit;
+	font-size: 12px;
+	padding: 5px 9px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.canvas-menu-item:hover {
+	background: var(--bg-elev-2);
+}
+
+.canvas-menu-item.is-on {
+	color: var(--accent);
+}
+
+.canvas-menu-item.is-danger {
+	color: #dc2626;
+}
+
+.canvas-menu-item.is-danger:hover {
+	background: color-mix(in srgb, #dc2626 12%, var(--bg-elev));
+}
+
+.canvas-menu-sep {
+	height: 1px;
+	margin: 4px 6px;
+	background: var(--border);
+}
+
+.canvas-menu-label {
+	padding: 3px 9px 2px;
+	font-size: 10.5px;
+	color: var(--text-faint);
+}
+
+/* 内联重命名 */
+.canvas-node-edit {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.canvas-node-edit-title,
+.canvas-node-edit-detail {
+	font: inherit;
+	font-size: 12.5px;
+	width: 100%;
+	box-sizing: border-box;
+	padding: 3px 6px;
+	border: 1px solid var(--border-strong);
+	border-radius: 6px;
+	background: var(--bg);
+	color: var(--text);
+	resize: vertical;
+}
+
+.canvas-node-edit-title {
+	font-weight: 600;
+}
+
+.canvas-node-edit-detail {
+	font-size: 11.5px;
+	color: var(--text-dim);
+}
+
+.canvas-node-edit-actions {
+	display: flex;
+	gap: 6px;
+}
+
+.canvas-node-edit-actions button {
+	font: inherit;
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-node-edit-actions button:first-child {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+/* 布局风格下拉 */
+.canvas-style {
+	font: inherit;
+	font-size: 11px;
+	max-width: 78px;
+	padding: 2px 2px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-style:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+/* 「N/M 子步」徽标 */
+.canvas-node-sub {
+	margin-left: 6px;
+	font: inherit;
+	font-size: 11px;
+	padding: 0 4px;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--accent);
+	font-variant-numeric: tabular-nums;
+	cursor: pointer;
+}
+
+.canvas-node-sub:hover {
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* 面包屑：钻进子计划之后显示在工具条最前面「‹ 全部 › 那一步」 */
+.canvas-crumbs {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	max-width: 200px;
+	padding-right: 4px;
+	margin-right: 2px;
+	border-right: 1px solid var(--border);
+	color: var(--text-dim);
+}
+
+.canvas-crumbs button {
+	font: inherit;
+	font-size: 11px;
+	padding: 1px 4px;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--accent);
+	cursor: pointer;
+}
+
+.canvas-crumbs button:hover {
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.canvas-crumbs-sep {
+	opacity: 0.5;
+}
+
+.canvas-crumbs-current {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text);
+}
+
+/* 节点上的实时进度（这一轮正在跑什么、跑了多久） */
+.canvas-node-live {
+	margin-top: 6px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	color: var(--accent);
+	min-width: 0;
+}
+
+.canvas-live-text {
+	/* 参数摘要可能很长，一行截断；想看清去悬停预览 / 对话里看 */
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-variant-numeric: tabular-nums;
+}
+
+.canvas-live-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+	background: var(--accent);
+	animation: canvas-pulse 1.1s ease-in-out infinite;
+}
+
+/* 正在跑的节点给个明显的圈：缩略态下尤其重要，一眼找到"现在到哪了" */
+.canvas-node.is-live {
+	border-color: var(--accent);
+	outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+	outline-offset: 1px;
+	animation: canvas-live-glow 2.2s ease-in-out infinite;
+}
+
+@keyframes canvas-live-glow {
+	50% {
+		outline-color: color-mix(in srgb, var(--accent) 12%, transparent);
+	}
+}
+
+.canvas-view.is-far .canvas-node.is-live {
+	outline: 2px solid var(--accent);
+	animation: none;
+}
+
+/* 节点上的操作行：悬停 / 选中才出现，平时不挡内容 */
+.canvas-node-actions {
+	display: none;
+	position: absolute;
+	top: -11px;
+	right: -1px;
+	gap: 4px;
+	align-items: center;
+	padding: 2px 3px;
+	border-radius: 7px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border);
+	box-shadow: 0 2px 8px rgb(0 0 0 / 10%);
+	z-index: 5;
+}
+
+.canvas-node:hover .canvas-node-actions,
+.canvas-node.is-selected .canvas-node-actions {
+	display: flex;
+}
+
+.canvas-node-status {
+	font: inherit;
+	font-size: 10.5px;
+	padding: 1px 2px;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-node-status:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.canvas-node-delete {
+	font: inherit;
+	font-size: 12px;
+	line-height: 1;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border-radius: 5px;
+	border: 1px solid var(--border);
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+}
+
+.canvas-node-delete:hover {
+	border-color: #dc2626;
+	color: #dc2626;
+}
+
+/* 缩略态下手都点不准，操作行收起来 */
+.canvas-view.is-far .canvas-node-actions {
+	display: none !important;
+}
+
+.canvas-view.is-far .canvas-node-head,
+.canvas-view.is-far .canvas-node-detail,
+.canvas-view.is-far .canvas-node-state {
+	display: none;
+}
+
+.canvas-view.is-far .canvas-node-index {
+	display: block;
+}
+
+/* 悬停预览卡：屏幕坐标、不跟缩放，字号就是正常大小 */
+.canvas-preview {
+	position: absolute;
+	z-index: 30;
+	box-sizing: border-box;
+	padding: 10px 12px 9px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border-strong);
+	border-left: 3px solid var(--border-strong);
+	border-radius: 10px;
+	box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+	pointer-events: auto;
+}
+
+.canvas-preview.is-doing {
+	border-left-color: var(--accent);
+}
+
+.canvas-preview.is-done {
+	border-left-color: #16a34a;
+}
+
+.canvas-preview.is-blocked {
+	border-left-color: #d97706;
+}
+
+.canvas-preview-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+}
+
+.canvas-preview-title {
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.4;
+	color: var(--text);
+}
+
+.canvas-preview-detail {
+	margin-top: 6px;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-dim);
+}
+
+.canvas-preview-foot {
+	margin-top: 8px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.canvas-preview-zoom {
+	font: inherit;
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 6px;
+	border: 1px solid var(--border);
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-preview-zoom:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+/* 框选放大用的虚线框：和“框选选中”的实线框区分开 */
+.canvas-marquee.is-zoom {
+	border-style: dashed;
+	background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.canvas-bar button.is-on {
+	border-color: var(--accent);
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* 吸附参考线：一条竖一条横，靠 transform 定位 */
+.canvas-guide {
+	display: none;
+	position: absolute;
+	background: var(--accent);
+	opacity: 0.75;
+	pointer-events: none;
+	z-index: 14;
+}
+
+.canvas-guide-x {
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 1px;
+}
+
+.canvas-guide-y {
+	left: 0;
+	top: 0;
+	right: 0;
+	height: 1px;
+}
+
+/* 工具条（左上） + 目标抬头（左下） + 手势提示（右下） */
+.canvas-bar {
+	position: absolute;
+	top: 8px;
+	left: 8px;
+	display: flex;
+	align-items: center;
+	/* 面板窄的时候宁可折成两行，也别把"看全局"压成竖排的单字 */
+	flex-wrap: wrap;
+	row-gap: 4px;
+	max-width: calc(100% - 16px);
+	gap: 5px;
+	padding: 4px 6px;
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+	border: 1px solid var(--border);
+	font-size: 11px;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+	backdrop-filter: blur(6px);
+	z-index: 20;
+}
+
+/* 工具条里每一项都不许折字：竖排的单字是没法读的 */
+.canvas-bar > * {
+	flex: 0 0 auto;
+	white-space: nowrap;
+}
+
+/* 图标按钮：正方形、没有文字，省宽度 */
+.canvas-icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border-radius: 5px;
+	border: 1px solid var(--border);
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-icon-btn:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.canvas-icon-btn.is-on {
+	border-color: var(--accent);
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* "1:1" 是文字，稍微宽一点 */
+.canvas-icon-btn.canvas-icon-text {
+	width: auto;
+	min-width: 26px;
+	padding: 0 4px;
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
+/* 读数 / 计数：窄、右对齐，别抢宽度 */
+.canvas-readout {
+	min-width: 34px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.canvas-count {
+	min-width: 14px;
+	text-align: center;
+	opacity: 0.75;
+}
+
+.canvas-bar > span {
+	white-space: nowrap;
+}
+
+.canvas-bar button {
+	font: inherit;
+	font-size: 11px;
+	padding: 2px 7px;
+	border-radius: 5px;
+	border: 1px solid var(--border);
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-bar button:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.canvas-bar-sel {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+/* −/＋ 两个缩放按钮：合成一组，别和左边那几个功能按钮搅在一起 */
+.canvas-zoom {
+	display: inline-flex;
+	gap: 0;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.canvas-zoom button {
+	border: none;
+	border-radius: 0;
+	width: 22px;
+	padding: 2px 0;
+	font-size: 12px;
+	line-height: 1.2;
+}
+
+.canvas-zoom button + button {
+	border-left: 1px solid var(--border);
+}
+
+.canvas-goal {
+	position: absolute;
+	left: 8px;
+	bottom: 8px;
+	max-width: 60%;
+	padding: 4px 9px;
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+	border: 1px solid var(--border);
+	font-size: 11.5px;
+	color: var(--text-dim);
+	backdrop-filter: blur(6px);
+	pointer-events: none;
+	z-index: 20;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.canvas-hint {
+	position: absolute;
+	right: 8px;
+	bottom: 8px;
+	padding: 3px 8px;
+	border-radius: 7px;
+	background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+	border: 1px solid var(--border);
+	font-size: 10.5px;
+	color: var(--text-faint);
+	backdrop-filter: blur(6px);
+	pointer-events: none;
+	z-index: 20;
+}
+
+/* 空状态：还没有画布时告诉用户怎么让它出来 */
+.canvas-empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+}
+
+.canvas-empty-card {
+	max-width: 380px;
+	text-align: center;
+	color: var(--text-dim);
+}
+
+.canvas-empty-title {
+	font-size: 13.5px;
+	font-weight: 600;
+	color: var(--text);
+}
+
+.canvas-empty-body {
+	margin-top: 8px;
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+/* 手机上画布没法用（手势全被视口吃掉），提示与抬头都收起来 */
+@media (max-width: 400px) {
+	.canvas-hint,
+	.canvas-goal {
+		display: none;
+	}
+}

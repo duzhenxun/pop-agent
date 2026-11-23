@@ -1,0 +1,424 @@
+/* 底部状态栏（当前项目 / 审批 / 引擎 / 队列 / 上下文 / 顶部开关）*/
+/* 「顶部」开关：不要边框，当普通文字用（悬浮才给一点底色） */
+.status-toggle {
+	border: none;
+	border-radius: 5px;
+	background: none;
+	color: var(--text-faint);
+	font: inherit;
+	/* 栏内统一用 em（相对 --statusbar-font-size）：只有「次要文字」比主读数小一档 */
+	font-size: 0.87em;
+	padding: 0 3px;
+	cursor: pointer;
+}
+
+/* 两个开关的箭头用同一套小三角字符，并给固定宽度 —— 否则 ◀ 比 ▴ 明显大一圈 */
+/* 底部所有开关（完整历史 / 系统提示词 / 终端 / 设置 / 顶部）统一：
+ * 图标与文字之间留 5px；图标一律放进同一个 14px 的方框里，emoji 与 SVG 都居中，互不挤占文字 */
+.status-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+
+.status-toggle-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 14px;
+	height: 14px;
+	font-size: 0.9em;
+	line-height: 1;
+}
+
+/* 设置那颗的滑杆是 PanelIcon（16 格线性 SVG）：给它跟 emoji 同一个视觉尺寸 */
+.status-toggle-icon svg {
+	width: 13px;
+	height: 13px;
+	display: block;
+}
+
+.status-toggle:hover {
+	color: var(--text);
+	background: var(--bg-elev-2);
+}
+
+/* ---------------------------------------------------------------------------
+ * 手机底部状态栏：**一行**，装不下就左右滑（用户 2026-11-02：「下面底部只要一行
+ * 显示不开就左右滑动，但不要出现滚动条」）。
+ *
+ * 390px 宽的手机上这一条内容要 ~540px，所以它天然是会溢出的容器：
+ *   - `flex-wrap: nowrap` + 子项都是 `flex: none` → **不压缩、不改行**，保持各自的字大小；
+ *   - `overflow-x: auto` → 挤出去的部分往右滑就能看到（最右端是「隐藏顶部」）；
+ *   - 滚动条一律藏掉（三条供应商前缀各写一遍）——那是根装饰，摆在这儿只会显得脏。
+ *
+ * 「不能居中」是踩过的坑：`justify-content: center` 在溢出容器里会把左侧推出可滚动区，
+ * 表现就是「有的显示不全、往左也划不回来」。
+ *
+ * 高度统一由 `--statusbar-h` 给出（定义在下面）：上面的会话信息浮层、底部的轻提示
+ * 都按它让位，免得这一条改高了、那些东西还停在旧坐标上叠在一起。
+ * ------------------------------------------------------------------------- */
+/* 手机底部栏：外观与桌面完全一样（高度 / 字号 / 间距 / 控件大小都沿用上面的 .statusbar 规则），
+ * 只多两件事：横向可滑，以及 iPhone 底部安全区（没有底部安全区的机器上这个值是 0）。 */
+html.is-mobile-shell {
+	--statusbar-h: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.is-mobile-shell .statusbar {
+	height: var(--statusbar-h);
+	padding-bottom: env(safe-area-inset-bottom, 0px);
+	overflow-x: auto;
+	overflow-y: hidden;
+	/* 横滑时别把整页一起带着拖（iOS 的橡皮筋） */
+	overscroll-behavior-x: contain;
+	/* 滚动条：Firefox / IE 老写法 / WebKit */
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+
+.is-mobile-shell .statusbar::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
+}
+
+/* 上下文胶囊：点一下从**上方**弹出会话信息（浮层挂在它自己身上，手机也点得开） */
+.status-context-wrap {
+	position: relative;
+	display: inline-flex;
+}
+
+/* 弹窗用 fixed：状态栏在手机上是 overflow-x:auto（会连带裁掉纵向溢出），
+   绝对定位的浮层会被切成看不见 —— 表现就是「点了没反应」。
+   具体坐标由 JS 按触发按钮算（贴在它正上方），这里的 bottom/right 只是兜底。 */
+.status-usage-pop {
+	position: fixed;
+	bottom: 46px;
+	right: auto;
+	z-index: 60;
+	min-width: 200px;
+	/* 极窄屏也别顶出屏幕（坐标由 JS 夹过，这里兜宽度） */
+	max-width: calc(100vw - 16px);
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 8px 10px;
+	border: 1px solid var(--border-strong, var(--border));
+	border-radius: 10px;
+	background: var(--bg-elev);
+	box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+}
+
+/* 「连接感」：指着下方上下文胶囊的小尾巴（与模型选择器那枚同一套做法）。
+   旋转 45° 的方块 + 两条与浮层描边同色的边 —— 一半压在浮层底边上，于是那条 1px 边框
+   在尾巴处断开，读起来就是浮层从这个按钮长出来的。left 由 JS 给出（尾巴中心坐标），
+   浮层被夹到视口边缘时仍然指得准。 */
+.status-usage-arrow {
+	position: absolute;
+	bottom: -5px;
+	width: 10px;
+	height: 10px;
+	margin-left: -5px;
+	background: var(--bg-elev);
+	border-right: 1px solid var(--border-strong, var(--border));
+	border-bottom: 1px solid var(--border-strong, var(--border));
+	border-bottom-right-radius: 2px;
+	transform: rotate(45deg);
+	pointer-events: none;
+}
+
+.status-usage-title {
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.7586);
+	font-weight: 600;
+	color: var(--text-dim);
+	padding-bottom: 4px;
+	border-bottom: 1px solid var(--border);
+}
+
+.status-usage-row {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.7931);
+	color: var(--text-faint);
+}
+
+.status-usage-row .mono {
+	color: var(--text);
+}
+
+/* 口径说明：把「整段会话累计」与「每条回复那一轮」区分开（两者数值差几十倍） */
+.status-usage-note {
+	margin-top: 2px;
+	padding-top: 6px;
+	border-top: 1px dashed var(--border);
+	/* 状态栏本身是 nowrap 的一条（见 .statusbar），说明文字要允许换行，否则被裁在半句 */
+	white-space: normal;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.7241);
+	line-height: 1.5;
+	color: var(--text-faint);
+	max-width: 260px;
+}
+
+.status-usage-note b {
+	color: var(--text-dim);
+	font-weight: 600;
+}
+
+/* 装不下就让它往外溢、由状态栏横滑（不压缩、不改行）：
+   `.status-controls` 本身是 `flex: none`，这里不再给它 100% 的 basis，
+   也不再给模型胶囊加 `max-width: 100%` —— 各自保持自然宽度，滑过去就行。 */
+
+/* 「排队 / 工作中」不再在手机上无条件隐藏：显隐交给设置 → 界面 → 底部
+   （默认显示，勾掉才不显示）。它们排在同一行里，「上下文」之后。 */
+
+/* 「工作中」左边的小环：有回合在跑就转，蓝圈；闲着就是个淡灰静止环 */
+.status-running {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+
+.status-spinner {
+	flex: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	border: 1.4px solid var(--border-strong, var(--border));
+}
+
+.status-running.is-working .status-spinner {
+	border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+	border-top-color: var(--accent);
+	animation: status-spin 0.8s linear infinite;
+}
+
+@keyframes status-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* 系统开了「减少动态效果」就不转，改成实心蓝点（避免不适） */
+@media (prefers-reduced-motion: reduce) {
+	.status-running.is-working .status-spinner {
+		animation: none;
+		border-color: var(--accent);
+	}
+}
+
+/* ---- 上下文用量胶囊：已用 / 窗口（11.8K / 1.05M）---- */
+/* 上下文胶囊：不描边、不铺底，跟着状态栏那排文字走（跟在「排队」后面） */
+.status-context {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	flex: none;
+	padding: 0 2px;
+	border: none;
+	background: none;
+	color: var(--text-dim);
+	font: inherit;
+	/* 与「排队 / 工作中」同号：同一个栏里的读数不该有三个尺寸 */
+	line-height: 1.1;
+	cursor: pointer;
+	border-radius: 0;
+}
+
+.status-context:hover {
+	color: var(--text);
+}
+
+.status-ring {
+	width: 12px;
+	height: 12px;
+	flex: none;
+	transform: rotate(-90deg);
+}
+
+.status-ring-bg {
+	fill: none;
+	stroke: var(--border);
+	stroke-width: 2.6;
+}
+
+.status-ring-fg {
+	fill: none;
+	stroke: var(--accent);
+	stroke-width: 2.6;
+	stroke-linecap: round;
+	transition: stroke-dasharray 200ms ease-out;
+}
+
+.status-context-used {
+	font-weight: 650;
+	color: var(--text);
+	font-variant-numeric: tabular-nums;
+}
+
+.status-context-total {
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+/* 本轮配置（模型 / 思考强度 / 审批）：状态栏只有 24px 高，chip 要收得更小 */
+.status-controls {
+	/* 兼容旧 DOM 容器，但其子项目现在要和其它底部项目一起按设置排序 */
+	display: contents;
+}
+
+.statusbar-slot {
+	display: inline-flex;
+	align-items: center;
+	flex: none;
+	min-width: 0;
+}
+
+/* 状态栏里是「一条扁平的栏」，不要给这些控件再套外框：字和图标就够 */
+/* 放行 / 引擎 / 模型 / 强度：跟「排队 / 工作中」**同号**（1em）。
+   以前这里是 0.79 × 聊天字号 = 11.1px，旁边排队却是写死的 12px ——
+   同一行两种刻度，改聊天字号时它们还会互相错开（用户 2026-10-29 报的那个）。 */
+.statusbar .tool-chip {
+	font-size: 1em;
+	padding: 0 3px;
+	border: none;
+	border-radius: 5px;
+	line-height: 17px;
+	height: 17px;
+	color: var(--text-dim);
+	background: transparent;
+}
+
+/* 悬浮只给一点底色，让人知道能点（不加边框，避免又变成一堆小盒子） */
+.statusbar .tool-chip:hover:not(:disabled) {
+	background: var(--bg-elev-2);
+	color: var(--text);
+}
+
+/* 审批那颗「放行」保留警示色，但同样不画框（框只在输入区那版才有意义） */
+.statusbar .tool-chip-warn {
+	border: none;
+	color: var(--yellow, #d9a441);
+}
+
+.statusbar .tool-chip .tool-icon {
+	font-size: 1em;
+}
+
+/* ---------------------------------------------------------------------------
+ * 图标与文字的**光学**对齐（用户 2026-11-02：「图标与文字要对齐」）。
+ *
+ * 盒子是在一条水平中线上对齐的（flex 的 `align-items: center`），但**墨迹**不在：
+ * 量下来 emoji（🔓 / 🤖 / ⚡）的墨迹中心在它自己那个框里低于中心 ~0.12em，
+ * 而汉字的墨迹中心反而高于中心一点点，于是「🔓 放行」看着就像图标吊在字的下面。
+ * 按 em 抬回去：宽度不变（transform 不参与布局），字号缩放时偏移量也跟着缩。
+ * -------------------------------------------------------------------------- */
+.statusbar .tool-icon {
+	transform: translateY(0.18em);
+}
+
+/* 模型 / 思考强度那两颗再抬一档（用户 2026-11-02：「机器人跟闪电图标再靠上一点」）。
+ * 旁边是拉丁字母（deepseek-flash）和单字（高）：字面更小、重心更靠上，
+ * 用和「🔓 放行」同一个偏移量就显得还偏低。再抬 0.12em（合计 -0.24em）：
+ * 量下来墨迹中心比旁边文字高 ~1.1px —— 小图标贴在文字左上方，看着才是居中的。 */
+.statusbar .model-trigger .tool-icon {
+	/* 三层模型图标比 emoji 的视觉重心更稳定，向上收一点与模型名称对齐 */
+	transform: translateY(0.08em);
+}
+
+.statusbar .thinking-picker .tool-icon {
+	transform: translateY(0.18em);
+}
+
+.statusbar .model-trigger {
+	max-width: 190px;
+}
+
+.statusbar .thinking-value {
+	font-size: 1em;
+}
+
+/* 小三角（▾ / ▴）也跟着抬一点：它们是装饰，跟同一颗胶囊里的图标对齐就够了
+   （量下来这类三角的墨迹比框中线低 0.7～1px） */
+.statusbar .model-caret,
+.statusbar .thinking-caret {
+	position: relative;
+	top: -0.08em;
+}
+
+/* 箭头是装饰，比文字小一档 */
+.statusbar .model-caret {
+	font-size: 0.87em;
+}
+
+/* ---------------------------------------------------------------------------
+ * 底部状态栏（桌面）统一规格（用户 2026-11-04：「图标大小、文字大小、间距全部统一」）：
+ *   1. 文字：栏内所有字都是栏基准 1em，不再 0.87em / 0.9em 各搞一套；
+ *   2. 图标：emoji / SVG / 指示点都放进同一个 14px 方框里居中（指示环 12px）；
+ *   3. 间距：图标与文字之间 5px，项与项之间 8px。
+ * 手机与桌面共用这一套（手机只多了横向滑动与底部安全区，见上面的 `.is-mobile-shell .statusbar`）。
+ * -------------------------------------------------------------------------- */
+.statusbar {
+	--sb-icon: 14px;
+	--sb-gap: 5px;
+	--sb-item-gap: 8px;
+}
+
+.statusbar .status-controls {
+	gap: var(--sb-item-gap);
+}
+
+.statusbar .status-toggle,
+.statusbar .tool-chip,
+.statusbar .status-item,
+.statusbar .status-context,
+.statusbar .status-running {
+	font-size: 1em;
+	gap: var(--sb-gap);
+}
+
+.statusbar .status-toggle-icon,
+.statusbar .status-ico,
+.statusbar .tool-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: var(--sb-icon);
+	height: var(--sb-icon);
+	font-size: 0.9em;
+	line-height: 1;
+}
+
+.statusbar .status-toggle-icon svg,
+.statusbar .tool-icon svg {
+	width: 13px;
+	height: 13px;
+	display: block;
+}
+
+.statusbar .status-spinner {
+	width: 12px;
+	height: 12px;
+}
+
+/* 墨迹对齐（实测：图标墨迹中心 vs 文字墨迹中心，4 倍截图量出来的）：
+ *  - 开关图标（设置 / 完整历史 / 系统提示词 / 终端 / 顶部）偏高 ~1.5px；
+ *  - emoji 状态图标（🔓 / 🔒 / ⏳）偏高 ~0.8px；
+ *  - 工具图标（机器人 / 闪电）原来靠负偏移「抬」，抬多了，现在改成正向下移。
+ * 用 `position: relative` 而不是 transform：转圈的指示点要靠 transform 动画，不能占用它。 */
+.statusbar .status-toggle-icon {
+	position: relative;
+	top: 0.03em;
+}
+
+/* 「PI」引擎图标（SVG 机器人）实测偏高 ~0.75px，单独下移 */
+.statusbar .engine-picker-icon {
+	position: relative;
+	top: 0.75px;
+}
+
+.statusbar .status-ico {
+	transform: translateY(0.08em);
+}

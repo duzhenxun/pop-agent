@@ -1,0 +1,958 @@
+/* ---- 消息气泡（P6）：用户靠右、悬浮操作条 ---- */
+
+.msg {
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 10px 12px;
+	min-width: 0;
+	background: var(--bg);
+}
+
+/* 用户消息：淡蓝底 + 蓝边（和助手的无底色区分开，又不用深色压住文字） */
+.msg-user {
+	border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+	background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.msg-head {
+	display: flex;
+	gap: 8px;
+	/* 抬头现在装四样东西：模型 / 流式计数 / 用量 / 时间（用户 2026-10-30）。
+	   窄屏放不下就整块换行，别把「时间」挤成两行或压到用量上面去。 */
+	flex-wrap: wrap;
+	row-gap: 4px;
+	align-items: baseline;
+	color: var(--text-faint);
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.9655);
+	margin-bottom: 6px;
+}
+
+.msg-role {
+	color: var(--text-dim);
+	font-weight: 600;
+}
+
+/* 助手抬头里的模型名：蓝色，和 Agent 名区分开（"PI  deepseek-v4.1-flash"） */
+.msg-model {
+	color: var(--accent);
+	font-weight: 600;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.9655);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 60%;
+}
+
+/* ---- 流式中的实时数字：`↓ 已生成 token` + 最近几秒的 `t/s` 徽标 ----
+  数字每 250ms 重算一次（见 stream-speed.ts），等宽 + tabular-nums 才不会左右跳。 */
+.msg-live {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.8276);
+	line-height: 1.5;
+}
+
+.msg-live-tokens {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 3px;
+	/* 比模型名淡一档、但要看得清：深灰而不是浅灰，字号跟随聊天设置 */
+	color: var(--text-dim);
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.8276);
+	font-variant-numeric: tabular-nums;
+}
+
+/* 箭头比数字再小一点：它只是「↓」这个方向的提示，不该和数字抢眼 */
+.msg-live-arrow {
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.7241);
+	color: var(--text-dim);
+	letter-spacing: 0;
+}
+
+.msg-live-rate {
+	background: var(--speed-bg);
+	border-radius: 6px;
+	color: var(--speed-fg);
+	font-weight: 600;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.8276);
+	padding: 1px 7px;
+	font-variant-numeric: tabular-nums;
+}
+
+.msg-body {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+/* ---- markdown 正文：长文本防溢出一律 min-width:0 + overflow-wrap ---- */
+
+/* 用户消息：**靠右**（聊天软件的惯常读法：我发的在右、助手在左）。
+   宽度跟着内容走、最多 82% —— 短句不会撑满整行，长文本也不至于在右边挤成一条窄栏。 */
+.msg-user {
+	align-self: flex-end;
+	width: auto;
+	max-width: 82%;
+	border-radius: 12px;
+}
+
+/* 助手消息：整行，但不用边框（更接近参考实现的观感） */
+.msg-assistant {
+	border-color: transparent;
+	background: none;
+	padding-left: 0;
+	padding-right: 0;
+}
+
+.msg {
+	position: relative;
+}
+
+/* 用户消息：气泡（蓝色框）只包住正文。
+   操作/时间那行要落在框外面，所以框的底色与边框从 .msg 挪到 .msg-bubble 上。 */
+/* 用户消息：气泡本身就够「用户感」了，外层不再叠一层边框 */
+.msg.msg-user {
+	border: none;
+	background: none;
+	padding: 0;
+}
+
+.msg-user > .msg-bubble {
+	border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+	background: color-mix(in srgb, var(--accent) 13%, transparent);
+	/* 右下角切平：气泡靠在右边，右下角收小一点 = 聊天软件里那个「从我这边发出去」的小尾巴 */
+	border-radius: 12px 12px 4px 12px;
+	padding: 10px 12px;
+	/* 「插队」抬头靠气泡里的 flex 行布局，不再需要绝对定位的参照系 */
+}
+
+/* 插队那条的抬头（我 + 插队 + ↩/▾）已经在气泡里占了一行，**不需要**再给顶部留白：
+   以前这里是 `padding-top: 26px`（抬头还是绝对定位时的遗留），抬头改成正常流以后
+   就变成一小条空档，看着像气泡"上面空一大块"。现在跟普通用户气泡一样的内边距。 */
+
+/* 用户消息气泡**下面**那一行：整体靠右 = [复制][从此处编辑][时间]。
+   按钮默认不显示，鼠标悬浮在气泡上（或键盘聚焦）才出现；时间一直可见。 */
+.msg-user-foot {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+	margin-top: 4px;
+	min-width: 0;
+}
+
+/* 「从此处编辑 / 复制」**常显**（用户 2026-10-30：「你给它显示出来吧」）。
+   以前是悬浮才出现 —— 好在这两个动作只在自己发的消息上，常显也不会吵：
+   它们本来就淡（--text-faint / 极淡底），跟时间排在一条线上。
+   hover 只提一档颜色，不再做「出现/消失」的动画（跳来跳去反而更抢眼）。 */
+.msg-user-foot > .msg-action,
+.msg-user-foot > .msg-foot-copy {
+	transition: color 0.12s ease;
+}
+
+.msg:hover .msg-user-foot > .msg-action,
+.msg:hover .msg-user-foot > .msg-foot-copy,
+.msg-user-foot:focus-within > .msg-action,
+.msg-user-foot:focus-within > .msg-foot-copy {
+	color: var(--text-dim);
+}
+
+/* 标题行里的操作按钮更小一点，不抢消息正文的注意力 */
+.msg-head .msg-action {
+	padding: 1px 6px;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.8966);
+}
+
+.msg-action {
+	border: 1px solid var(--border);
+	border-radius: 7px;
+	background: var(--bg-elev);
+	color: var(--text-faint);
+	font: inherit;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.931);
+	padding: 2px 8px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.msg-action:hover {
+	color: var(--text);
+	border-color: var(--accent-dim);
+}
+
+/* 复制成功：按钮自己变一下（✓ 已复制 + 绿字），1.4s 后恢复 */
+.msg-action.is-copied,
+.msg-action.is-copied:hover,
+.msg-foot-copy.is-copied,
+.msg-foot-copy.is-copied:hover {
+	color: var(--green);
+	border-color: color-mix(in srgb, var(--green) 45%, transparent);
+	background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+
+/* 消息尾注里的「复制 / 从此处编辑」：**跟右边那串时间长得一模一样**（无边框、无底色、同字号、
+   同淡度），不再是两颗小胶囊 —— 一屏消息里按钮比内容还显眼，噪。
+   颜色用 color-mix 模拟时间那层的 72% 透明度：opacity 已经被上面「悬浮才显示」占用了。 */
+.msg-user-foot > .msg-action,
+.msg-user-foot > .msg-foot-copy {
+	border: 0;
+	background: none;
+	padding: 0;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.7931);
+	line-height: 1.6;
+	color: color-mix(in srgb, var(--text-faint) 72%, var(--bg));
+	border-radius: 4px;
+}
+
+.msg-user-foot > .msg-action:hover,
+.msg-user-foot > .msg-foot-copy:hover {
+	border: 0;
+	background: none;
+	color: var(--text-dim);
+}
+
+/* 复制成功的绿色反馈保留，但不再长出一块底色 */
+.msg-user-foot > .msg-action.is-copied,
+.msg-user-foot > .msg-action.is-copied:hover {
+	background: none;
+	color: var(--green);
+}
+
+/* 提示条：文字可换行，右侧一个关闭按钮（点掉节省对话高度） */
+.notice {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+
+.notice-text {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.notice-close {
+	flex: none;
+	width: 18px;
+	height: 18px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 4px;
+	background: none;
+	color: var(--text-faint);
+	font: inherit;
+	font-size: 15px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0;
+}
+
+.notice-close:hover {
+	background: var(--bg-elev-2);
+	color: var(--text);
+}
+
+/* 「过程 N 步」开关：纯文字行（无描边、无底色，宽度跟着文字走）。
+ *
+ * 为什么要「去彩」：这一层是**辅助信息**的目录，不是正文。之前给它掺了 16% 主色底 +
+ * 45% 主色边框，展开后思考行、工具卡再各带一层框和主色，整屏都在冒蓝，用户
+ * （2026-XX：「思考与调用工具太过于明显」）一眼先看到过程、看不到回答。
+ * 第一步先去彩（中性描边 + 透明底），用户又跟了一句「连描边都去掉」——于是边框也撤了。
+ * 现在靠左侧三角 + 文字本身表示「能点」，悬停时才浮出一层 4% 底色（唯一的存在感）。
+ * 字号仍与正文同档（退回 --text-faint + 13.5px 的注脚感也被嫌弃过，不走回头路）。
+ * 可发现性在这里不算损失：反正跑完自动收起，只剩这一行，想看过程总要有个入口。 */
+.msg-tools-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	align-self: flex-start;
+	border: 0;
+	border-radius: 6px;
+	background: none;
+	color: var(--text-dim);
+	font: inherit;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 1);
+	padding: 2px 6px;
+	/* 负左边距：去掉了内边距里的字边，把它拉回和正文同一条左边线 */
+	margin-left: -6px;
+	/* 窄屏放不下时**整段**折到下一行，而不是把「4 段思考」拆成「4 段思 / 考」 */
+	flex-wrap: wrap;
+	max-width: 100%;
+	cursor: pointer;
+	transition:
+		color 0.12s ease,
+		background 0.12s ease;
+}
+
+.msg-tools-toggle:hover {
+	color: var(--text);
+	background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+/* 过程里的「说明段」（最后一段结论之前的正文）：字号明显大一档。
+ *
+ * 为什么要它：以前它和思考行、工具行几乎同字号又同为深色，夹在中间读起来像又一条工具输出
+ * （用户 2026-11-02：「红框里的文案看着不是很明显，字号大一些」）。工具行改成淡色之后，
+ * 再把这一档抬上去，视觉上就成了「人说的话 > 机器步骤」两层。
+ *
+ * 刻度（默认正文字号 14px 时）：
+ *   · 思考 / 工具行 = `--chat-ui-font-size × 0.9655` ≈ 13.5px（淡色）；
+ *   · 本行         = `--chat-font-size × 1.2` ≈ 16.8px → 比机器步骤大 ~1/4，
+ *     一眼能看出哪一段是「人在说话」（用户 2026-11-02 第二次：「再大一点，希望明显一些」）。
+ * 基准用 `--chat-font-size`（设置里的正文字号），不用 em —— em 是相对**父级**算的，
+ * 而父级不一定是正文字号（实测 1.08em 会算成 17.28px，跳太多）。 */
+.md.md-narration {
+	font-size: calc(var(--chat-font-size, 14px) * 1.2);
+	/* 字大了之后行距跟不上就会挤成一团：固定 1.6，跟正文的观感一致 */
+	line-height: 1.6;
+}
+
+/* 「过程」容器：这一轮的所有渲染单元（过程段与正文按发生顺序交错）。
+   折叠**只收思考与工具卡**（收成一行“过程 N 步”，按钮长在第一次动手的位置）；
+   正文与中间那几段说明永远留在原位 —— 它们不是“过程噪音”，是推理的理由。 */
+.msg-process,
+.process-segment {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+/* 一小块 = 一段思考 + 它后面跟着的工具调用（同一次「想完就试」）。
+ * 现在**不再挂竖线和缩进**（用户 2026-10-30：照 codex 压平）：
+ * 一轮十几个工具时，左侧那道线 + 层层缩进会把过程变成一张“表”，行与行之间反而难扫；
+ * 分组靠上下留的那一点间距和行首图标就够了（同一块的思考与工具本来就连在一起）。 */
+.process-group {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+/* 悬停底色：这一条是可点的（行内没有按钮，不给反馈就不知道能展开）。
+ * 2% 就够 —— 只是“这条能点”的提示，不能变成一行行斑马纹 */
+.process-group .thinking-block:hover,
+.process-group .tool:hover {
+	background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+/* 手机端顶替「（点击展开）」的箭头：桌面不显示（桌面有文字提示 + 左侧三角） */
+.msg-process-chevron {
+	display: none;
+	width: 7px;
+	height: 7px;
+	margin-left: 4px;
+	border-right: 1.8px solid currentColor;
+	border-bottom: 1.8px solid currentColor;
+	transform: rotate(-45deg); /* 收起：指右 */
+	transition: transform 0.12s ease;
+}
+
+.msg-process-chevron-open {
+	transform: rotate(45deg); /* 展开：指下 */
+}
+
+/* 每一项都不许在自己的框里折行：放不下就让整颗胶囊换行（配上面的 flex-wrap） */
+.msg-tools-toggle > * {
+	white-space: nowrap;
+}
+
+/* 计数跟着开关走（继承字号/颜色），只做等宽数字：原来单独压到 12.5px + --text-faint，
+ * 跟「过程 38 步」（正文色）并排时一半亮一半灰，读起来断断续续 */
+.msg-process-meta {
+	color: inherit;
+	font-variant-numeric: tabular-nums;
+}
+
+/* 技能名：比“N 次工具”还要再显一点 —— 用户问的第一句话往往是「你用了哪个 skill」。
+ * 不挂主色（一屏多个折叠行会变成一排蓝点），只把字重提到 500 */
+.msg-process-skills {
+	font-weight: 500;
+}
+
+/* 手机窄屏：技能名过长时省略，不把这一行挤成两行（完整名字点开过程就看得到） */
+@media (max-width: 640px) {
+	.msg-process-skills {
+		max-width: 45%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+}
+
+/* 耗时排在最后，并且刻意压淡一档：它是个「结果」，不是入口。
+ * 字号不动（跟开关同级），只降对比度 —— 视线先落在「多少段思考 / 多少次工具 / 多少步」上，
+ * 想知道花了多久再往右看。再小一号就退回「注脚感」了，那正是之前被嫌弃的样子。 */
+/* 底色掺了主色之后 --text-faint 只剩 3.1:1，太飘；改用「--text-dim 往 --text-faint 偏 35%」，
+ * 既有主次（6.06:1 vs 4.74:1），又不至于糊在淡蓝底上。 */
+.msg-process-time {
+	color: color-mix(in srgb, var(--text-dim) 65%, var(--text-faint));
+}
+
+/* 三角箭头：跟 14.5px 的字配对，4px 显得太秀气，放到 5px */
+.msg-tools-caret {
+	width: 0;
+	height: 0;
+	flex: none;
+	border-left: 5px solid currentColor;
+	border-top: 5px solid transparent;
+	border-bottom: 5px solid transparent;
+	transition: transform 0.12s ease;
+}
+
+.msg-tools-caret-open {
+	transform: rotate(90deg);
+}
+
+/* ---- 实时动作：「正在读取 Weather Forecast 技能」/「正在运行 curl …」（见 MessageList 的 LiveActivity）----
+ * 跑着的时候整条回复就这一行状态位（codex 那样）：图标说明「现在是调 skill 还是跑命令」，
+ * 文字说人话，换动作就地替换。只占一行，参数摘要超出就省略（悬停看全文）。 */
+/* 实时行 + 它下面那个「完整命令」弹层：弹层用绝对定位，得有个定位上下文 */
+.msg-activity-wrap {
+	position: relative;
+}
+
+.msg-activity {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	/* 	现在这一行是 <button>（点开看完整命令）：把浏览器那套默认样式抹平 */
+	width: 100%;
+	/* 和过程里的行一样紧贴上一行：父容器（.msg-body）给了 8px 间距，这里用 -4 抵成 4px，
+	   跟 .process-segment 内部的 4px 一致（用户 2026-11-02：「这三行距离应保持一致」） */
+	margin-top: -4px;
+	padding: 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	text-align: left;
+	cursor: default;
+	color: var(--text-dim);
+	/* 和工序行同档（0.931 ≈ 13px）：它是「正在跑的那一步」，排在同一列里 */
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.931);
+}
+
+/* 有全文可看时才是能点的：悬停给一点反馈，不然没人知道点得动 */
+.msg-activity[aria-expanded] {
+	cursor: pointer;
+}
+
+.msg-activity[aria-expanded]:hover,
+.msg-activity[aria-expanded="true"] {
+	color: var(--text);
+}
+
+/* 「完整命令」弹层：行尾只塞得下一行的一点开头（详情交给 CSS 省略号），全文摆这里
+ * （等宽、保留换行、可滚动）。
+ * 往上弹（实时行总在消息末尾，下方就是输入框），宽度压住不撑破气泡 ——
+ * 560 → 860：长命令（`cd … && node -e '…'`）在 560 里要横着滚，看全文的人是来读命令的，
+ * 给宽一点比给滚动条有用（用户 2026-11-02：「弹层可以再宽一些」）。 */
+.msg-activity-pop {
+	position: absolute;
+	left: 0;
+	bottom: calc(100% + 6px);
+	z-index: 30;
+	width: min(860px, 100%);
+	padding: 9px 11px 11px;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--bg-elev);
+	box-shadow: 0 10px 28px rgb(0 0 0 / 12%);
+	/* 它是**向上**弹的（anchor 在底边），所以整体高度必须留出「视口 + 140px」的余量，
+	   否则行本身贴着屏幕底部时，弹层顶部会被顶到视口外面 —— 手机上实测 y = -57px，
+	   标题和复制按钮全看不见（用户 2026-11-02 报「显示不全」）。用 flex 让正文自己收缩滚动。 */
+	max-height: calc(100vh - 140px);
+	display: flex;
+	flex-direction: column;
+}
+
+.msg-activity-pop-head {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.9655);
+	color: var(--text-dim);
+}
+
+.msg-activity-pop-icon {
+	flex: none;
+	width: 14px;
+	height: 14px;
+	color: var(--accent);
+	opacity: 0.8;
+}
+
+.msg-activity-pop-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.msg-activity-pop-meta {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.9);
+	color: var(--text-faint);
+}
+
+.msg-activity-pop-tool {
+	padding: 1px 5px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+}
+
+/* 复制按钮：跟标题同一行、靠右；比正文小一号，不要压过命令本身 */
+.msg-activity-pop-foot {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 6px;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.9);
+}
+
+.msg-activity-pop-body {
+	margin: 7px 0 0;
+	/* 220 → 70vh / 720：用户要的是「整段都能看见」（heredoc / 脚本常见 600px 上下）；
+	 * 只在极端长（几千字）时才滚动。外层还有 `max-height: calc(100vh - 140px)`，
+	 * 所以这里用 flex 收缩（min-height: 0 是必需的，否则 flex 项不会缩）。 */
+	flex: 1 1 auto;
+	min-height: 0;
+	max-height: min(70vh, 720px);
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.931);
+	line-height: 1.5;
+	color: var(--text);
+}
+
+/* 动作图标（书 / 文件 / 文件夹 / 终端 / 地球 / 放大镜 / 铅笔 / 机器人 / 星）。
+ * 它替掉了原来那三颗呼吸的点：**图标本身就是信息**（用户 2026-10-30：换小图标告知在调工具还是调 skill），
+ * 一个灰点说不清这事。用主色描边一档透明度，比正文暗、比纯灰字有指向性；
+ * 只做很轻的呼吸（透明度），不做旋转 —— 这一行还有命令和秒数要读。 */
+.msg-activity-icon {
+	flex: none;
+	width: 14px;
+	height: 14px;
+	color: var(--accent);
+	opacity: 0.75;
+	/* 周期必须和 .msg-activity-label 的 pulse 一致（都是 1.6s）：明暗才能同步到达最亮 / 最暗 */
+	animation: msg-activity-sparkle 1.6s ease-in-out infinite;
+	transform-origin: center;
+}
+
+/* 图标「闪一下」：放大缩小 + 轻微转一下 + 明暗一起变，比单纯的透明度呼吸看得清 */
+@keyframes msg-activity-sparkle {
+	0%,
+	100% {
+		transform: scale(0.8) rotate(-8deg);
+		opacity: 0.45;
+	}
+
+	50% {
+		transform: scale(1.18) rotate(8deg);
+		opacity: 1;
+	}
+}
+
+/* 文字颜色在两档之间来回变（淡 ↔ 正文色）：字始终有颜色，不会因为渐变没铺满而变成透明 */
+.msg-activity-label {
+	color: var(--text-faint);
+	/* 与 .msg-activity-icon 的 sparkle 同周期同缓动，亮暗才同步 */
+	animation: msg-activity-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes msg-activity-pulse {
+	0%,
+	100% {
+		color: var(--text-faint);
+	}
+
+	50% {
+		color: var(--text);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	/* 不等动：留一个静态图标、文字正常颜色就行（它表达的是「在跑」，动效只是辅助） */
+	.msg-activity-icon {
+		animation: none;
+		opacity: 0.8;
+	}
+
+	.msg-activity-label {
+		animation: none;
+		color: var(--text-faint);
+	}
+}
+
+/* 「正在读取 X 技能」这句：**不跟着缩**（flex: none）——一缩就变成「正在…」，
+ * 而这句恰恰是这行最重要的信息；要省宽度就省后面的参数（用户 2026-11-02：
+ * 参数铺满后标签被挤成了「正在…」）。真遇上超长工具名（MCP）仍允许省略，不撑破行。 */
+.msg-activity-label {
+	flex: 0 0 auto;
+	max-width: 60%;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* 参数详情（命令 / 地址 / 脚本正文）：**单行省略**，不折行。
+ *
+ * 曾经改成两行（为了把 `cd /tmp && python3 - <<'PY' …` 后半截露出来），但实跑下来的效果是：
+ * “正在跑 Python 脚本”一个人占两行，把下面的答案又往下顶一格（用户 2026-10-30：「上面显示折行了」）。
+ * 状态行是「一眼扫过」的东西，不应该长出第二行 —— 完整命令 / 脚本正文放 title 里，悬停看全文。
+ * `min-width: 0` 是必需的：缺了它 flex 子项不会缩，长命令会把行撑破。 */
+.msg-activity-args {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	line-height: 1.35;
+	color: var(--text-faint);
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.931);
+}
+
+/* 已经跑了多久：靠右。脚本卡住不动时，这个数字还在跳 —— 至少说明不是界面死了 */
+.msg-activity-time {
+	flex: none;
+	margin-left: auto;
+	color: var(--text-faint);
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.931);
+	font-variant-numeric: tabular-nums;
+}
+
+/* 思考过程（reasoning）：一行预览 + 展开看全文。
+ * 和工具行同一套行高、同一套边距（3px 6px）—— 展开后的过程就是一列齐整的行，
+ * 不再有“卡片”和“行”两种高度混着。 */
+.thinking-block {
+	border-radius: 6px;
+	background: var(--bg-elev);
+	overflow: hidden;
+	transition: background 0.12s ease;
+}
+
+/* 思考编号（①②…）已撤掉（用户 2026-10-30：「这种数字不要了」）。
+ * 它只在「想指代第几段」时有用，而一轮动辄十几段，读起来就是每行前面多一个蓝点；
+ * 先后顺序本来就由上下位置表达，不需要再数一遍。若要恢复，.thinking-label 前面插一个
+ * 带 aria-label 的 span 即可，布局无需改动。 */
+.thinking-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	border: none;
+	background: none;
+	/* 过程行统一再淡一档（用户 2026-11-02）：思考、工具卡都用 --text-whisper */
+	color: var(--text-whisper);
+	font: inherit;
+	/* 工序行再压一档（0.9655 → 0.931 ≈ 13px）：跟工序行（.tool-name / .tool-args）**同档**，
+	 * 比过程里的说明段（1.2 ≈ 16.8px）低近 30% —— 两层一眼分得开（用户 2026-11-02：「再压小一档」） */
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.931);
+	text-align: left;
+	padding: 3px 6px;
+	cursor: pointer;
+	min-width: 0;
+}
+
+.thinking-head:hover {
+	color: var(--text-dim);
+}
+
+/* 收起时的思考预览：**一行，放不下就省略号**（不做跑马灯 / 任何横向滚动）。
+ * 它只是"这轮想了什么"的一行提示，全文点开看 —— 一直在动的文字反而抢注意力。 */
+.thinking-preview {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.thinking-caret {
+	flex: none;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.8276);
+}
+
+/* 「思考 9 段」这个标签：固定在最前，后面的预览可省略。
+ * 原来是 600 字重 + --text-dim，在一串灰行里反而最亮的那一个；降到 500 + --text-faint，
+ * 和预览同为「过程的一部分」，不跟正文抢注意力。 */
+.thinking-label {
+	flex: none;
+	font-weight: 500;
+	color: var(--text-whisper);
+}
+
+/* 「· 耗时 2s」：放在预览后面、三角之前，淡色小字 */
+.thinking-duration {
+	flex: none;
+	color: var(--text-faint);
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.8966);
+	font-variant-numeric: tabular-nums;
+}
+
+.thinking-body {
+	padding: 6px 10px 8px;
+	border-top: 1px solid var(--border);
+	color: var(--text-dim);
+	/* 跟随钩子行（.thinking-head）同档：否则展开前小、展开后变大，一切换就跳字 */
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.931);
+	line-height: 1.6;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+/* 尾注就是这条消息的最后一行：气泡底部不该再留一整段内边距，
+   否则虚线下的用量行和下一个区块之间会空出一大块（悬浮在对话流尾部时尤其明显）。 */
+.msg-assistant {
+	padding-bottom: 4px;
+}
+
+/* ---- 助手消息尾注：token 用量 · 复制 · 绝对时间 ----
+ * 分成两伙：**用量 / 复制 / 分支图标贴左**（跟正文同一条左边线，是「这条消息」的正文信息），
+ * **时间贴右**（行尾，当时间戳用）。中间那段空白靠 `.topbar-spacer` 撑开。
+ *
+ * 曾经试过「整排靠右、挨着时间」（用户提过一句「跟时间挨一块」），但看图之后还是左对齐更好读
+ * （用户：「这块还是放回到左边吧」）—— 一行里左边全是「这条消息本身」的度量，右边只有时间，
+ * 扫读时两边各归各位，不会一进眼就是右边一坨。 */
+.msg-foot {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 6px;
+	padding-top: 4px;
+	border-top: 1px dashed var(--border);
+	color: var(--text-faint);
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.8966);
+	min-width: 0;
+}
+
+/* 用量行：`[in]18K [out]404 [cache]35K $0.04` —— 每项 = 一颗小词标 + 缩写数字。
+ * 位置在**消息尾注**（试过搬到抬头，用户 2026-10-30 又说「还放到下面好看」，所以就在底部）。
+ * 词标代替中文标签（写四个词会拉长到换行），认不出来悬浮一下就有全称。
+ * `nowrap` 是刻意的：窄屏放不下就整组换行，不能把 `out` 和它的数字拆开。 */
+.msg-usage {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.msg-usage-item {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+}
+
+/* 词标：`in` / `out` / `cache` / `cacheW`，跟尾注一起淡（它是图例，不是按钮）。
+   宽度跟着词走（不再固定成 13px 的小方块），手机上一行也放得下；
+   左右留 3px、圆角给大一点，就是一枚小胶囊。 */
+.msg-usage-tag {
+	flex: none;
+	display: inline-grid;
+	place-items: center;
+	height: 13px;
+	padding: 0 3.5px;
+	border-radius: 4px;
+	background: var(--bg-elev-2);
+	color: var(--text-dim);
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.6897);
+	font-weight: 600;
+	line-height: 1;
+	letter-spacing: 0.1px;
+}
+
+/* 子代理那一块：与主对话的 in/out/cache 用一条细竖线隔开 ——
+   两块数字是**两本账**（引擎只报主会话，子代理独立计费），隔一下才不会读成「同一组的第四项」。 */
+.msg-usage-sub {
+	padding-left: 7px;
+	border-left: 1px solid var(--border);
+	color: var(--text-dim);
+}
+
+/* 子代理的花费：比 token 数稍微亮一点，它是「额外花掉的钱」 */
+.msg-usage-cost {
+	color: var(--text);
+}
+
+.msg-foot-copy {
+	flex: none;
+	border: none;
+	background: none;
+	color: var(--text-faint);
+	font: inherit;
+	/* 与时间同一个字号：抬头这一行都是「参考信息」，不该有谁更抢眼 */
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.7931);
+	line-height: 1.4;
+	padding: 0 2px;
+	cursor: pointer;
+	border-radius: 5px;
+}
+
+.msg-foot-copy:hover {
+	color: var(--text-dim);
+	background: none;
+}
+
+/* 绝对时间（10月16日 14:18:06）：只是参考信息，比按钮/用量再小一号、再淡一档。
+   两种写法都在 DOM 里，宽度说了算（见下面的手机媒体查询）：桌面带秒，手机去秒。 */
+.msg-foot-stamp {
+	flex: none;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	font-size: calc(var(--chat-ui-font-size, 12px) * 0.7931);
+	color: var(--text-faint);
+	/* 再压一点亮度：11.5px 的灰字在大气泡里依然清楚，但不会抢正文 */
+	opacity: 0.72;
+}
+
+/* 默认（宽屏）显示带秒的完整写法 */
+.msg-foot-stamp-short {
+	display: none;
+}
+
+@media (max-width: 600px) {
+	.msg-foot {
+		/* 手机上这一行要塞下「用量 · 复制 · 时间」三样，间距全收紧一号 */
+		gap: 4px 6px;
+		font-size: calc(var(--chat-ui-font-size, 12px) * 0.7931);
+		/* 极窄屏（≤360）实在装不下时仍优雅换行，不会把时间挤出屏幕 */
+		flex-wrap: wrap;
+	}
+	.msg-usage {
+		flex: 1 1 auto;
+		min-width: 0;
+		gap: 5px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.msg-usage-item {
+		gap: 2px;
+	}
+
+	/* 词标也缩一号：三颗加起来能给这一行省下 ~20px */
+	.msg-usage-tag {
+		height: 12px;
+		padding: 0 2.5px;
+		font-size: calc(var(--chat-ui-font-size, 12px) * 0.6207);
+	}
+
+	/* 助手尾注：时间顶到最右边（用量在左、时间在右，中间 157 白）*/
+	.msg-foot > .msg-foot-stamp {
+		margin-left: auto;
+	}
+
+	/* 用户消息那行（复制 / 从此处编辑 / 时间）：**三样挨着靠右**，
+	   所以这里不能再给时间吸一个 auto 左边距 —— 否则前两颗按钮会被顶到最左边，
+	   和右下角的时间隔开一大段空白。 */
+	.msg-foot-stamp {
+		/* 手机上时间独占一行时也别显得比正文大 */
+		font-size: calc(var(--chat-ui-font-size, 12px) * 0.6897);
+	}
+
+	/* 时间：手机上也要带「月日」（用户 2026-10-30：「用户发出的消息，你要把月日也显示出来」）——
+	 * 以前这里把 `-full` 藏起来只留 `18:57:35`，理由是那一行要挤下「复制 / 从此处编辑 / 时间」。
+	 * 现在有了更值钱的东西要看：**隔天回来翻记录，只看时分秒根本分不清是哪一天**。
+	 * 代价是宽一点，但这行本来就 `flex-wrap: wrap`（上面那条），挤不下会自动换行，不会溢出。 */
+	.msg-foot-stamp-full {
+		display: inline;
+	}
+
+	.msg-foot-stamp-short {
+		display: none;
+	}
+
+	/* 尾注按钮跟着时间一起缩：小屏一行要装下「复制 / 编辑 / 时间」 */
+	.msg-user-foot > .msg-action,
+	.msg-user-foot > .msg-foot-copy,
+	.msg-foot-copy {
+		font-size: calc(var(--chat-ui-font-size, 12px) * 0.7241);
+	}
+}
+
+/* 尾注里的「从这里创建分支」：和复制同字号同色调，只有一枚图标。
+ * 尺寸跟**同一个字号 token** 走（用户：「这个图标太大了，比复制都高了」）：
+ * 以前写死 13×13 —— 而旁边「⧉ 复制」的字号只有 `12 × 0.7931 ≈ 9.5px`，字形墨高又只有 ~7px，
+ * 13px 的圆点图标压在那一行里就显得高出一头。现在 ≈10px，跟文字的视觉高度对得上。 */
+.msg-foot .msg-foot-fork svg,
+.msg-foot .msg-foot-read-aloud svg {
+	width: calc(var(--chat-ui-font-size, 12px) * 0.83);
+	height: calc(var(--chat-ui-font-size, 12px) * 0.83);
+	display: block;
+}
+
+/* 图标本身不带行盒：对顶到底会让按钮比「复制」高一个半像素，掰正 */
+.msg-foot .msg-foot-fork,
+.msg-foot .msg-foot-read-aloud {
+	line-height: 1;
+	padding: 1px 2px;
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+}
+
+.msg-foot .msg-foot-fork:hover,
+.msg-foot .msg-foot-read-aloud:not(:disabled):hover,
+.msg-foot .msg-foot-read-aloud[aria-pressed="true"] {
+	color: var(--accent);
+}
+
+.msg-foot .msg-foot-read-aloud:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+/* 用户消息正文：纯文字，保留换行与空格（不走 Markdown，贴进来的 HTML 原样显示） */
+.msg-user-text {
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+/* 用户消息里的网址（新标签页打开，见 UserTextWithLinks）：气泡里只给下划线 + 主色，
+   别用默认的蓝色——深色主题下气泡底色和浏览器默认蓝打架。 */
+.msg-user-link {
+	color: var(--accent);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	word-break: break-all;
+}
+
+/* 用户发的图片：缩略图排在正文下面，点开放大（见 MessageList 的 UserMessageText） */
+.msg-user-images {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.msg-user-img-btn {
+	display: block;
+	max-width: 100%;
+	padding: 0;
+	border: 0;
+	background: none;
+	cursor: zoom-in;
+}
+
+.msg-user-img {
+	display: block;
+	max-width: 100%;
+	max-height: 260px;
+	border-radius: 8px;
+}

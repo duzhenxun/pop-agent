@@ -1,0 +1,1172 @@
+/**
+ * 入口：一个 HTTP 端口 + 实时通道（WS 或 SSE/RPC，ADR-0032）。
+ */
+import { defaultSkillsDir } from "./skills/skill-store.js";
+import { homedir, networkInterfaces } from "node:os";
+import { createServer } from "node:http";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import express from "express";
+import { createEngineWiring } from "./engine/wiring.js";
+import type { EnginePort, EngineProviderCatalogEntry } from "./engine/port.js";
+import { createFileRuleStore } from "./approval/rules.js";
+import { existsSync, mkdirSync } from "node:fs";
+import { PROTOCOL_VERSION, type ProtocolError, type ServerReply } from "./protocol.js";
+import { acquireLock, describeHolder, releaseLock } from "./session/lock.js";
+import { createRuntime } from "./session/runtime.js";
+import { createFileSettingsStore, readSettingsSync } from "./session/settings.js";
+import { createSender, type OutFrame } from "./snapshot/sender.js";
+import { createPiSessionsProvider, piAgentDir } from "./session/pi-sessions-provider.js";
+import { createUploadStore, uploadsDir } from "./uploads/upload-store.js";
+import { createProviderWiring } from "./providers/provider-handlers.js";
+import { providerPool } from "./providers/provider-pool.js";
+import { probeProvider } from "./providers/probe.js";
+import { createProviderStore } from "./providers/provider-store.js";
+import { completeOnce } from "./providers/one-shot.js";
+import { createCronRouter, createCronService } from "./cron/index.js";
+import { createCronToolPort, type CronToolPort } from "./cron/tool.js";
+import type { AppearancePort } from "./session/appearance.js";
+import { createCanvasStore } from "./session/canvas-store.js";
+import type { CanvasPort } from "./session/canvas.js";
+import type { AppearanceView } from "./protocol.js";
+import { DEFAULT_APPEARANCE } from "./session/settings.js";
+import { createComputerRouter } from "./computer/routes.js";
+import { createTtsRouter, ttsJsonErrorHandler } from "./tts/routes.js";
+import { createTtsService } from "./tts/service.js";
+import { approvalModeOf } from "./snapshot/state.js";
+import { createAgentRunner } from "./cron/agent-run.js";
+import { createTextCompleter, type OneShotTarget } from "./session/one-shot.js";
+import { createEnabledStore, isModelEnabled } from "./providers/enabled-models.js";
+import { createPluginStore, type PluginStore } from "./engine/pi-plugins.js";
+import { createMcpLogin } from "./mcp/mcp-auth.js";
+import { createCodexMcpStore, codexConfigPath } from "./mcp/codex-mcp-store.js";
+import { createClaudeMcpStore, createOpencodeMcpStore } from "./mcp/json-mcp-store.js";
+import { createNoneMcpStore } from "./mcp/none-mcp-store.js";
+import { createMcpStore, type McpStore } from "./mcp/mcp-store.js";
+import {
+	createClaudePluginStore,
+	createCodexPluginStore,
+	createNonePluginStore,
+	createOpencodePluginStore,
+} from "./plugins/engine-plugin-stores.js";
+import { createMcpMarket } from "./mcp/mcp-market.js";
+import { migrateStoreToCatalog } from "./providers/catalog-writes.js";
+import { createPushStore, notifyTurnFinished } from "./push/push.js";
+import { registerAuxRoutes } from "./http/aux-routes.js";
+// ADR-0047：右侧「网页」页的代理（绕开 X-Frame-Options / CSP frame-ancestors）
+import { registerWebProxyRoutes } from "./web-proxy/proxy-routes.js";
+import { handleMessage, type ClientSink } from "./ws/handle-message.js";
+import { registerHealthAndStatic } from "./http/health-and-static.js";
+import { registerWebSocketRoutes } from "./http/ws-routes.js";
+import { decide, effectiveAddress, isCrossOriginRejected, isLoopback } from "./http/auth.js";
+import { registerUploadRoutes } from "./uploads/upload-routes.js";
+import { AsrBridge } from "./asr/bridge.js";
+import { asrRawErrorHandler, registerAsrRoutes } from "./asr/routes.js";
+import { readConfig, validateConfig } from "./util/env.js";
+import { createLogger } from "./util/log.js";
+import { createRotatingFileSink, logFileName, type RotatingFileSink } from "./util/log-file.js";
+import { refreshPriceIndex } from "./util/pricing-index.js";
+import { pickExisting, webDistCandidates } from "./util/paths.js";
+import { applyDesktopEnv, readyLine } from "./util/desktop.js";
+import { registerEngineRoutes } from "./engine/engine-routes.js";
+import { ensurePrefixOnPath } from "./engine/engine-install.js";
+import { isLoopbackHostname } from "./util/origin.js";
+import { authMiddleware } from "./http/auth.js";
+import { createPasswordStore } from "./http/password-store.js";
+import { registerAuthRoutes } from "./http/auth-routes.js";
+import { createLoginGuard } from "./http/login-guard.js";
+import { createLoginActivity } from "./http/login-activity.js";
+import { BRAND_NAME } from "./brand.js";
+import { registerLiveRoutes, type Sink } from "./http/live-routes.js";
+import { registerClientLogRoutes } from "./http/client-log-routes.js";
+import { registerVoiceSettingsRoutes } from "./http/voice-settings-routes.js";
+import { compressText, immutableAssets } from "./http/compress.js";
+import { fanOutSnapshot } from "./snapshot/fan-out.js";
+import { checkDataDirWritable, describeListenError } from "./util/startup.js";
+import { migrateLegacyDataDir } from "./util/data-dir.js";
+import { DEFAULT_DATA_DIR_NAME } from "./util/env.js";
+import { resolveStartupPassword } from "./http/password-store.js";
+import { packageMeta } from "./util/version.js";
+import { checkForUpdate, describeUpdate } from "./update-check.js";
+import { styleText } from "node:util";
+
+const HERE = fileURLToPath(new URL(".", import.meta.url));
+/**
+ * 桌面 App（ADR-0051）：把壳内置的 node / npm / npx 前置进 PATH。
+ *
+ * 必须赶在**任何子进程**之前 —— 引擎传输层、终端 pty、MCP 全靠 PATH 找命令，
+ * 而它们散在十几个模块里，不可能逐处传 env；改当前进程环境是唯一不漏的做法。
+ * 非桌面模式（`npm i -g` / 源码直跑）下是空操作。
+ */
+const desktopRuntime = applyDesktopEnv();
+/** 开发态对外端口（Vite）；dev 脚本用它告诉后端可信来源 */
+const DEV_WEB_PORT = Number(process.env.POP_AGENT_DEV_PORT ?? 25257);
+/** 快照节流窗口（ADR-0004 §3） */
+const SNAPSHOT_WINDOW_MS = 60;
+const TICK_MS = 20;
+
+/**
+ * 访问密码：**唯一来源是 `<dataDir>/password`**（在 `readConfig` 之前就要定下来）。
+ *
+ * 以前这个入口（`npm run dev` / `npm run serve`，源码直跑）只认 `POP_AGENT_PASSWORD`，
+ * 而 `cli.ts`（`pop` / `npm start`）会先把文件补进 env —— 于是同一个人用两种方式起，
+ * 「设置 → 远程」里改的密码只在其中一种方式下生效，重启后就成了「密码怎么变了」
+ * （用户 2026-10-30）。现在两边同一个口径：文件优先，env 只在文件还没生成时当一次性来源。
+ */
+const startupDataDir =
+	process.env.POP_AGENT_DATA_DIR && process.env.POP_AGENT_DATA_DIR !== ""
+		? resolve(process.env.POP_AGENT_DATA_DIR)
+		: join(homedir(), DEFAULT_DATA_DIR_NAME);
+const startupPassword = resolveStartupPassword(join(startupDataDir, "password"), process.env.POP_AGENT_PASSWORD);
+if (startupPassword.password !== null) process.env.POP_AGENT_PASSWORD = startupPassword.password;
+else delete process.env.POP_AGENT_PASSWORD;
+
+const {
+	config,
+	problems: envProblems,
+	notes: envNotes,
+	workspaceFallback,
+} = readConfig(process.env, {
+	home: homedir(),
+	cwd: process.cwd(),
+});
+let fileSink: RotatingFileSink | null = null;
+/**
+ * 前台运行（CLI 默认）：终端只留 warn / error。
+ *
+ * 以前后台才是默认，这些 info（装载会话索引、provider 列表……）都落在 daemon.log 里看不见；
+ * 现在前台成了默认，再照旧打就会把用户自己的输机记录冲没。
+ * 它们仍然**全部**进轮转日志文件；显式给了 `POP_AGENT_LOG=debug|info` 就按用户的意思正常打。
+ * （每来一个客户端一条的「SSE 已连接 / 已断开」已经降到 debug：每个标签页每次重连都写一行，
+ * 正常运行时纯噪声，真排查时 `POP_AGENT_LOG=debug pop` 再看。）
+ */
+const foreground = process.env.POP_AGENT_FOREGROUND === "1";
+const quietConsole = foreground && !process.env.POP_AGENT_LOG;
+const logger = createLogger({
+	level: config.logLevel,
+	scope: "app",
+	sink: (line, level) => {
+		if (!quietConsole || level === "warn" || level === "error") process.stdout.write(`${line}\n`);
+		fileSink?.write(line);
+	},
+});
+// 密码来源只记来源、记来源里的**文件名**，绝不记密码本身：
+// 「改了密码还是不生效」十有八九是读的那份和你改的不是同一份。
+if (startupPassword.source === "migrated") {
+	logger.info("访问密码来自环境变量，已一次性存进数据目录（以后只读那份）", {
+		file: join(startupDataDir, "password"),
+	});
+} else if (startupPassword.source === "none") {
+	logger.info("没有设访问密码：远程访问一律不开（本机回环免密）");
+} else if (startupPassword.conflict) {
+	logger.info(`环境变量里的密码与数据目录那份不一致：以 ${join(startupDataDir, "password")} 为准`);
+}
+// 内置运行时到底注进去没有：桌面模式下排查「终端里找不到 codex」的第一条线索
+if (desktopRuntime.applied) {
+	logger.info("桌面模式：内置运行时已前置进 PATH", { dirs: desktopRuntime.dirs });
+}
+/**
+ * 用户点「安装」装过的引擎落在 `<dataDir>/bin`（那是个标准 npm prefix，见 engine-install.ts）。
+ * 进程一重启这条 PATH 就没了 —— 不挂回来的话界面会说「没装」，而人明明刚装过。
+ */
+const enginesBin = ensurePrefixOnPath(config.dataDir);
+if (enginesBin) logger.info("已把装过的引擎目录挂回 PATH", { dir: enginesBin });
+
+// 单用户工作台：一处 fire-and-forget 的 Promise 拒绝（推送写盘失败、模型热重载失败……）
+// 不该把整个服务带走（Node ≥15 默认会直接退出）。记日志、继续跑。
+process.on("unhandledRejection", (reason) => {
+	logger.error("未处理的 Promise 拒绝（已记录，进程继续）", {
+		message: reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
+	});
+});
+// 同一个口径的另外半边：**同步抛出**的异常（最典型的是扩展塞在 setTimeout 里的渲染，
+// 比如 `token-speed.ts` 调 pi 的 theme 时抛 `Theme not initialized`）。
+// 没人 catch 的 timer 异常在 Node 里等于「杀进程」—— 一条扩展的渲染错就能把整个工作台带走，
+// 用户看到的就是服务突然没了、终端回到提示符。这里记下来、继续跑。
+//
+// 取舍：单用户本地工作台，宁可带着可能的脏状态继续（顶多某个界面块不刷新），
+// 也不要一按就死 —— 死了连日志面板都打不开。真到了没法自救的地步，用户重启就是了。
+process.on("uncaughtException", (error) => {
+	logger.error("未捕获的异常（已记录，进程继续）", {
+		message: error instanceof Error ? (error.stack ?? error.message) : String(error),
+	});
+});
+
+/** 局域网地址自动放行；域名仍要显式配 */
+const localAddresses = Object.values(networkInterfaces())
+	.flat()
+	.filter((item): item is NonNullable<typeof item> => Boolean(item) && item?.internal === false)
+	.map((item) => item.address);
+
+const policy = {
+	port: config.port,
+	devPorts: [DEV_WEB_PORT],
+	extraHosts: [...new Set([...localAddresses, ...config.allowedHosts])],
+};
+
+let shuttingDown = false;
+
+const sender = createSender({
+	windowMs: SNAPSHOT_WINDOW_MS,
+	send: (frame: OutFrame) => {
+		if (frame.kind === "snapshot") fanOut(frame.snapshot);
+	},
+});
+
+const piSessions = createPiSessionsProvider({ agentDir: piAgentDir(), dataDir: config.dataDir });
+
+/**
+ * 会话里的 `cron` 工具（ADR-0049）：引擎先建、定时任务服务后建，
+ * 所以给引擎的是一个惰性 getter，真正取端口发生在建会话的时候（那时已经赋过值）。
+ */
+let cronToolPort: CronToolPort | null = null;
+
+/**
+ * 会话里的 `appearance` 工具（ADR-0050）：它要调 runtime.applySettings（落盘 + 推快照），
+ * 而 runtime 在引擎之后才建 —— 所以这里也是惰性 getter。
+ */
+let appearancePort: AppearancePort | null = null;
+
+/**
+ * 会话里的 `canvas` 工具：画布存在 `<dataDir>/canvas/`，写完推一帧快照。
+ * 和 appearance 一样惰性：端口要调 `runtime.pushSnapshot()`，而 runtime 在本文件后面才建。
+ */
+let canvasPort: CanvasPort | null = null;
+const canvasStore = createCanvasStore(config.dataDir);
+
+/** 引擎接线：注册表 + codex 客户端 + 每个引擎的会话来源（engine/wiring.ts） */
+const engineWiring = createEngineWiring({
+	engineName: config.engine,
+	codexBin: config.codexBin,
+	codexHome: config.codexHome,
+	dshBin: config.dshBin,
+	dshHome: config.dshHome,
+	dshModel: config.dshModel,
+	dshPatches: config.dshPatches,
+	dshPatchDir: join(config.dataDir, "dsh-patches"),
+	opencodeBin: config.opencodeBin,
+	opencodeArgs: config.opencodeArgs,
+	opencodeModel: config.opencodeModel,
+	claudeBin: config.claudeBin,
+	claudeArgs: config.claudeArgs,
+	claudeModel: config.claudeModel,
+	// 技能目录：pi 只扫自己那份（~/.pi/agent/skills），我们的技能在 ~/.agents/skills。
+	// 不给它，`/skill:xxx` 就不会被展开成技能正文（模型只会收到字面文本）。
+	skillPaths: [defaultSkillsDir()],
+	// 子代理模板目录：pi 与 codex 共用同一份（codex 的 spawn 类型就是这些模板）
+	subagentAgentDir: piAgentDir(),
+	// 「下一步建议」要几条 = 设置里「想想」的那个数：pi / codex 建会话时现读（读的是盘上的
+	// settings.json，改了设置下一条会话就生效）；dsh 只能在启动时取一次（进程级 patch）
+	thinkCount: () => readSettingsSync(config.dataDir).thinkCount,
+	// 会话里的 cron 工具（建任务默认绑当前会话，见 cron/tool.ts）
+	cron: () => cronToolPort,
+	// 外观字号工具（在对话里改字，ADR-0050）
+	appearance: () => appearancePort,
+	// 画布工具（把「接下来要做什么」画到右侧画布上）
+	canvas: () => canvasPort,
+	workspace: config.workspace,
+	piSessions,
+	onNotice: (text, level) => runtimeRef.current?.notify(text, level),
+	// 引擎子进程的 stderr / 诊断输出：正常运行时它是噪声（codex、dsh 都会吐），
+	// 真正要用户知道的事走 onNotice（界面提示）。所以记日志光进文件，别占终端。
+	// `meta.level` 是引擎自己标的等级（provider 报错 / 自动重试等），没标就按 info。
+	onLog: (text, meta) => {
+		const { level: rawLevel, ...ctx } = meta ?? {};
+		const level = rawLevel === "debug" || rawLevel === "warn" || rawLevel === "error" ? rawLevel : "info";
+		logger[level](text, Object.keys(ctx).length > 0 ? ctx : undefined);
+	},
+});
+const engineCatalog = engineWiring.catalog;
+const resolved = engineWiring.resolved;
+const engine: EnginePort = resolved.engine;
+
+/** 引擎在 runtime 建好之前就会创建，用一个 ref 把「通知」转发给界面 */
+/** provider 配置存储（ADR-0025）：复用 pi 自己的 models-store.json / auth.json */
+const providerStore = createProviderStore({ agentDir: piAgentDir(), now: Date.now });
+/** 启动时的配置补齐（main 里会 await 它：避免和价格索引抢着读同一个文件） */
+const catalogMigration = migrateStoreToCatalog(piAgentDir()).then((migrated) => {
+	if (migrated.length > 0) logger.info("已把老 provider 补进 models.json", { providers: migrated });
+});
+const enabledStore = createEnabledStore({ agentDir: piAgentDir() });
+const pushStore = createPushStore({
+	dataDir: config.dataDir,
+	now: Date.now,
+	// 推送失败只进日志（`失败 403` 这种状态码看不出病因，body 里的
+	// `BadJwtToken` / `VapidPkHashMismatch` 才是）；它也不该弹成界面提示 ——
+	// 回合结束时用户可能根本不在电脑前。
+	log: (message, meta) => logger.warn(message, meta),
+});
+
+const runProviderRequest = createProviderWiring({
+	store: providerStore,
+	logger,
+	probe: probeProvider,
+	enabled: enabledStore,
+	catalog: () => engineCatalogProviders(),
+	getRuntime: () => runtime,
+});
+
+/**
+ * 引擎目录里的 provider（含**没配 key** 的）：拼「官方内置服务商」用。
+ * 引擎不支持（codex / dsh / opencode / claude）就当没有 —— 那些引擎的模型不归 pi 的目录管。
+ */
+const engineCatalogProviders = async (): Promise<EngineProviderCatalogEntry[]> =>
+	(await engine.listProviderCatalog?.()) ?? [];
+
+const runtimeRef: { current: { notify: (text: string, level?: "info" | "warn" | "error") => void } | null } = {
+	current: null,
+};
+/** 懒读：provider 列表里要带上内置 provider 分组，而那需要 runtime 里的模型表 */
+const providerList = async () => {
+	const pool = await providerPool({ models: runtime?.state().models ?? [], catalog: engineCatalogProviders });
+	const list = await providerStore.list(pool);
+	const live = runtime?.state();
+	if (live) live.enabledModels = await enabledStore.read();
+	return list;
+};
+
+/**
+ * 一次性文本补全：给「标题 / 模板 / 想想」三块共用（不跑 agent 回合）。
+ *
+ * 两层：
+ *   ① 当前引擎直连（pi 有 `completeText`）：用该会话的模型与鉴权，订阅登录 / token 刷新均由引擎自己管；
+ *   ② 工作台直连：拿 `providerStore` 里的 key / access token 发请求，**任何引擎都适用**。
+ * 模型选择顺序：该会话在用的模型 → 其余有凭证的模型（最多试 3 个）。
+ */
+const listOneShotTargets = async (): Promise<OneShotTarget[]> => {
+	const providers = await providerStore.list();
+	const targets: OneShotTarget[] = [];
+	for (const view of providers) {
+		const credential = await providerStore.readCredential(view.provider);
+		// 没凭证 / 订阅 token 已过期：发了也是 401，不如跳过（错误会在“没有可用模型”里体现）
+		if (credential.kind === "none") continue;
+		if (credential.kind === "oauth" && credential.expiresAt !== null && credential.expiresAt <= Date.now()) continue;
+		const secret = credential.kind === "apiKey" ? credential.key : credential.access;
+		const headers = await providerStore.readHeaders(view.provider);
+		const accountId = credential.kind === "oauth" ? credential.accountId : null;
+		for (const model of view.models) {
+			targets.push({
+				provider: view.provider,
+				model: model.id,
+				api: model.api ?? view.api,
+				baseUrl: model.baseUrl ?? view.baseUrl,
+				credential: secret,
+				accountId,
+				headers,
+			});
+		}
+	}
+	return targets;
+};
+
+const completeText = createTextCompleter({
+	engineComplete: async (conversationId, prompt, system) => {
+		// 切引擎后代理会落到当前引擎：没有这个能力时就是 undefined
+		if (!engine.completeText) return null;
+		return engine.completeText(conversationId, prompt, system);
+	},
+	sessionModelOf: (conversationId) => {
+		const live = runtime?.state();
+		if (!live) return null;
+		return live.modelByConversation[conversationId] ?? live.model ?? null;
+	},
+	availableTargets: listOneShotTargets,
+	send: async (target, input) => {
+		const result = await completeOnce({
+			api: target.api,
+			baseUrl: target.baseUrl,
+			modelId: target.model,
+			credential: target.credential,
+			...(target.accountId ? { accountId: target.accountId } : {}),
+			...(target.headers ? { headers: target.headers } : {}),
+			system: input.system,
+			prompt: input.prompt,
+		});
+		if (!result.ok)
+			logger.info("一次性补全失败", { provider: target.provider, model: target.model, message: result.message });
+		return result;
+	},
+});
+
+/**
+ * 「回合结束」的额外订阅者（cron 的 agent 任务靠它收尾）。
+ *
+ * 为什么不在 runtime 里加钩子：runtime 已经通过 `onTurnFinished` 把这件事广播出来了，
+ * 这里只是多一个进程内的旁听者，改动面最小。
+ */
+const turnEndListeners = new Set<
+	(info: { conversationId: string; failed: boolean; interrupted: boolean }) => void
+>();
+
+const runtime = createRuntime({
+	engine,
+	// 自定义 provider 来自 models-store.json；不主动读一次，界面上就只剩内置的那几个
+	loadProviders: providerList,
+	// 标题 / 模板 / 想想三处共用：引擎直连优先，工作台凭证兜底
+	completeText,
+	onTurnFinished: (info) => {
+		notifyTurnFinished(pushStore, info);
+		for (const listener of turnEndListeners) listener(info);
+	},
+	rules: createFileRuleStore(config.dataDir),
+	// 启动信息只进日志，不进对话流
+	onStartupInfo: (text) => logger.info(text),
+	// 画布：快照里带上当前会话的那份（读盘带缓存，见 session/canvas-store.ts）
+	canvasOf: (conversationId) => canvasStore.ensure(conversationId),
+	// 画布写回（用户手改状态 / 删节点 / 拖动）：落盘 + 推快照
+	canvasWrite: async (conversationId, doc) => {
+		await canvasPort?.write(conversationId, doc);
+	},
+	// 切会话的分段耗时也进日志：手机上「切会话慢」只能靠这几行数字定位
+	log: (message, ctx) => logger.info(message, ctx),
+	workspace: config.workspace,
+	engineName: resolved.descriptor.name,
+	engineCapabilities: resolved.descriptor.capabilities,
+	// 默认审批模式（ADR-0034 默认 allow；POP_AGENT_APPROVAL_MODE=ask 可改）
+	approvalMode: config.approvalMode,
+	turnTimeoutMs: config.turnTimeoutMs,
+	settings: createFileSettingsStore(config.dataDir),
+	// 子代理模板落 ~/.pi/agent/agents（pi 读的就是这套 md 模板）
+	subagentAgentDir: piAgentDir(),
+	uploadStore: {
+		read: (id) => uploadStore.read(id),
+		pathOf: (id) => join(uploadsDir(config.dataDir), id),
+	},
+	piSessions: engineCatalog.sessionsFor(resolved.descriptor.name) ?? undefined,
+	engines: engineCatalog,
+	emit: {
+		snapshot: (snapshot) => sender.pushSnapshot(snapshot),
+		event: (event) => {
+			broadcast(JSON.stringify(event));
+		},
+	},
+});
+
+runtimeRef.current = runtime;
+
+/** 画布端口：写回 = 落盘 + 推快照（和外观字号同一条路：浏览器收到快照自己重画） */
+canvasPort = {
+	read: (conversationId) => canvasStore.ensure(conversationId),
+	async write(conversationId, doc) {
+		canvasStore.save(conversationId, doc);
+		runtime.pushSnapshot();
+		return doc;
+	},
+};
+
+/**
+ * 外观字号的窄端口（ADR-0050）：
+ *   - `read()` 把当前三处字号给 agent（用户说「字太小」时它先看现在是多少）；
+ *   - `set()` 走 runtime.applySettings —— 和设置面板 `set_settings` 那一条 RPC **同一条路**：
+ *     SettingsStore 落盘 settings.json + `pushSnapshot()`，浏览器收到快照自己应用。
+ *     所以不需要新接口，也不需要轮询。
+ */
+const appearanceOf = (): AppearanceView =>
+	runtime.state().settings.appearance ?? { ...DEFAULT_APPEARANCE };
+
+appearancePort = {
+	// 从来没设过时按默认 14 报（工具因此能说清「现在是默认值」）
+	read: () => appearanceOf(),
+	async set(patch) {
+		// 没设过就从默认值起算：agent 说「大一点（+2）」时不该算出一个 NaN
+		await runtime.applySettings({ appearance: { ...appearanceOf(), ...patch } });
+		// 归一化（夹到 2–30、取双数）发生在 applySettings 里，所以回读一次再返回，报的就是真实值
+		return appearanceOf();
+	},
+};
+
+/** SSE 连接（纯 HTTP 通道）：clientId → 写入函数（每客户端一份快照，ADR-0033） */
+const sinks = new Map<string, Sink>();
+
+/**
+ * 快照体积/序列化耗时只在这些阈值之上才落一条日志（且 3 秒内最多一条）。
+ *
+ * 手机切会话卡不卡，一半取决于这一个数字：一帧 400KB 的 snapshot 要经过「深拷贝 100 条消息
+ * → JSON.stringify → gzip → 网络 → 手机端 JSON.parse → 100 条 Markdown 重新解析」。
+ * 流式期间每帧都会走这里，所以必须节流，否则日志比快照还重。
+ */
+const SLOW_SNAPSHOT_MS = 20;
+const BIG_SNAPSHOT_BYTES = 200 * 1024;
+const SNAPSHOT_LOG_GAP_MS = 3000;
+let lastSnapshotLogAt = 0;
+
+const fanOut = (snapshot: Parameters<typeof fanOutSnapshot>[0]) => {
+	const { clients, bytes, ms } = fanOutSnapshot(snapshot, {
+		sinks,
+		snapshotFor: (id) => runtime.snapshotFor(id),
+	});
+	if (ms < SLOW_SNAPSHOT_MS && bytes < BIG_SNAPSHOT_BYTES) return;
+	const now = Date.now();
+	if (now - lastSnapshotLogAt < SNAPSHOT_LOG_GAP_MS) return;
+	lastSnapshotLogAt = now;
+	logger.info("快照偏大/偏慢（切会话与流式卡顿的主要来源）", {
+		ms,
+		kb: Math.round(bytes / 1024),
+		clients,
+		messages: snapshot.active.messages.length,
+		conversationId: snapshot.active.conversationId,
+	});
+};
+
+/** 广播给所有 SSE 连接（WS 通道已移除，见文件头） */
+function broadcast(payload: string): void {
+	for (const sink of sinks.values()) sink(payload);
+}
+
+async function dispatchRequest(socket: ClientSink, raw: string, clientId?: string): Promise<void> {
+	await handleMessage(socket, raw, {
+		runtime,
+		...(clientId ? { clientId } : {}),
+		reply,
+		sender,
+		logger,
+		runProviderRequest: (request, respond) => runProviderRequest(request, (result) => respond(result)),
+	});
+}
+
+function reply(
+	socket: ClientSink,
+	id: string,
+	result: { ok: true; result?: unknown } | { ok: false; error: ProtocolError },
+): void {
+	const message: ServerReply = result.ok
+		? { type: "reply", id, ok: true, ...(result.result === undefined ? {} : { result: result.result }) }
+		: { type: "reply", id, ok: false, error: result.error };
+	socket.send(JSON.stringify(message));
+}
+
+// ------------------------------ HTTP ------------------------------
+
+const app = express();
+// 登录端点必须挂在鉴权**之前**：此刻还没有 cookie，不能要求先过鉴权（ADR-0031 修订）
+const passwordStore = createPasswordStore(config.password, join(config.dataDir, "password"));
+/**
+ * 登录失败锁（默认 3 次 / 30 分钟，可在 设置 → 远程 里改）。
+ *
+ * 落在数据目录：**策略和还没过期的锁**都要能活过重启 —— 否则被爆破时
+ * 把进程搞挂一次就等于解锁（失败计数只在内存，重启归零可以接受）。
+ */
+const loginGuard = createLoginGuard({ file: join(config.dataDir, "login-guard.json") });
+/** 登录活动（谁试过 / 成功了）：落盘保留最近 200 条，重启后还在 */
+const loginActivity = createLoginActivity({ file: join(config.dataDir, "login-activity.json") });
+registerAuthRoutes(app, {
+	getPassword: () => passwordStore.get(),
+	setPassword: (password) => passwordStore.set(password),
+	guard: loginGuard,
+	activity: loginActivity,
+	brandName: BRAND_NAME,
+});
+// 鉴权其次：本机放行，其它来源必须过密码；页面请求给登录页，接口请求给 401
+app.use(
+	authMiddleware({
+		getPassword: () => passwordStore.get(),
+		brandName: BRAND_NAME,
+		originPolicy: policy,
+	}),
+);
+/**
+ * cron 的 agent 任务：开一个新会话、发一条提示词、等回合结束，取最后一条 assistant 正文。
+ * 权限策略在 `cron/agent-run.ts` + `approval/unattended.ts`：默认只读，写操作直接被拒。
+ */
+/**
+ * 「这台机器上有哪些会话」= 已打开的 + 历史清单里的。
+ *
+ * 只列已打开的会有个坑：定时任务想续跑一条上个月的会话，但它在内存里没开过 ——
+ * 界面上选不到，或者选了之后 `conversationExists` 判成不存在。
+ */
+const knownSessionIds = (): string[] => {
+	const state = runtime.state();
+	const ids = new Set(state.conversations.map((item) => item.id));
+	for (const project of state.piProjects) for (const session of project.sessions) ids.add(session.id);
+	return [...ids];
+};
+
+const runAgentTask = createAgentRunner({
+	newConversation: (workspace) => runtime.newConversation(workspace),
+	setApprovalMode: (mode, conversationId) => {
+		runtime.setApprovalMode(mode, conversationId);
+	},
+	// 续跑一个已有会话时，跑完要把审批模式还原 —— 不能因为一次定时任务把用户的会话永久改成 ask
+	getApprovalMode: (conversationId) => approvalModeOf(runtime.state(), conversationId),
+	conversationExists: (conversationId) => knownSessionIds().includes(conversationId),
+	openConversation: async (conversationId) => {
+		const result = await runtime.openConversation(conversationId);
+		return result.ok ? { ok: true as const } : { ok: false as const, error: { message: result.error.message } };
+	},
+	conversationBusy: (conversationId) => {
+		const status = runtime.state().runningByConversation[conversationId]?.status ?? "idle";
+		return status !== "idle" && status !== "error";
+	},
+	setModel: async (model, conversationId) => {
+		const result = await runtime.setModel(model, conversationId);
+		return result.ok ? { ok: true as const } : { ok: false as const, error: { message: result.error.message } };
+	},
+	sendMessage: async (text, conversationId) => {
+		const result = await runtime.sendMessage(text, undefined, undefined, conversationId);
+		return result.ok ? { ok: true as const } : { ok: false as const, error: { message: result.error.message } };
+	},
+	interrupt: (conversationId) => runtime.interrupt(conversationId),
+	messages: (conversationId) => runtime.state().messages[conversationId] ?? [],
+	subscribeTurnEnd: (listener) => {
+		turnEndListeners.add(listener);
+		return () => turnEndListeners.delete(listener);
+	},
+});
+
+const cron = createCronService({
+	dataDir: config.dataDir,
+	// 已打开的会话也算工作区：在另一个目录里开的会话，用户可能直接让它建定时任务
+	workspaces: () => [
+		config.workspace,
+		...runtime.state().piProjects.map((project) => project.cwd),
+		...runtime.state().conversations.map((item) => item.workspace),
+	],
+	async execute(job, signal) {
+		// agent 任务：真开会话干活（能读文件、跑命令；写操作要任务上显式开启）
+		if (job.mode === "agent") {
+			return runAgentTask({
+				prompt: job.prompt,
+				workspace: job.workspace,
+				allowWrites: job.allowWrites === true,
+				// 这两个不传下去，界面上选了会话/模型也没用（总是新建、总是跟随默认）
+				...(job.sessionId ? { sessionId: job.sessionId } : {}),
+				...(job.model ? { model: job.model } : {}),
+				signal,
+				timeoutMs: config.turnTimeoutMs,
+			});
+		}
+		const [patterns, targets] = await Promise.all([enabledStore.read(), listOneShotTargets()]);
+		signal.throwIfAborted();
+		const supported = new Set([
+			"openai-completions", "openai-responses", "openai-codex-responses",
+			"anthropic-messages", "google-generative-ai",
+		]);
+		const target = targets.find((item) => supported.has(item.api) && isModelEnabled(patterns, item.provider, item.model));
+		if (!target) throw new Error("没有可用的直连模型，请在「模型」中启用并配置一个支持文本补全的模型");
+		const result = await completeOnce({
+			api: target.api,
+			baseUrl: target.baseUrl,
+			modelId: target.model,
+			credential: target.credential,
+			accountId: target.accountId,
+			headers: target.headers,
+			system: "你正在执行无人值守的定时文本任务。只根据提示词生成文本，不声称读取过文件、访问过网络或执行过外部操作。缺少信息时明确说明。",
+			prompt: job.prompt,
+			signal,
+		});
+		signal.throwIfAborted();
+		if (!result.ok) throw new Error(`${target.provider}/${target.model}：${result.message}`);
+		return result.text;
+	},
+});
+// 会话里的 `cron` 工具（ADR-0049）：到这里引擎、运行时都就绪了，再交给它一份窄接口
+cronToolPort = createCronToolPort(cron);
+
+app.use(express.json()); // 终端/技能/导入要读 body
+const tts = createTtsService();
+app.use("/api/tts", ttsJsonErrorHandler);
+app.use("/api/tts", createTtsRouter(tts));
+app.use("/api/computer", createComputerRouter());
+app.use(
+	"/api/cron",
+	createCronRouter(cron, {
+		// 编辑器里的「会话 / 模型」选择器：读当前引擎的内存清单（不需要扫盘，量也小）
+		options: () => {
+			const state = runtime.state();
+			const sessions = new Map<
+				string,
+				{ id: string; title: string; workspace: string; model: string | null }
+			>();
+			// 已打开的会话：标题 / 模型都以内存里的为准（刚改过名也能看到新名字）
+			for (const item of state.conversations) {
+				if (item.ephemeral === true) continue;
+				sessions.set(item.id, {
+					id: item.id,
+					title: item.title,
+					workspace: item.workspace,
+					model: state.modelByConversation[item.id] ?? null,
+				});
+			}
+			// 历史清单：让定时任务能续跑没打开过的旧会话（同 id 时上面那份优先）
+			for (const project of state.piProjects) {
+				for (const session of project.sessions) {
+					if (sessions.has(session.id)) continue;
+					sessions.set(session.id, {
+						id: session.id,
+						title: session.title,
+						workspace: session.cwd || project.cwd,
+						model: session.model ?? null,
+					});
+				}
+			}
+			return {
+				sessions: [...sessions.values()],
+				models: state.models.map((model) => ({ id: model.id, label: model.label })),
+			};
+		},
+	}),
+);
+const webDist = resolveWebDist();
+
+/**
+ * 前端目录：桌面模式由壳显式给（`POP_AGENT_WEB_DIST`），其余情况照旧搜候选位置。
+ *
+ * 为什么要这个口子：打包后目录层级跟源码 / 全局安装都不一样，`webDistCandidates` 那两个
+ * 位置是靠「猜层数」维持的。App 这边**不猜**，壳说在哪就在哪。
+ */
+function resolveWebDist(): string | null {
+	const explicit = process.env.POP_AGENT_WEB_DIST?.trim();
+	if (explicit && explicit !== "") {
+		if (existsSync(explicit)) return explicit;
+		logger.warn("POP_AGENT_WEB_DIST 指向的目录不存在，回落到默认位置", { path: explicit });
+	}
+	return pickExisting(webDistCandidates(HERE), existsSync);
+}
+
+/** 监听全地址时，给人 / 给壳看的地址仍是本机回环 */
+function shownHostOf(host: string): string {
+	return host === "0.0.0.0" || host === "::" || host === "" ? "127.0.0.1" : host;
+}
+// 压缩 + 缓存头必须在 **API 路由注册之前** 挂：Express 按注册顺序匹配中间件，
+// 挂在后面就只影响之后注册的路由 —— `/api/rpc`（快照帧）这类大包会一直裸奔。
+// SSE / 终端流 / Range 媒体在 compress.ts 里显式跳过（不能攒、不能压）。
+app.use(compressText());
+app.use(immutableAssets());
+const uploadStore = createUploadStore({ dataDir: config.dataDir });
+registerUploadRoutes(app, { uploadStore, logger }); // 附件（ADR-0020 §P3）
+// 本地语音识别（macOS 原生、离线）：桥由 `open` 拉起，首次会弹一次系统授权。
+// .app 的路径不在这里定死 —— 桥每次启动时现找，用户刚点完「安装」就能直接用
+const asrBridge = new AsrBridge({ log: logger });
+registerAsrRoutes(app, asrBridge, logger);
+app.use("/api/asr", asrRawErrorHandler);
+process.once("exit", () => asrBridge.dispose());
+// 网页代理（ADR-0047）：必须挂在鉴权之后 —— 它是「拿你的网络身份去取任意网页」的入口
+registerWebProxyRoutes(app, { log: (text) => logger.warn(text) });
+// 网页诊断日志（语音状态机那几个节点）：只写日志，见 client-log-routes.ts 的说明
+registerClientLogRoutes(app, logger);
+// 语音设置的宿主侧副本：手机 / 电脑 / 换浏览器共用一套（见 voice-settings-routes.ts）
+registerVoiceSettingsRoutes(app, { dataDir: config.dataDir, logger });
+// 引擎装没装 / 点一下装（ADR-0052）：只读查询 + 用户点了才装的安装接口
+registerEngineRoutes(app, { dataDir: config.dataDir, log: logger });
+
+const workspaceOf = () => runtime.state().files?.root ?? config.workspace;
+
+/**
+ * 插件 / MCP 面板：**按当前引擎**取后端（这次修的正是这里 ——
+ * 以前只有一个固定的 pi store，切到 codex 之后面板还在读写 pi 的配置）。
+ *
+ * 各引擎的真实落点：
+ *   - pi     → `~/.pi/agent/settings.json` / `mcp.json`（原有实现，一字未改）
+ *   - codex  → app-server：`plugin/list`、`config/read`、`mcpServerStatus/list`，
+ *              写回 `~/.codex/config.toml`（同一个 app-server 子进程，不另开）
+ *   - claude → `~/.claude/settings.json`（插件开关）/ `~/.claude.json`（MCP）
+ *   - opencode → `opencode.json`（插件数组 + `mcp` 表）
+ *   - dsh    → 面板如实说「还没接」，不拿别人的配置冒充
+ */
+const pluginStores: Record<string, PluginStore> = {
+	pi: createPluginStore({ agentDir: piAgentDir() }),
+	codex: createCodexPluginStore({
+		client: engineWiring.codexClient,
+		configPath: codexConfigPath(config.codexHome),
+		log: (text) => logger.warn(text),
+	}),
+	claude: createClaudePluginStore({ log: (text) => logger.warn(text) }),
+	opencode: createOpencodePluginStore({ log: (text) => logger.warn(text) }),
+	dsh: createNonePluginStore("dsh", "dsh 没有插件概念：扩展走它的 profile / patch 机制（~/.dsh）"),
+};
+const pluginStoreFor = (engineName: string): PluginStore =>
+	pluginStores[engineName] ?? createNonePluginStore(engineName, `${engineName} 没有接入插件面板`);
+
+const mcpStores: Record<string, McpStore> = {
+	pi: createMcpStore({ agentDir: piAgentDir(), login: createMcpLogin({ agentDir: piAgentDir() }) }),
+	codex: createCodexMcpStore({
+		client: engineWiring.codexClient,
+		home: config.codexHome,
+		log: (text) => logger.warn(text),
+	}),
+	claude: createClaudeMcpStore({ log: (text) => logger.warn(text) }),
+	opencode: createOpencodeMcpStore({ log: (text) => logger.warn(text) }),
+	dsh: createNoneMcpStore("dsh", "dsh 的 MCP 配置还没接：它读自己 profile 里的配置（~/.dsh）"),
+};
+const mcpStoreFor = (engineName: string): McpStore =>
+	mcpStores[engineName] ?? createNoneMcpStore(engineName, `${engineName} 没有接入 MCP 面板`);
+
+const auxRoutes = registerAuxRoutes(app, {
+	providerStore,
+	// 「官方内置」provider 的模型 / 端点在引擎目录里，测连与拉模型都要它
+	builtinProviders: () => providerPool({ models: runtime?.state().models ?? [], catalog: engineCatalogProviders }),
+	workspaceOf,
+	projects: () => runtime.state().piProjects,
+	deleteSession: (id, options) => runtime.deleteSession(id, options),
+	// 「完整历史」/「系统提示词」：只有 pi 有（快照的 capabilities 也是这么宣的）
+	sessionHistory: (id) => runtime.sessionHistoryHtml(id),
+	sessionSystemPrompt: (id) => runtime.sessionSystemPrompt(id),
+	pushStore,
+	// 订阅服务（OAuth）：引擎没有这个能力时界面上那一块不画
+	providerAuth: engine.providerAuth,
+	// 模型测速（模型面板的「测速」按钮）：交给当前引擎开一次性会话跑 ping
+	probeModel: (modelId) => runtime.probeModel(modelId),
+	// 提示词模板的「AI 生成」：当前引擎跑一次一次性问答（标准提示词的系统提示词在服务端）
+	// 前端会带上「用户正看着的那条会话」；没有（还没开会话）就回退到当前会话，
+	// 这样模板也能先走引擎直连（与标题 / 想想同一条路）
+	generateTemplatePrompt: (input, conversationId) =>
+		runtime.generateTemplatePrompt(input, conversationId ?? runtime.state().activeId),
+	// 定时任务表单的「AI 生成」：按任务标题写任务描述；同样回退到当前会话挑模型
+	generateCronPrompt: (name, conversationId) => runtime.generateCronPrompt(name, conversationId ?? runtime.state().activeId),
+	// 引擎当前报上来的模型：逐模型测试碰到「工作台没凭证」时靠它判断能不能交给引擎自己跑
+	engineModels: () => runtime.state().models,
+	// 插件 / MCP：按当前引擎分发（见上面 pluginStores / mcpStores 的注释）
+	engineOf: () => runtime.state().engine,
+	pluginStoreFor,
+	mcpStoreFor,
+	// MCP 市场：公开注册中心，1 小时磁盘缓存（数据目录下的 mcp-market/）
+	mcpMarket: createMcpMarket({ dataDir: config.dataDir }),
+	notify: (text, level) => runtime.notify(text, level),
+	log: (message, meta) => logger.info(message, meta),
+	onChange: async () => {
+		await runtime.reloadModels();
+		await runProviderRequest({ type: "list_providers" }, () => {});
+		runtime.pushSnapshot();
+	},
+});
+
+/**
+ * 优雅停机端点（`pop stop` 先敲这里，超时才强杀）。
+ *
+ * 为什么必须有：**Windows 上没有可捕获的 SIGTERM**（`process.kill` 映射成
+ * TerminateProcess，`shutdown()` 根本不会跑）—— 只靠信号停服务，在 Windows 上
+ * 就一定会切断正在落盘的转录。这个口子挂在鉴权之后（本机回环直接放行），
+ * 与它旁边那些「能跑任意命令」的接口同属一个信任边界。
+ */
+app.post("/api/shutdown", (_request, response) => {
+	response.json({ ok: true });
+	// 先把响应发出去，下一轮事件循环再关：否则客户端只会看到连接被掐断
+	setTimeout(() => void shutdown("api"), 20);
+});
+
+registerLiveRoutes(app, {
+	sinks,
+	snapshotFor: (clientId) => runtime.snapshotFor(clientId),
+	clientTracker: { setSlim: runtime.clientView.setSlim, drop: runtime.clientView.drop },
+	logger,
+	handleMessage: async (clientId, shim, raw) => {
+		await dispatchRequest(shim, raw, clientId);
+	},
+});
+
+registerHealthAndStatic(app, {
+	workspace: config.workspace,
+	engine: config.engine,
+	webDist,
+	devWebPort: DEV_WEB_PORT,
+	counts: () => ({
+		sessions: runtime.state().piProjects.reduce((total, project) => total + project.sessions.length, 0),
+		conversations: runtime.state().conversations.length,
+	}),
+});
+
+const httpServer = createServer(app);
+
+/**
+ * 推送通道的 WebSocket 版：**不占浏览器那 6 条 HTTP 连接**。
+ * 鉴权与 HTTP 面同一套判断（本机放行 / 远程要密码 / 同源门禁），
+ * 否则 WS 就成了绕过密码的后门。SSE 端点保留作兜底（见 ws-routes.ts 文件头）。
+ */
+registerWebSocketRoutes(httpServer, {
+	sinks,
+	snapshotFor: (clientId) => runtime.snapshotFor(clientId),
+	clientTracker: { setSlim: runtime.clientView.setSlim, drop: runtime.clientView.drop },
+	watchTerminal: auxRoutes.watchTerminal,
+	logger,
+	authorize: (request) => {
+		const forwarded = request.headers["x-forwarded-for"];
+		const remote = effectiveAddress(
+			request.socket.remoteAddress,
+			typeof forwarded === "string" ? forwarded : undefined,
+		);
+		const host = request.headers.host;
+		const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
+		// 同源门禁：本机直连时，别的网页不能凭空开一条 WS 来偷看快照
+		if (isCrossOriginRejected({ origin, host, policy, local: isLoopback(remote) })) return false;
+		return (
+			decide({
+				password: passwordStore.get(),
+				remoteAddress: remote,
+				host,
+				authorization: request.headers.authorization,
+				cookie: request.headers.cookie,
+			}) === "allow"
+		);
+	},
+});
+
+// 客户端请求分发在 ws/handle-message.ts（index 只负责装配）
+
+// ---------------------------------------------------------------------------
+// 启动
+// ---------------------------------------------------------------------------
+
+// ============================================================================
+// 启动提示（前台）
+// ============================================================================
+
+/** 只在真终端上上色：管道 / 重定向 / 日志里不能带 ANSI */
+function paint(format: Parameters<typeof styleText>[0], text: string): string {
+	return process.stdout.isTTY && !process.env.NO_COLOR ? styleText(format, text) : text;
+}
+
+/**
+ * 终端显示宽度：双宽字符（中日韩 / 全角）算 2 列。
+ *
+ * `padEnd` 数的是**字符**，而 `-P <密码>` 里的中文占 4 列 —— 直接用 padEnd，那一行的说明列
+ * 会比其它行往右偏 3 格，看着就是错的。
+ */
+function displayWidth(text: string): number {
+	let width = 0;
+	for (const char of text) {
+		const code = char.codePointAt(0) ?? 0;
+		const wide =
+			(code >= 0x1100 && code <= 0x115f) || // 韩文字母
+			(code >= 0x2e80 && code <= 0xa4cf) || // CJK 部首 … 巫文（含全角空格）
+			(code >= 0xac00 && code <= 0xd7a3) || // 韩文音节
+			(code >= 0xf900 && code <= 0xfaff) || // CJK 兼容表意
+			(code >= 0xfe30 && code <= 0xfe6f) || // CJK 兼容形式
+			(code >= 0xff00 && code <= 0xff60) || // 全角标点 / 字母
+			(code >= 0xffe0 && code <= 0xffe6); // 全角符号
+		width += wide ? 2 : 1;
+	}
+	return width;
+}
+
+/** 按显示宽度右补空格（对齐用） */
+function padToWidth(text: string, width: number): string {
+	return text + " ".repeat(Math.max(0, width - displayWidth(text)));
+}
+
+/**
+ * 前台启动后的那一屏：版本 + 地址 + 四条常用命令。
+ *
+ * 为什么是「命令在左、说明在右」：命令这一列能对齐就好看；说明列里中文多，所以只左对齐。
+ * 文案统一用英文：终端里混排中英在等宽字体下宽度不好算（`padToWidth` 只做兜底）。
+ */
+function printStartBanner(options: { cli: string; version: string; url: string }): void {
+	const { cli, version, url } = options;
+	const COMMAND_WIDTH = 32;
+	const row = (command: string, note: string) =>
+		`  ${paint("cyan", padToWidth(command, COMMAND_WIDTH))} ${paint("dim", note)}`;
+	console.log("");
+	console.log(`  ${paint("bold", `pop-agent ${version}`)}  ${paint("dim", "·")}  ${paint("green", "started")}`);
+	console.log(`  ${paint("underline", url)}  ${paint("dim", "(Ctrl-C to exit)")}`);
+	console.log("");
+	console.log(row(`${cli} -d`, "run in background (logs to daemon.log)"));
+	console.log(row(`${cli} restart  /  ${cli} stop`, "restart / stop"));
+	console.log(row(`${cli} -H 0.0.0.0 -P <password>`, "remote access (password required)"));
+	console.log(row(`${cli} --help`, "all options"));
+	console.log("");
+}
+
+async function main(): Promise<void> {
+	// 旧数据目录（~/.pop-agent）自动搬到新目录：dev 直接跑本文件时也要搬
+	migrateLegacyDataDir({ dataDir: config.dataDir, log: (line) => logger.info(line) });
+	const problems = [...envProblems, ...validateConfig(config, { home: homedir() })];
+	if (problems.length > 0) {
+		for (const problem of problems) logger.error(`启动自检失败：${problem}`);
+		process.exit(1);
+	}
+
+	// 「家目录不能当工作区」的回落：把那个目录建出来，否则文件树一打开就是红的
+	if (workspaceFallback) {
+		try {
+			mkdirSync(config.workspace, { recursive: true });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			logger.error(`启动自检失败：建不出回落工作区 ${config.workspace}：${message}`);
+			process.exit(1);
+		}
+	}
+	for (const note of envNotes) logger.warn(note);
+
+	const writable = await checkDataDirWritable(config.dataDir);
+	if (!writable.ok) {
+		logger.error(`启动自检失败：${writable.reason}`);
+		process.exit(1);
+	}
+
+	// 日志自己也住在数据目录里 → 确认可写之后再挂文件 sink
+	fileSink = createRotatingFileSink({ file: logFileName(config.dataDir), onError: (message) => logger.warn(message) });
+
+	// 单实例锁（ADR-0007）：必须在读/写任何会话数据之前拿到
+	const acquired = await acquireLock(config.dataDir, { pid: process.pid, port: config.port, startedAt: Date.now() });
+	if (!acquired.ok) {
+		/**
+		 * 桌面模式（ADR-0051）：锁在别人手里 = 服务**已经在了**（比如用户先敲过 `pop`，
+		 * 或者上次关窗没退出）。壳要做的不是报错，是把窗口指向那个已在跑的实例 ——
+		 * 所以这里不当作失败：把地址告诉它、正常退出。
+		 */
+		if (config.app) {
+			const host = shownHostOf(config.host);
+			console.log(
+				readyLine({
+					port: acquired.holder.port,
+					pid: acquired.holder.pid,
+					url: `http://${host}:${acquired.holder.port}`,
+					reused: true,
+				}),
+			);
+			process.exit(0);
+		}
+		logger.error("已经有一个 pop-agent 在跑，本进程退出", { holder: describeHolder(acquired.holder) });
+		console.error(`\n已经有一个 pop-agent 在这个数据目录上跑着：\n  ${describeHolder(acquired.holder)}\n`);
+		console.error(`  → 打开它：http://127.0.0.1:${acquired.holder.port}`);
+		console.error("  → 或者先停掉它（前台运行时 Ctrl-C 即可）\n");
+		process.exit(1);
+	}
+	if (acquired.stale && acquired.previous) {
+		logger.warn("接管陈旧锁（上一个进程已不在）", { previous: describeHolder(acquired.previous) });
+	}
+
+	const { conversations } = await runtime.init().then(() => ({ conversations: runtime.state().conversations }));
+	await cron.start();
+	// 分时价格索引（ADR-0026 D 期）：要在读历史 / 算账之前就绪；读不到就是空表 = 全部走引擎给的 cost
+	await catalogMigration.catch(() => undefined);
+	await refreshPriceIndex(piAgentDir());
+	void runProviderRequest({ type: "list_providers" }, () => {}); // 启动先填一次 provider 列表
+	logger.info("会话索引已装载", { conversations: conversations.length });
+
+	/**
+	 * 监听。开发态（`POP_AGENT_DEV=1`，dev.mjs 传）对 EADDRINUSE 短暂重试：
+	 * `tsx --watch` 改文件就重启，新进程经常赶在**旧进程还没放开端口**时就 listen ——
+	 * 以前直接报「已被占用」退出，而 tsx 那边只说 `Failed running … Waiting for file changes`，
+	 * 于是后端就真的没了：界面上每个请求都是 502（Vite 反代连不上 25258），
+	 * 红条一直挂着，直到你再改一个文件把它撞活。这里把这个窗口吃掉。
+	 * 生产态不变：该报错就报错、退出。
+	 */
+	const devRetry = process.env.POP_AGENT_DEV === "1";
+	for (let attempt = 0; ; attempt += 1) {
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const onError = (error: NodeJS.ErrnoException) => {
+					httpServer.off("listening", onListening);
+					reject(error);
+				};
+				const onListening = () => {
+					httpServer.off("error", onError);
+					resolve();
+				};
+				httpServer.once("error", onError);
+				httpServer.once("listening", onListening);
+				httpServer.listen(config.port, config.host);
+			});
+			break;
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (devRetry && code === "EADDRINUSE" && attempt < 20) {
+				if (attempt === 0) logger.warn("端口还占着（多半是上一个开发进程没退干净），等它放开…", { port: config.port });
+				await new Promise<void>((resolve) => setTimeout(resolve, 300).unref?.());
+				continue;
+			}
+			logger.error(
+				describeListenError(
+					error as NodeJS.ErrnoException,
+					config.port,
+					"可能是另一个 pop-agent 或别的程序占着这个端口",
+				),
+			);
+			await releaseLock(config.dataDir, process.pid);
+			process.exit(1);
+		}
+	}
+
+	if (foreground) {
+		// 正常日志已经不在终端刷了，这屏就是「真的跑起来了」 + 最常用的几条命令。
+		// 命令名照用户实际敲的那个（pop / pop-agent / pop-agent），由 cli.ts 传进来。
+		printStartBanner({
+			cli: process.env.POP_AGENT_CLI_NAME || "pop",
+			version: packageMeta().version,
+			url: `http://${shownHostOf(config.host)}:${config.port}`,
+		});
+	}
+	/**
+	 * 桌面模式：告诉壳「可以 loadURL 了」（ADR-0051）。
+	 *
+	 * 位置很讲究 —— 必须在 listen 成功之后：之前那条（取锁）只代表“不会有两个进程”，
+	 * 不代表端口已通。壳拿到这一行再去加载，就不会白屏。
+	 * 只在桌面模式打，`pop` 的输出保持原样（脚本 / 测试不会莫名多出一行）。
+	 */
+	if (config.app) {
+		console.log(
+			readyLine({
+				port: config.port,
+				pid: process.pid,
+				url: `http://${shownHostOf(config.host)}:${config.port}`,
+				reused: false,
+			}),
+		);
+	}
+
+	/**
+	 * 「有没有新版」：前台启动时印在启动那屏（banner）**下面**。
+	 *
+	 * 以前在 cli.ts 里等 `await import("./index.js")` 之后才印 —— 结果它跑到了 banner
+	 * **上面**（而且与启动日志交错），很容易让人以为没有这个功能。
+	 *
+	 * `POP_AGENT_UPDATE_NOTICE=1` 由 cli.ts 只在前台分支里设：后台（`-d`）那一路的提示是
+	 * CLI 在终端上自己印的，这里不能再印一份到 daemon.log。
+	 * 不 await：查到再印；查不到（离线 / 关掉了 / 本来就是最新）就什么都不说，
+	 * 绝不拖慢启动（update-check 自己有 1.5s 超时）。
+	 */
+	if (process.env.POP_AGENT_UPDATE_NOTICE === "1") {
+		void checkForUpdate({ dataDir: config.dataDir })
+			.then((result) => {
+				const line = describeUpdate(result);
+				if (line) console.log(`  ${paint("yellow", line)}`);
+			})
+			.catch(() => undefined);
+	}
+
+	logger.info("pop-agent 已启动", {
+		url: `http://${config.host}:${config.port}`,
+		workspace: config.workspace,
+		dataDir: config.dataDir,
+		engine: config.engine,
+		protocolVersion: PROTOCOL_VERSION,
+		conversations: runtime.state().conversations.length,
+	});
+	// 对外开放但还没设密码：远程会全部被拒（且只能在本机设密码）—— 先把话说清楚
+	if (!passwordStore.get() && !isLoopbackHostname(config.host)) {
+		logger.warn("还没设访问密码：远程访问一律不开，先在本机打开一次设上它（或 `-P` 启动）", {
+			host: config.host,
+		});
+	}
+	if (!webDist) {
+		logger.info("前端未构建，开发态请访问", { vite: `http://127.0.0.1:${DEV_WEB_PORT}` });
+	}
+
+	setInterval(() => sender.tick(Date.now()), TICK_MS);
+}
+
+async function shutdown(signal: string): Promise<void> {
+	if (shuttingDown) return;
+	shuttingDown = true;
+	logger.info("收到退出信号，正在关闭", { signal });
+	tts.close();
+	try {
+		await cron.stop();
+	} catch (error) {
+		logger.error("关闭定时任务失败", { message: error instanceof Error ? error.message : String(error) });
+	}
+	sender.flush(Date.now());
+	engineWiring.close(); // 收掉 codex app-server 子进程（不给它留孤儿）
+	httpServer.close();
+	// 锁要还回去：只有还属于自己时才删（避免删掉接管者的锁）
+	await releaseLock(config.dataDir, process.pid);
+	process.exit(0);
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
+main().catch((error: unknown) => {
+	logger.error("启动失败", { message: error instanceof Error ? error.message : String(error) });
+	process.exit(1);
+});

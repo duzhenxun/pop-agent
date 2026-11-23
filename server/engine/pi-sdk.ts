@@ -1,0 +1,1527 @@
+/**
+ * 真实引擎：用 pi SDK 实现「引擎端口」（ADR-0003）。
+ *
+ * ⚠️ 这是**唯一**允许 import `@earendil-works/*` 的地方（守卫 `check-engine-imports.mjs` 强制）。
+ * 业务代码只见 `port.ts` 里的类型。
+ *
+ * 与 SDK 的对接方式（M3 侦察结论）：
+ */
+import {
+	CONFIG_DIR_NAME,
+	DefaultResourceLoader,
+	SessionManager,
+	createAgentSession,
+	getAgentDir,
+	getPackageDir,
+	initTheme,
+} from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ExtensionAPI, InlineExtension, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
+import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
+import { patchExportHtml } from "./export-html-tree-patch.js";
+import { getBuiltinClassifierModels, getBuiltinImageModels, getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
+import { chatModels, isChatModel } from "../providers/model-kind.js";
+import { classifyScope } from "../approval/scope.js";
+import { mapSessionEvent } from "./pi-events.js";
+import { RETRY_MAX_ATTEMPTS, classifyProviderError, retryDelayMs, retryOmitTargets } from "./pi-retry.js";
+import { isCleanAssistantEnd, turnFailed } from "./pi-turn-outcome.js";
+import { resourceSignature, type WatchedPath } from "./resource-signature.js";
+import { createPiSubagents } from "./pi-subagents.js";
+import { makeSubagentToolExtension } from "./pi-subagent-tool.js";
+import { makeCronToolExtension } from "./pi-cron-tool.js";
+import { makeAppearanceToolExtension } from "./pi-appearance-tool.js";
+import { makeCanvasToolExtension } from "./pi-canvas-tool.js";
+import { enabledSubagentSpecs, readSubagentSettings } from "../subagents/profile-store.js";
+import { readSessionModel } from "./pi-session-model.js";
+import { entriesToUiMessages } from "./pi-transcript.js";
+import type {
+	ApprovalHandler,
+	EngineEvent,
+	EngineMessage,
+	EnginePort,
+	EngineProviderCatalogEntry,
+	EngineSessionOptions,
+	ProviderAuthEntry,
+	ProviderAuthEvent,
+	ProviderAuthPrompt,
+	ModelProbeResult,
+} from "./port.js";
+
+type PiSdkEngineOptions = {
+	/** 引擎 SDK 的全局配置目录（默认 ~/.pi/agent，模型与凭据都在那里） */
+	agentDir?: string;
+	/** 会话存储目录（默认 `~/.pi/agent/sessions/<编码后的 cwd>/`）。
+	 * **测试必须显式传临时目录**：否则会写进用户的真实会话存储（踩过）。 */
+	sessionDir?: string;
+	/** 出问题时给宿主看的提示（不抛给用户，避免把一轮对话打死） */
+	onNotice?: (text: string, level: "info" | "warn" | "error") => void;
+	/**
+	 * 结构化日志（引擎层没有 logger 实例，宿主把 createLogger 接进来）。
+	 * 为什么必须有：provider 报错以前只变成界面上一条红条，**日志里一个字都没有** ——
+	 * 用户报「有时会 engine.provider_error」时完全无从下手（进程日志里查不到原因）。
+	 */
+	log?: (level: "debug" | "info" | "warn" | "error", text: string, ctx?: Record<string, unknown>) => void;
+	/**
+	 * 额外的**技能目录**（`<dir>/<技能名>/SKILL.md`）。
+	 *
+	 * 为什么必须给：pi 的 `/skill:名字` 是在 `AgentSession.prompt()` 里展开的 —— 它按名字去
+	 * `resourceLoader.getSkills()` 里找，**找不到就把原文原样交给模型**（不报错、不提示）。
+	 * 而 pi 默认只扫 `<agentDir>/skills` 与 `<cwd>/.pi/skills`，本工作台的技能装在
+	 * `~/.agents/skills` —— 于是 `/skill:xxx` 一直是「发出去了但没生效」：
+	 * 界面上是一条正常的用户消息，模型收到的却是字面的 `/skill:xxx`。
+	 */
+	skillPaths?: string[];
+	/**
+	 * 「下一步建议」要几条（设置里「想想」的那个数，1~5）：**每条会话建的时候现读**。
+	 * 不给就按默认 4~5 条教模型（见 suggestion-guidance.ts）。
+	 */
+	thinkCount?: () => number;
+	/**
+	 * 会话里的 `cron` 工具（ADR-0049）：让模型在聊天里直接建/查/改定时任务。
+	 * 惰性 getter：宿主先建运行时、后建 cron 服务，建会话时两边都好了。
+	 * 不给 = 不注册这个工具（最小启动 / 单测）。
+	 */
+	cron?: () => import("../cron/tool.js").CronToolPort | null;
+	/**
+	 * 会话里的 `appearance` 工具（ADR-0050）：在聊天里读/改字号。
+	 * 同样惰性：宿主设置存储先建、会话后建。
+	 */
+	appearance?: () => import("../session/appearance.js").AppearancePort | null;
+	/**
+	 * 会话里的 `canvas` 工具：把「接下来要做什么」画到右侧画布上。
+	 * 画布是按会话存的，所以除了端口还要把 conversationId 递进去。
+	 */
+	canvas?: () => import("../session/canvas.js").CanvasPort | null;
+};
+
+type SessionHandle = {
+	// 用最小的结构类型描述我们真正用到的 SDK 面（避免把 SDK 类型漏到本文件之外）
+	session: {
+		prompt: (text: string) => Promise<void>;
+		abort: () => Promise<void>;
+		/** 取消 pi 自己的退避重试（见 `interrupt` 上面那段：abort 与重试之间有竞态） */
+		abortRetry?: () => void;
+		subscribe: (listener: (event: unknown) => void) => () => void;
+		dispose: () => void;
+		messages: unknown[];
+		isStreaming: boolean;
+		/** 底层 agent：自动重试用（`continue()` 从当前转录接着跑，不新增用户消息） */
+		agent?: { continue: () => Promise<void> };
+		/** 从会话文件重新投影出上下文（抹掉失败回复后要刷新 agent 状态） */
+		refreshContext?: () => void;
+		/** pi 原生的会话导出（`/export` 同一套序列化）：临时会话转正靠它落盘 */
+		exportToJsonl: (outputPath: string) => string;
+		/**
+		 * 这次运行**实际在用**的系统提示词（AGENTS.md / 技能 / 本次附加段都拼完了，见 `readSystemPrompt`）；
+		 * 只有老版本 SDK 没有这个 getter 时才取不到。
+		 */
+		systemPrompt?: string;
+		/** 完整的 agent 状态（导出 HTML 里的「System Prompt / Available Tools」两块靠它） */
+		state?: unknown;
+	};
+	workspace: string;
+	/** 取消**全部**监听器（关会话 / 切引擎时用） */
+	unsubscribe: () => void;
+	/**
+	 * 当前挂着的订阅。**按次登记**：一轮在跑时「插队」会再 subscribe 一次，
+	 * 以前两者共用一个 `unsubscribe` 字段，第二轮一结束就把第一轮的监听器弄丢（泄漏 + 事件重复）。
+	 */
+	subscriptions: Set<() => void>;
+	/** 正在被 abort（用来把 agent_settled 翻译成「中断」而不是「完成」） */
+	aborting: boolean;
+	/** 这一轮还在跑（从开始到 turn_end 之间为 true）：停止之后据此决定还要不要补发 abort */
+	running: boolean;
+	/** 回合序号：停止时只盯住「发出停止的那一轮」，不误停排在后面的下一轮 */
+	turnSeq: number;
+	/** 会话转录的管理器（ADR-0021 §2：读条目 → 界面消息） */
+	sessionManager: {
+		getEntries: () => unknown[];
+		getSessionFile: () => string | undefined;
+		/** 追加一条 session_info（改会话显示名用，写进 pi 的会话文件） */
+		appendSessionInfo?: (name: string) => string;
+		/** 这条会话会不会落盘（临时会话是 false，见 `createSession.ephemeral`） */
+		isPersisted: () => boolean;
+		/** 会话头（id / timestamp / cwd / version）：转正与派生都要照抄它 */
+		getHeader: () => AnyRecord | null;
+		/** 从 `leafId` 往上走到根的整条路径（派生分支就是把它抄进新会话） */
+		getBranch: (leafId?: string) => ForkEntry[];
+		/** 当前叶子 entry id（派生不指定消息时，就从它分叉 = 源会话最后一条） */
+		getLeafId: () => string | null;
+		/** 把某条 entry 从**模型上下文**里去掉（重试时抹掉那条失败的回复；见 pi-retry.ts） */
+		appendContextEdit?: (targetId: string, replacement: null) => string;
+		getChildren: (parentId: string) => ForkEntry[];
+		getEntry: (id: string) => ForkEntry | undefined;
+	};
+	/** 会话文件路径（新建后由 SDK 告知；打开时即入参） */
+	sessionPath: string | null;
+	/** 会进提示词的那些路径（建会话时定一次，见 `resourceWatchFor`） */
+	resourceWatch: WatchedPath[];
+	/** 路径之外、同样改提示词的输入（「想想」条数这类），每次现读 */
+	resourceExtra: () => string[];
+	/** 上一次重载时的指纹：跟现在的比，不同才重载 */
+	resourceSignature: string;
+};
+
+/**
+ * 「会进系统提示词 / 工具清单」的路径清单。
+ *
+ * 列全而不是靠猜 `resourceLoader` 读什么：漏一条的后果就是用户改了它、提示词却没跟着变 ——
+ * 那正是这套指纹要解决的问题（技能启停 / MCP 增删 / AGENTS.md 改一行）。
+ */
+function resourceWatchFor(workspace: string, agentDir: string, skillPaths: readonly string[]): WatchedPath[] {
+	const watched: WatchedPath[] = [
+		// pi 自己的配置目录（全局作用域）
+		{ path: join(agentDir, "AGENTS.md") },
+		{ path: join(agentDir, "SYSTEM.md") },
+		{ path: join(agentDir, "APPEND_SYSTEM.md") },
+		{ path: join(agentDir, "mcp.json") },
+		{ path: join(agentDir, "settings.json") },
+		// 技能与子代理模板：启停是**改名**（`SKILL.md` ↔ `.SKILL.md.disabled`），变的是技能自己那层目录
+		{ path: join(agentDir, "skills"), depth: 2 },
+		{ path: join(agentDir, "agents"), depth: 2 },
+	];
+	// 项目作用域：`<workspace>/.pi/` 里的那几份（项目覆盖全局）
+	const projectDir = join(workspace, CONFIG_DIR_NAME);
+	for (const name of ["AGENTS.md", "SYSTEM.md", "APPEND_SYSTEM.md", "mcp.json"]) {
+		watched.push({ path: join(projectDir, name) });
+	}
+	watched.push({ path: join(projectDir, "skills"), depth: 2 });
+	// AGENTS.md 是从 cwd 一层层往上找的（pi 的 `loadProjectContextFiles`）：祖先目录改一行也算变
+	for (let dir = workspace; ; ) {
+		watched.push({ path: join(dir, "AGENTS.md") });
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	// 本工作台自己的技能目录（默认 `~/.agents/skills`，不在 pi 默认扫描路径里）
+	for (const path of skillPaths) watched.push({ path, depth: 2 });
+	return watched;
+}
+
+type AnyRecord = Record<string, unknown>;
+
+/** 会话树上的一个 entry（派生 / 转正时只需要这几个字段） */
+type ForkEntry = { type?: string; id: string; message?: unknown };
+
+/**
+ * 把界面上那条消息换算成**真正的分叉点**。
+ *
+ * 助手气泡是多条 entry 合并出来的（一次工具轮次 = 一条），它身上的 `UiMessage.id` 只是其中
+ * 第一条；直接按它切会把这一轮的思考和工具块全丢掉。所以从这条消息往下走，走到
+ * 「下一个用户消息之前」的最后一个 entry —— 那才是「这条回复真的说完了」的位置。
+ */
+function resolveForkLeaf(manager: SessionHandle["sessionManager"], messageId: string): string | null {
+	if (!manager.getEntry(messageId)) return null;
+	let leaf = messageId;
+	// 沿树往下（只认最后一个孩子）；碰到下一条用户消息就停：那是下一轮了
+	for (let guard = 0; guard < 10_000; guard += 1) {
+		const next = manager.getChildren(leaf).at(-1);
+		if (!next) break;
+		if (next.type === "message" && asRecord(next.message).role === "user") break;
+		leaf = next.id;
+	}
+	return leaf;
+}
+
+function asRecord(value: unknown): AnyRecord {
+	return typeof value === "object" && value !== null ? (value as AnyRecord) : {};
+}
+
+/**
+ * pi 的「已经在跑了」那句拒绝（`Agent is already processing. Specify streamingBehavior…`）。
+ * 宿主拿它判断「这条其实该插队」—— 见 sendMessage 里的兜底。
+ */
+function isAlreadyProcessing(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes("Agent is already processing");
+}
+
+/**
+ * 插队那条要等「这一轮真的 settle」才算收尾；这个上限只是兜底，
+ * 免得 pi 万一不吐 agent_settled（abort 失败之类）时回合永远不收尾（宿主看门狗本来也会 interrupt）。
+ */
+const STEER_SETTLE_FALLBACK_MS = 20 * 60 * 1000;
+
+/**
+ * 普通（非插队）回合的「等 settle」宽限。
+ *
+ * `prompt()` 返回时收尾事件（agent_settled / 最后的 message_end）可能还在路上：
+ * 本来只给 50ms，一步慢机器上就会错过 —— 后果不是报错而是**静默错报**：
+ * `interrupted` 只在 agent_settled 里置位，错过它的话「用户点停的回合」会被报成 `turn_end: done`，
+ * 而且 finally 里的 unsubscribe 会把尾帧（含 usage）一起丢掉（token/费用少记）。
+ * 800ms 是个只影响「settle 干脆不来」那种病态情况的兵底，正常回合 settles 一到就返回。
+ */
+const SETTLE_GRACE_MS = 800;
+
+/** 退避用的小工具（不引入依赖；`.unref()` 免得挂着一个没人等的定时器） */
+function sleep(ms: number): Promise<void> {
+	return new Promise<void>((resolve) => {
+		setTimeout(resolve, ms).unref?.();
+	});
+}
+
+/** 引擎层的日志出口：没接日志时啥也不干（测试里就这么跑） */
+type EngineLog = (level: "debug" | "info" | "warn" | "error", text: string, ctx?: Record<string, unknown>) => void;
+
+/**
+ * 重试前把这一轮失败的回复从**模型上下文**里抹掉（`context_edit` = null）。
+ *
+ * 为什么必须做：pi 的 `agent.continue()` 要求转录末尾是用户消息 / 工具结果 ——
+ * 而失败之后末尾躺着一条空的（或半截的）助手消息，直接续跑会被它顶回来
+ * （`Cannot continue from message role: assistant`）。pi 自己的自动重试走的也是
+ * 「先抹掉、再 continue」这一套（见 SDK 的 `_omitRecoveryAttempt`）。
+ *
+ * 用户那条提问**不动**：重试是从它接着跑，不重复发一遍。
+ */
+function omitFailedAttempt(handle: SessionHandle, log: EngineLog, sessionId: string): boolean {
+	const manager = handle.sessionManager;
+	const edit = manager.appendContextEdit;
+	const refresh = handle.session.refreshContext;
+	if (!edit || !refresh) return false;
+
+	let targets: string[];
+	try {
+		targets = retryOmitTargets(manager.getBranch());
+	} catch (error) {
+		log("warn", "读会话树失败，放弃自动重试", { sessionId, message: errorMessageOf(error) });
+		return false;
+	}
+	if (targets.length === 0) return false;
+
+	try {
+		for (const id of targets) edit.call(manager, id, null);
+		refresh.call(handle.session);
+		return true;
+	} catch (error) {
+		log("warn", "抹掉失败回复失败，放弃自动重试", { sessionId, message: errorMessageOf(error) });
+		return false;
+	}
+}
+
+function errorMessageOf(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 订阅服务里用到的 ModelRuntime 面（和 model-registry-reload.ts 一样：只描述真正用到的部分，
+ * 不让 SDK 类型漏到 port 之外）。
+ */
+type AuthRuntime = {
+	getProviders: () => readonly {
+		id: string;
+		name: string;
+		auth: { apiKey?: unknown; oauth?: { name?: string; isSubscription?: boolean } };
+	}[];
+	getModels: (providerId?: string) => readonly unknown[];
+	listCredentials: () => Promise<readonly { providerId: string; type: string }[]>;
+	login: (providerId: string, type: "oauth", interaction: unknown) => Promise<unknown>;
+	logout: (providerId: string) => Promise<void>;
+};
+
+/**
+ * 探针用到的 ModelRuntime 面（同 AuthRuntime 的纪律：只描述真正用到的部分）。
+ *
+ * `streamSimple` 照 SDK 的原签名 —— 鉴权解析、协议选择、provider 专属 header
+ * 全由它自己套，这里不重复也不猜。
+ */
+type ProbeRuntime = {
+	getModels: (providerId?: string) => readonly { id?: string }[];
+	streamSimple: (
+		model: unknown,
+		context: { messages: readonly { role: string; content: string; timestamp: number }[] },
+		options: { signal?: AbortSignal },
+	) => AsyncIterable<{ type: string }> & { result: () => Promise<unknown> };
+};
+
+/** 探针只关心收尾这三样（stopReason / errorMessage / usage.output） */
+type ProbeMessage = {
+	stopReason?: string;
+	errorMessage?: string;
+	usage?: { output?: number };
+};
+
+/**
+ * provider 的显示名：只覆盖 SDK 名字太长/不直观的两个，
+ * 其余直接用引擎给的 OAuth 名称（`Anthropic (Claude Pro/Max)`、`xAI (Grok/X subscription)` 等）。
+ */
+const OAUTH_LABELS: Record<string, string> = {
+	"openai-codex": "ChatGPT Plus/Pro",
+	"github-copilot": "GitHub Copilot",
+};
+
+/**
+ * 「只填 key 还不够」的 provider：还得有端点 / 云凭证。
+ * 写死名单而不是去猜 provider 定义：这些的 baseUrl 要么挂在模型上、要么要 account id，
+ * 而 pi 的 provider 对象没有「需不需要额外配置」这个字段。
+ */
+const NEEDS_EXTRA_CONFIG = new Set([
+	"amazon-bedrock",
+	"google-vertex",
+	"azure",
+	"cloudflare-ai-gateway",
+	"cloudflare-workers-ai",
+]);
+
+/** SDK 的 AuthPrompt → 端口的 ProviderAuthPrompt */
+function toAuthPrompt(prompt: unknown): ProviderAuthPrompt {
+	const record = asRecord(prompt);
+	const type = record.type;
+	const options = Array.isArray(record.options)
+		? record.options.map((option) => {
+				const item = asRecord(option);
+				return {
+					id: String(item.id ?? ""),
+					label: String(item.label ?? item.id ?? ""),
+					...(typeof item.description === "string" ? { description: item.description } : {}),
+				};
+			})
+		: undefined;
+	return {
+		type: type === "select" || type === "secret" || type === "manual_code" || type === "text" ? type : "text",
+		message: String(record.message ?? ""),
+		...(typeof record.placeholder === "string" ? { placeholder: record.placeholder } : {}),
+		...(options ? { options } : {}),
+	};
+}
+
+/** SDK 的 AuthEvent → 端口的 ProviderAuthEvent（未知事件当 info，不静默丢） */
+function toAuthEvent(event: unknown): ProviderAuthEvent {
+	const record = asRecord(event);
+	if (record.type === "auth_url" && typeof record.url === "string") {
+		return {
+			type: "auth_url",
+			url: record.url,
+			...(typeof record.instructions === "string" ? { instructions: record.instructions } : {}),
+		};
+	}
+	if (record.type === "device_code" && typeof record.userCode === "string") {
+		return {
+			type: "device_code",
+			userCode: record.userCode,
+			verificationUri: String(record.verificationUri ?? ""),
+			...(typeof record.intervalSeconds === "number" ? { intervalSeconds: record.intervalSeconds } : {}),
+			...(typeof record.expiresInSeconds === "number" ? { expiresInSeconds: record.expiresInSeconds } : {}),
+		};
+	}
+	if (record.type === "progress") return { type: "progress", message: String(record.message ?? "") };
+	return { type: "info", message: String(record.message ?? "") };
+}
+
+/** 教模型怎么写「下一步建议」（ADR-0022）：刻意写得短（每次请求都付 token） */
+import { reloadModelRegistry } from "./model-registry-reload.js";
+import { NARRATE_GUIDANCE } from "./narrate-guidance.js";
+import { SUGGESTION_GUIDANCE, suggestionGuidance } from "./suggestion-guidance.js";
+import { SUBAGENT_GUIDANCE } from "./subagent-guidance.js";
+
+export { NARRATE_GUIDANCE, SUGGESTION_GUIDANCE, SUBAGENT_GUIDANCE };
+
+import { createPiThinking } from "./pi-thinking.js";
+import { piSdkVersion } from "./pi-version.js";
+import { renameSessionIn } from "./pi-rename.js";
+import { keepAbortingUntilSettled } from "./pi-stop.js";
+
+export function createPiSdkEngine(options: PiSdkEngineOptions = {}): EnginePort {
+	/**
+	 * pi 的 `theme` 是个全局 Proxy：没调过 `initTheme()` 就抛
+	 * `Theme not initialized. Call initTheme() first.`（import 本身**不会**初始化它）。
+	 *
+	 * TUI 启动时自己会初始化，而这个无界面的工作台不会 —— 但扩展里那些「给终端画东西」的代码
+	 * （`getMarkdownTheme().heading()`、`new Text(..., theme.fg(...))`）照样会被调用，尤其是
+	 * 塞在 `setTimeout` 里的渲染：那个异常没人接，**直接把这个服务进程带走**（同事机器上真踩过：
+	 * 扩展 `token-speed.ts` 的定时渲染崩了整个 pop-agent）。
+	 *
+	 * 所以宿主这边先初始化一次，让这类渲染退化成「画了个没人看的东西」，而不是崩服务。
+	 * 顺带也是所有 `@earendil-works/*` 导入的唯一出口（本文件）。
+	 */
+	initTheme();
+
+	const sessions = new Map<string, SessionHandle>();
+	const thinking = createPiThinking(sessions as unknown as Map<string, { session: unknown }>);
+	let approvalHandler: ApprovalHandler | null = null;
+
+	/**
+	 * pi 的 HTML 导出器（`pi --export` 那套模板）。
+	 *
+	 * 只能**按路径动态 import**：它在包里没进 exports map（`dist/core/export-html/index.js`），
+	 * 直接 `import ... from "@earendil-works/pi-coding-agent/dist/..."` 会被 exports 拦住。
+	 * 模块只加载一次（导出页的模板 / 高亮 / markdown 都在里面）。
+	 */
+	let exportHtmlModule: Promise<{
+		exportSessionToHtml: (manager: unknown, state: unknown, options: { outputPath: string }) => Promise<string>;
+		exportFromFile: (inputPath: string, options: { outputPath: string }) => Promise<string>;
+	}> | null = null;
+	const loadExportHtml = () => {
+		exportHtmlModule ??= (async () => {
+			const entry = pathToFileURL(join(getPackageDir(), "dist", "core", "export-html", "index.js")).href;
+			return (await import(entry)) as Awaited<NonNullable<typeof exportHtmlModule>>;
+		})();
+		return exportHtmlModule;
+	};
+
+	const notice = (text: string, level: "info" | "warn" | "error" = "warn") => options.onNotice?.(text, level);
+
+	/** 日志出口：没接线时是空函数（单测里就这么跑） */
+	const log: EngineLog = (level, text, ctx) => options.log?.(level, text, ctx);
+
+	// 子代理运行时（ADR：多开 + 面板管理）：会话文件放在父会话旁边，工具白名单来自模板
+	const resolvedAgentDir = options.agentDir ?? getAgentDir();
+	const subagentSettings = readSubagentSettings(resolvedAgentDir);
+	const subagents = createPiSubagents({
+		agentDir: resolvedAgentDir,
+		sessionDir: options.sessionDir,
+		concurrency: subagentSettings.concurrency,
+		onNotice: (text, level) => notice(text, level ?? "warn"),
+		// 子代理沿用父会话的模型运行时 / 当前模型（不然扩展提供的 provider 在子会话里不存在）
+		getParentSession: (conversationId) => sessions.get(conversationId)?.session ?? null,
+	});
+
+	/**
+	 * 审批用的 inline 扩展：拦在工具真正执行之前（SDK 的公开拦截点）。
+	 *
+	 * 这个扩展是**按会话**建的（见 startSession），所以能把会话 id 一起带上 ——
+	 * 回合收尾时宿主据此只收掉本会话悬着的审批，不会误伤并行跑着的其它会话。
+	 */
+	function makeApprovalExtension(workspace: string, conversationId: string) {
+		return {
+			name: "pop-agent-approval",
+			hidden: true,
+			factory: (pi: ExtensionAPI) => {
+				pi.on("tool_call", async (event): Promise<ToolCallEventResult | undefined> => {
+					const record = asRecord(event);
+					const scope = classifyScope({
+						toolName: String(record.toolName ?? ""),
+						args: record.input,
+						workspace,
+					});
+					if (!scope.dangerous) return undefined; // 只读工具不问
+
+					const decision = approvalHandler
+						? await approvalHandler({
+								conversationId,
+								toolName: scope.toolName,
+								argsSummary: scope.argsSummary,
+								scopeKey: scope.scopeKey,
+								scopeHint: scope.scopeHint,
+								riskNote: scope.riskNote,
+							})
+						: "deny";
+					if (decision === "deny") {
+						return { block: true, reason: "用户拒绝了这次操作（不要在未获批准时重试同一操作）" };
+					}
+					return undefined;
+				});
+			},
+		};
+	}
+
+	/**
+	 * 算一个新会话文件的路径 + 建好目录（**不写文件**）。
+	 *
+	 * 借用一次 `SessionManager.create` 来算：文件名格式（`<ISO 时间>_<id>.jsonl`）与 pi 自己写的
+	 * 完全一致。自己拼文件名的话，一旦 pi 改了格式，侧栏扫描器就找不到这些会话。
+	 */
+	function sessionFileFor(workspace: string, id: string): string {
+		const file = SessionManager.create(workspace, options.sessionDir, { id }).getSessionFile();
+		if (!file) throw new Error("无法确定会话文件路径（会话目录不可写）");
+		return file;
+	}
+
+	/** 这个工作区的会话目录（布局跟 pi 自己的完全一致） */
+	function sessionDirFor(workspace: string): string {
+		return dirname(sessionFileFor(workspace, "probe"));
+	}
+
+	/** 建 resourceLoader 并拉起一个 AgentSession（createSession 与 openSession 共用） */
+	async function startSession(
+		sessionId: string,
+		workspace: string,
+		sessionManager: ReturnType<typeof SessionManager.inMemory>,
+		sessionPath: string | null = null,
+	): Promise<SessionHandle> {
+		const agentDir = options.agentDir ?? getAgentDir();
+		// 子会话要按父会话归档：会话文件名在 createAgentSession 之后才确定，所以用一个懒引用
+		const parentSessionPath = () => sessionManager.getSessionFile() ?? sessionPath;
+		const extensionFactories: InlineExtension[] = [makeApprovalExtension(workspace, sessionId)];
+		// 子代理开着、且有可用模板时，才把「什么时候派活」这段拼进系统提示
+		const subagentReady =
+			sessionId !== PREWARM_ID && readSubagentSettings(agentDir).enabled && enabledSubagentSpecs(agentDir).length > 0;
+		// 预热会话不暴露 Agent 工具：它不下发提示词，给它一个委派入口只会误伤
+		// 定时任务工具：只给真会话（预热会话不下发提示词，给它一个建任务的入口只会误伤）
+		if (sessionId !== PREWARM_ID && options.cron) {
+			extensionFactories.push(
+				makeCronToolExtension({ port: options.cron, conversationId: sessionId, workspace }),
+			);
+		}
+		// 外观字号工具：同样只给真会话
+		if (sessionId !== PREWARM_ID && options.appearance) {
+			extensionFactories.push(makeAppearanceToolExtension({ port: options.appearance }));
+		}
+		// 画布工具：把「接下来要做什么」画到右侧画布上（画布按会话存，所以带上 sessionId）
+		if (sessionId !== PREWARM_ID && options.canvas) {
+			extensionFactories.push(makeCanvasToolExtension({ port: options.canvas, conversationId: sessionId }));
+		}
+		if (sessionId !== PREWARM_ID) {
+			extensionFactories.push(
+				makeSubagentToolExtension({
+					port: subagents,
+					agentDir,
+					conversationId: sessionId,
+					workspace,
+					parentSessionPath,
+				}),
+			);
+		}
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: workspace,
+			agentDir,
+			// 本工作台的技能目录（默认 `~/.agents/skills`）：pi 自己不扫那里，
+			// 不显式加上的话 `/skill:xxx` 不会被展开成技能正文（见 PiSdkEngineOptions.skillPaths）
+			...(options.skillPaths && options.skillPaths.length > 0 ? { additionalSkillPaths: options.skillPaths } : {}),
+			extensionFactories,
+			// 教模型「下一步建议」的写法（ADR-0022）：纯文本标记，不需要调用任何工具
+			// 「动手前先说话」：过程默认折叠，不写正文用户就不知道它在干什么
+			appendSystemPrompt: [
+				suggestionGuidance(options.thinkCount?.() ?? null),
+				NARRATE_GUIDANCE,
+				...(subagentReady ? [SUBAGENT_GUIDANCE] : []),
+			],
+		});
+		await resourceLoader.reload();
+
+		const { session } = await createAgentSession({
+			cwd: workspace,
+			agentDir,
+			resourceLoader,
+			// ADR-0021 §2：转录的事实源就是 SDK 自己的会话文件（新建或打开的那个）
+			sessionManager,
+		});
+
+		const subscriptions = new Set<() => void>();
+		// 指纹清单在会话级别用一个：路径不会变，变的只有「内容 / 启停」
+		const resourceWatch = resourceWatchFor(workspace, agentDir, options.skillPaths ?? []);
+		const resourceExtra = () => [`think:${options.thinkCount?.() ?? ""}`];
+		const handle: SessionHandle = {
+			session: session as unknown as SessionHandle["session"],
+			workspace,
+			unsubscribe: () => {
+				for (const off of subscriptions) off();
+				subscriptions.clear();
+			},
+			subscriptions,
+			aborting: false,
+			running: false,
+			turnSeq: 0,
+			sessionManager: sessionManager as unknown as SessionHandle["sessionManager"],
+			sessionPath: sessionPath ?? sessionManager.getSessionFile() ?? null,
+			resourceWatch,
+			resourceExtra,
+			resourceSignature: resourceSignature(resourceWatch, resourceExtra()),
+		};
+		sessions.set(sessionId, handle);
+		return handle;
+	}
+
+	const PREWARM_ID = "__prewarm__";
+
+	/**
+	 * 资源变了就重开这个句柄（技能启停 / MCP 增删 / AGENTS.md 改一行 / 「想想」条数改掉）。
+	 *
+	 * 为什么必要：pi 的系统提示词与工具清单是 `startSession` 那一下拼的，之后一直不变 ——
+	 * 用户关了技能、加了 MCP，已经打开的会话还拿着旧的那份（提示词必须跟界面上看到的一致）。
+	 *
+	 * 为什么是「重开」而不是 `session.reload()`：SDK 的 reload 里重新 emit `session_start`
+	 * 那一步有 `hasBindings` 门槛（uiContext / commandContext / shutdownHandler / onError），
+	 * 无界面接进来的会话一个都没有 —— 而 MCP 正是在 `session_start` 里连服务器的。
+	 * 只调 reload 的结果是：技能刷新了，MCP 工具却全没了。所以走 `persistSession` 已经
+	 * 验证过的那条路：**用同一个 sessionManager 重开**（历史在 manager 里，上下文不丢）。
+	 *
+	 * 两处调用：**每轮提交前**（这一轮就用最新的）与**点开「系统提示词」时**
+	 * （面板里看到的就是下一次真会发出去的那份）。指纹没变时只是几十次 stat，不值得省。
+	 */
+	async function refreshResources(sessionId: string, handle: SessionHandle, force = false): Promise<SessionHandle> {
+		// 正在跑的那一轮里不能换扩展 / 重连 MCP：会把工具从它脚下抽走（插队消息也走这条路径）
+		if (handle.session.isStreaming) return handle;
+		const current = () => resourceSignature(handle.resourceWatch, handle.resourceExtra());
+		// force = 「不管变没变，现在就重载」（网页刷新时前端会主动要一次）
+		if (!force && current() === handle.resourceSignature) return handle;
+		try {
+			// 先建新的（startSession 会把 map 里的条目换成新的），成功了才关旧的：
+			// 反过来的话，重开一旦抛错，这条会话就从表里消失了（之后发消息只能 engine.no_session）。
+			const next = await startSession(
+				sessionId,
+				handle.workspace,
+				handle.sessionManager as unknown as ReturnType<typeof SessionManager.inMemory>,
+				handle.sessionPath,
+			);
+			handle.unsubscribe();
+			try {
+				handle.session.dispose();
+			} catch {
+				// 已经关掉了
+			}
+			next.resourceSignature = resourceSignature(next.resourceWatch, next.resourceExtra());
+			log("info", "按新配置重开了会话（技能 / MCP / 提示词文件）", { sessionId, forced: force });
+			return next;
+		} catch (error) {
+			// 重开失败不该拦住这条消息：旧句柄还在（还能用，只是提示词是旧的），界面上说一句
+			notice(`重载技能 / MCP 失败，这一轮仍用旧的：${errorMessageOf(error)}`, "warn");
+			// 失败也记下指纹：否则每说一句话就重连一次坏掉的 MCP，卡得没法用
+			handle.resourceSignature = current();
+			return handle;
+		}
+	}
+
+
+	async function warmUp() {
+		if (sessions.has(PREWARM_ID)) return;
+		try {
+			await startSession(PREWARM_ID, process.cwd(), SessionManager.inMemory());
+		} catch (error) {
+			options.onNotice?.(`模型表预热失败：${error instanceof Error ? error.message : String(error)}`, "warn");
+		}
+	}
+
+	/**
+	 * 订阅服务要一个 ModelRuntime：优先用预热会话的那个（内存会话，不落盘），
+	 * 没有就建一个 —— 不带任何会话也让用户先登录。
+	 */
+	async function authRuntime(): Promise<AuthRuntime | null> {
+		const runtimeOf = (handle: SessionHandle | undefined): AuthRuntime | null => {
+			if (!handle) return null;
+			return (handle.session as unknown as { modelRuntime?: AuthRuntime }).modelRuntime ?? null;
+		};
+
+		const existing = runtimeOf(sessions.get(PREWARM_ID) ?? [...sessions.values()].at(-1));
+		if (existing) return existing;
+		await warmUp();
+		return runtimeOf(sessions.get(PREWARM_ID));
+	}
+
+	/** 接口给界面的一行：能 OAuth 登录的 provider + 当前连上了没 */
+	async function listProviderAuth(): Promise<ProviderAuthEntry[]> {
+		const runtime = await authRuntime();
+		if (!runtime) return [];
+		const credentials = new Map<string, string>();
+		try {
+			for (const credential of await runtime.listCredentials()) {
+				credentials.set(credential.providerId, credential.type);
+			}
+		} catch {
+			// auth.json 坏了不该让整个列表空掉：退回「都算未连接」
+		}
+		return runtime
+			.getProviders()
+			.filter((provider) => Boolean(provider.auth.oauth))
+			.map((provider) => {
+				// 订阅详情展示与计数共用同一份聊天模型目录，分类器 / 出图模型不纳入。
+				const models = chatModels(
+					runtime.getModels(provider.id) as Array<{ id: string; name?: string; type?: string; api?: string }>,
+				).map((model) => ({ id: model.id, name: model.name ?? model.id }));
+				return {
+					id: provider.id,
+					name: OAUTH_LABELS[provider.id] ?? provider.auth.oauth?.name ?? provider.name,
+					subscription: provider.auth.oauth?.isSubscription === true,
+					connected: credentials.get(provider.id) === "oauth",
+					supportsApiKey: Boolean(provider.auth.apiKey),
+					modelCount: models.length,
+					models,
+				};
+			})
+			.sort((left, right) => left.id.localeCompare(right.id));
+	}
+
+	/**
+	 * 引擎目录里的全部 provider（ADR-0004 快照 / 「官方内置服务商」分组）。
+	 *
+	 * 与 `listModels()` 的区别：那个只回**已鉴权**的，这里连「没配 key 的」也列 ——
+	 * 界面才有一个地方让用户粘 key。两个标记决定能不能归到「填 key 就能用」：
+	 *   - `oauthOnly`：pi 只给了订阅登录（openai-codex），填 key 没用；
+	 *   - `needsExtraConfig`：除了 key 还要端点 / 云凭证（bedrock、vertex、azure、cloudflare）。
+	 * 名单按 id 写死：pi 的 provider 定义没有「需不需要额外配置」这个字段，而靠猜更不可靠。
+	 */
+	async function listProviderCatalog(): Promise<EngineProviderCatalogEntry[]> {
+		const runtime = await authRuntime();
+		if (!runtime) return [];
+		return runtime
+			.getProviders()
+			.flatMap((provider) => {
+				const apiKey = Boolean(provider.auth.apiKey);
+				const oauth = Boolean(provider.auth.oauth);
+				/**
+				 * 只要**聊天**模型：目录里 `typesafe` 只有一个分类器 `jev-latest`、
+				 * `openrouter` 还挂着出图模型 —— 把它们算进来，用户会在「填一把 key 就能用」里
+				 * 看到一家其实对话用不了的 provider（2026-11-03 用户报的那个 typesafe）。
+				 */
+				const models = chatModels(
+					runtime.getModels(provider.id) as Array<{ id: string; baseUrl?: string; api?: string; type?: string }>,
+				);
+				if (models.length === 0) return [];
+				// SDK 的 Provider 类型里没写 baseUrl（运行时是有的，pi-ai 的 createProvider 会给）：
+				// 这里只读一个可选的显示信息，不值得为它去引 pi-ai 的内部类型。
+				const declaredBaseUrl = (provider as unknown as { baseUrl?: string }).baseUrl;
+				/**
+				 * 端点 / 协议可能**挂在模型上**而不是 provider 上（opencode / opencode-go 就是这种，
+				 * 而且同一家还混着 anthropic / openai / gemini 三种协议）。
+				 * 运行时拿到的模型对象不一定带这些字段，所以再拿 pi 的静态目录按 id 补一份。
+				 */
+				const builtin = getBuiltinModels(provider.id as Parameters<typeof getBuiltinModels>[0]);
+				const specById = new Map<string, { api?: string; baseUrl?: string }>();
+				for (const model of builtin) {
+					specById.set(model.id, {
+						...(typeof model.api === "string" && model.api !== "" ? { api: model.api } : {}),
+						...(typeof model.baseUrl === "string" && model.baseUrl !== "" ? { baseUrl: model.baseUrl } : {}),
+					});
+				}
+				const modelSpecs = models.map((model) => ({
+					id: model.id,
+					...((model.api ?? specById.get(model.id)?.api) ? { api: model.api ?? specById.get(model.id)?.api } : {}),
+					...((model.baseUrl ?? specById.get(model.id)?.baseUrl)
+						? { baseUrl: model.baseUrl ?? specById.get(model.id)?.baseUrl }
+						: {}),
+				}));
+				const baseUrl =
+					declaredBaseUrl ??
+					modelSpecs.find((model) => model.baseUrl !== undefined)?.baseUrl ??
+					models.find((model) => typeof model.baseUrl === "string" && model.baseUrl !== "")?.baseUrl;
+				const api =
+					modelSpecs.find((model) => model.api !== undefined)?.api ??
+					models.find((model) => typeof model.api === "string" && model.api !== "")?.api;
+				return [{
+					provider: provider.id,
+					name: provider.name,
+					...(baseUrl ? { baseUrl } : {}),
+					...(api ? { api } : {}),
+					...(modelSpecs.length > 0 ? { models: modelSpecs } : {}),
+					modelCount: models.length,
+					...(apiKey ? {} : oauth ? { oauthOnly: true } : { needsExtraConfig: true }),
+					...(NEEDS_EXTRA_CONFIG.has(provider.id) ? { needsExtraConfig: true } : {}),
+				}];
+			})
+			.sort((left, right) => left.provider.localeCompare(right.provider));
+	}
+
+	return {
+		/** 预热：pi 的 modelRuntime 挂在会话上，没会话就列不出模型（内存会话，不落盘） */
+		async prewarm() {
+			if (sessions.has(PREWARM_ID)) return;
+			try {
+				await startSession(PREWARM_ID, process.cwd(), SessionManager.inMemory());
+			} catch (error) {
+				options.onNotice?.(`模型表预热失败：${error instanceof Error ? error.message : String(error)}`, "warn");
+			}
+		},
+
+		version: piSdkVersion,
+		reloadModels: () => reloadModelRegistry(sessions, PREWARM_ID, warmUp, options.agentDir ?? getAgentDir()),
+		/** 子代理：起子会话 / 停掉它 / 状态订阅（宿主投影进快照） */
+		subagents,
+
+		providerAuth: {
+			list: () => listProviderAuth(),
+
+			async login(providerId, interaction) {
+				const runtime = await authRuntime();
+				if (!runtime) throw new Error("引擎还没拿到模型运行时（先开一次会话，或稍后重试）");
+				if (!runtime.getProviders().find((provider) => provider.id === providerId)?.auth.oauth) {
+					throw new Error(`${providerId} 不支持订阅登录`);
+				}
+				await runtime.login(providerId, "oauth", {
+					prompt: (prompt: unknown) => interaction.prompt(toAuthPrompt(prompt)),
+					notify: (event: unknown) => interaction.notify(toAuthEvent(event)),
+					...(interaction.signal ? { signal: interaction.signal } : {}),
+				});
+				// 凭据已写进引擎的 auth.json：重载模型表，不然新 provider 的模型要等下次重启才出现
+				await reloadModelRegistry(sessions, PREWARM_ID, warmUp, options.agentDir ?? getAgentDir());
+			},
+
+			async logout(providerId) {
+				const runtime = await authRuntime();
+				if (!runtime) throw new Error("引擎还没拿到模型运行时");
+				await runtime.logout(providerId);
+				await reloadModelRegistry(sessions, PREWARM_ID, warmUp, options.agentDir ?? getAgentDir());
+			},
+		},
+
+		async createSession(sessionOptions: EngineSessionOptions) {
+			const { sessionId, workspace, ephemeral, fork } = sessionOptions;
+
+			// ── 派生（分支）：与 pi 自己 `/fork` 的做法一致（见 SDK 的 agent-session-runtime）──
+			// 关键是**另开一个 manager 读同一个文件**：`createBranchedSession` 会把它自己指向新文件，
+			// 而源会话那个 manager 完全不受影响 —— 所以原对话一个字不动。
+			if (fork) {
+				const source = sessions.get(fork.sourceSessionId);
+				// pi 原生的拒绝理由就是这句：没落盘的会话不能 fork（`/clone` 前先说话）
+				if (!source?.sessionPath) throw new Error("这条会话还没存过盘（临时对话），不能从它派生分支");
+				const leafId = resolveForkLeaf(source.sessionManager, fork.leafId ?? source.sessionManager.getLeafId() ?? "");
+				if (!leafId) throw new Error("找不到要分叉的那条消息（它可能不在当前分支上）");
+
+				// 新会话的目录跟新工作区走（布局与 pi 自己的完全一致）
+				const sessionManager = SessionManager.open(source.sessionPath, sessionDirFor(workspace), workspace);
+				const forkedPath = sessionManager.createBranchedSession(leafId);
+				if (!forkedPath) throw new Error("派生会话文件创建失败");
+				// `createBranchedSession` 会给派生会话**另生一个 id** 并写进新文件头（pi 自己的 `/fork` 也这样）：
+				// 句柄必须按**它**登记，不能按传进来的 `sessionId` —— 宿主要拿它当会话 id（见
+				// `conversation-create.ts` 的 `engineAssignedId ?? planned`），这里不跟上，之后发消息就是
+				// `engine.no_session`（引擎的表里只有那个没被采用的 id）。
+				const forkedId = sessionManager.getSessionId();
+				await startSession(forkedId, workspace, sessionManager, forkedPath);
+				return { sessionPath: forkedPath, sessionId: forkedId };
+			}
+
+			// ── 临时会话 = pi 的 `--no-session`：纯内存，不建文件、不进历史 ──
+			if (ephemeral) {
+				const sessionManager = SessionManager.inMemory(workspace, { id: sessionId });
+				await startSession(sessionId, workspace, sessionManager);
+				return { sessionPath: null };
+			}
+
+			// ADR-0021 §2：新建会话就落在 **pi 的会话存储**里（不再用 inMemory + 自建 jsonl），
+			// 用我们的 sessionId 当 SDK 的会话 id → 两边 id 空间完全一致。
+			const sessionManager = SessionManager.create(workspace, options.sessionDir, {
+				id: sessionOptions.sessionId,
+			});
+			const handle = await startSession(sessionOptions.sessionId, sessionOptions.workspace, sessionManager);
+			return { sessionPath: handle.sessionPath };
+		},
+
+		/**
+		 * 临时会话转正：用 pi 原生导出让文件落盘（id 不变），再关掉重开。
+		 *
+		 * 序列化走 `session.exportToJsonl()`—— pi 自己的 `/export` 用的就是它，我们一个字不自己拼。
+		 * 为什么必须「重开」：内存句柄对那个文件一无所知，不换掉它的话，之后说的话还是不会落盘
+		 * （看着已经存了，其实一个字没进文件）。重开后上下文不变：历史就在文件里。
+		 */
+		async persistSession(sessionId: string) {
+			const handle = sessions.get(sessionId);
+			if (!handle) return { sessionPath: null };
+			const manager = handle.sessionManager;
+			// 已经是落盘的会话：直接回它的文件（幂等：重复点「保存为正式对话」不会写出两份）
+			if (manager.isPersisted()) return { sessionPath: manager.getSessionFile() ?? null };
+
+			const entries = manager.getEntries();
+			// 一个字都还没说：不值得落盘（空会话进历史只会变成一个没法看的空行）
+			if (!entries.some((entry) => asRecord(entry).type === "message")) return { sessionPath: null };
+
+			const workspace = handle.workspace;
+			const sessionPath = sessionFileFor(workspace, sessionId);
+			// 原生导出：header + 当前分支的全部条目（id 就是这条会话原来的 id）
+			handle.session.exportToJsonl(sessionPath);
+
+			handle.unsubscribe();
+			try {
+				handle.session.dispose();
+			} catch {
+				// 已经关掉了
+			}
+			sessions.delete(sessionId);
+			const reopened = SessionManager.open(sessionPath, options.sessionDir, workspace);
+			await startSession(sessionId, workspace, reopened, sessionPath);
+			return { sessionPath };
+		},
+
+		async openSession(openOptions) {
+			const sessionPath = openOptions.sessionPath ?? openOptions.engineSessionId;
+			if (!sessionPath) throw new Error("pi 打开会话需要 sessionPath（文件路径）");
+			const sessionManager = SessionManager.open(sessionPath, options.sessionDir); // header 里的 cwd + 同一个文件续写
+			const workspace = sessionManager.getCwd() || process.cwd();
+			await startSession(openOptions.sessionId, workspace, sessionManager, sessionPath);
+		},
+
+		renameSession: (sessionPath, name) => renameSessionIn(sessions, sessionPath, name, options.sessionDir),
+
+		/** 用指定会话的有效模型和鉴权直连 API，只送这次生成需要的文本。 */
+		async completeText(sessionId, prompt, systemPrompt) {
+			const session = sessions.get(sessionId)?.session as Pick<AgentSession, "modelRuntime" | "model"> | undefined;
+			if (!session?.model) return null;
+			const signal = AbortSignal.timeout(45_000);
+			const result = await session.modelRuntime.completeSimple(
+				session.model,
+				{ systemPrompt, messages: [{ role: "user", content: prompt, timestamp: Date.now() }] },
+				{ signal, sessionId: randomUUID() },
+			);
+			if (signal.aborted) throw new Error("模型请求超时，请重试");
+			if (result.stopReason !== "stop") throw new Error("模型没有正常完成输出，请重试");
+			return result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+		},
+		async readUiMessages(sessionId) {
+			const handle = sessions.get(sessionId);
+			if (!handle) return [];
+			// 这一轮还在跑：中间那条工具的结果只是还没落盘，别提前判成失败（切回来看会话时会发生）
+			const live = handle.session.isStreaming === true || handle.subscriptions.size > 0;
+			return entriesToUiMessages(handle.sessionManager.getEntries(), { live });
+		},
+
+		/**
+		 * 「系统提示词」：把 SDK 现拼出来的那段全文交回去。
+		 *
+		 * 为什么不自己拼：pi 的提示词是 `resourceLoader` 按 cwd 现拼的（AGENTS.md、技能清单、
+		 * 扩展注入的 guidance、本次的 appendSystemPrompt）—— 抄一份等于抄错了也没人知道。
+		 * 会话没开（历史会话没打开过）时给 null：那种情况引擎手里真的没有这段。
+		 */
+		async readSystemPrompt(sessionId: string) {
+			const before = sessions.get(sessionId);
+			// 点开面板就是要看「现在这一步真会发什么」：先把改过的技能 / MCP 重载进来
+			const handle = before ? await refreshResources(sessionId, before) : undefined;
+			const prompt = handle?.session.systemPrompt;
+			return typeof prompt === "string" && prompt !== "" ? prompt : null;
+		},
+
+		/**
+		 * 网页刷新 / 刚打开时前端会主动要一次：把技能、MCP、AGENTS.md 重载一遒。
+		 *
+		 * 为什么用 force：用户点了刷新就是想让它生效，这时再比指纹反而多一层“赌”。
+		 * 会话没开时直接忽略 —— 下次打开的那一下本来就是按新配置拼的。
+		 */
+		async refreshResources(sessionId: string, refreshOptions?: { force?: boolean }) {
+			const handle = sessions.get(sessionId);
+			if (!handle) return;
+			await refreshResources(sessionId, handle, refreshOptions?.force === true);
+		},
+
+		/**
+		 * 「完整历史」：交给 pi 自己的导出器（`pi --export` 同一套模板），我们只负责
+		 * ①挑输入（优先用活着的会话，带上系统提示词与工具清单）②把产出的 HTML 读回来。
+		 *
+		 * 为什么不自己拼页面：模板在 pi 包里跟着引擎一起演进（分支树、工具渲染、主题），
+		 * 抄一份必然越用越旧。这里连「写临时文件」都是照它的 API 来的（它只支持写文件）。
+		 */
+		async exportSessionHtml(sessionId: string, sessionPath: string | null) {
+			const handle = sessions.get(sessionId);
+			const file = handle?.sessionPath ?? sessionPath;
+			// 临时会话（`SessionManager.inMemory`）根本没有文件，导出器会直接报
+			// 「Cannot export in-memory session」——先说人话，别把 SDK 的英文原样丢给用户
+			if (handle && !handle.sessionManager.isPersisted() && !file) {
+				throw new Error("这条会话是临时会话（不落盘），没有可以导出的完整历史；先点「保存为正式对话」。");
+			}
+			if (!handle && !file) throw new Error("找不到这条会话的文件，导不出完整历史。");
+
+			const exporter = await loadExportHtml();
+			// 导出器只支持「写到文件」：给它一个自己的临时目录，读完就整个删掉
+			const dir = await mkdtemp(join(tmpdir(), "pop-agent-export-"));
+			const output = join(dir, `${randomUUID()}.html`);
+			try {
+				if (handle) {
+					// 活着的会话：带上 state，导出页才有「System Prompt / Available Tools」两块
+					await exporter.exportSessionToHtml(handle.sessionManager as never, handle.session.state as never, {
+						outputPath: output,
+					});
+				} else {
+					await exporter.exportFromFile(file as string, { outputPath: output });
+				}
+				return patchExportHtml(await readFile(output, "utf8"));
+			} finally {
+				await rm(dir, { recursive: true, force: true });
+			}
+		},
+
+		async sendMessage(
+			sessionId: string,
+			text: string,
+			onEvent: (event: EngineEvent) => void,
+			messageOptions?: {
+				images?: Array<{ data: string; mimeType: string }>;
+				streamingBehavior?: "steer" | "followUp";
+			},
+		) {
+			const found = sessions.get(sessionId);
+			if (!found) {
+				onEvent({ type: "error", code: "engine.no_session", message: `引擎里没有这个会话：${sessionId}` });
+				onEvent({ type: "turn_end", reason: "error" });
+				return;
+			}
+			// 换个别名：下面 `runAttempt` 是**函数声明**（会被提升），TS 不会把上面的收窄带进去
+			// 技能 / MCP / AGENTS.md 改过了就用最新的：资源变了会**重开句柄**，所以拿到的可能是新的那个
+			const handle = await refreshResources(sessionId, found);
+
+			handle.aborting = false;
+			handle.running = true;
+			handle.turnSeq += 1;
+
+			/**
+			 * 一轮的收尾结果（自动重试用）。
+			 * provider 报错**先攒着不发**：中间那些马上会被重试掉的失败不该在界面上留一条红条，
+			 * 最终由下面决定往外发哪一条。
+			 */
+			type AttemptOutcome = {
+				failed: { code: string; message: string } | null;
+				errors: Array<{ code: string; message: string }>;
+				interrupted: boolean;
+				/** 这一轮有没有往界面上吐过东西（正文 / 思考 / 工具卡） */
+				producedOutput: boolean;
+				/** 这条消息是被「插进正在跑的那一轮」的 */
+				steered: boolean;
+				/** 这一轮是否已经正常说完（出现过 stopReason=stop 的助手消息）：之后的 provider 报错不再算失败 */
+				completed: boolean;
+			};
+
+			// 图片走 SDK 的 images 参数（视觉注入）；没有图片时不传，避免空数组影响提示词缓存
+			const images = messageOptions?.images?.map((image) => ({
+				type: "image" as const,
+				data: image.data,
+				mimeType: image.mimeType,
+			}));
+			// streamingBehavior 交给 pi 自己排队：steer = 打断当前轮插入，followUp = 等这轮结束
+			const promptOptions: { images?: unknown[]; streamingBehavior?: "steer" | "followUp" } = {};
+			if (images && images.length > 0) promptOptions.images = images;
+			if (messageOptions?.streamingBehavior) promptOptions.streamingBehavior = messageOptions.streamingBehavior;
+
+			/** 跑一轮（第一次 = 发用户消息；重试 = 从转录续跑）并等它收尾 */
+			async function runAttempt(index: number): Promise<AttemptOutcome> {
+				let interrupted = false;
+				let producedOutput = false;
+				let steered = false;
+				let failed: AttemptOutcome["failed"] = null;
+				let completed = false;
+				const errors: AttemptOutcome["errors"] = [];
+				let markSettled: (() => void) | null = null;
+				const settled = new Promise<void>((resolve) => {
+					markSettled = resolve;
+				});
+
+				// 订阅**按次**持有：steer 会并发再进一次 sendMessage，两轮各自摘自己的监听器
+				const off = handle.session.subscribe((event: unknown) => {
+					if (isCleanAssistantEnd(asRecord(event))) completed = true;
+					const mapped = mapSessionEvent(event);
+					if (mapped) {
+						// provider 报错也要算「这一轮失败」：不能最后还发 turn_end: done。
+						// 先攒着不发 —— 这类错误很可能下一步就被重试掉了。
+						if (mapped.type === "error") {
+							errors.push({ code: mapped.code, message: mapped.message });
+							// 每一次 provider 报错都进日志（以前只有界面上一条红条，日志里查不到任何东西）
+							log("warn", "provider 报错", {
+								sessionId,
+								attempt: index,
+								code: mapped.code,
+								message: mapped.message,
+							});
+							return;
+						}
+						if (
+							mapped.type === "text_delta" ||
+							mapped.type === "thinking_delta" ||
+							mapped.type === "tool_start" ||
+							mapped.type === "tool_end"
+						) {
+							producedOutput = true;
+						}
+						onEvent(mapped);
+						return;
+					}
+					const record = asRecord(event);
+					// pi 自己的重试（overloaded / 5xx / socket hang up 那几类）：记一笔就够，
+					// 界面上不打扰 —— 用户看到的仍然是一轮正常的回答。
+					if (record.type === "auto_retry_start") {
+						log("info", "pi 自动重试", { sessionId, attempt: record.attempt, reason: record.errorMessage });
+						/**
+						 * 用户已经点了停：pi 是先 emit 这个事件、后建退避控制器的（同步代码里紧接着就 sleep）。
+						 * 所以这里**同步**取消会扑空；推到微任务里，控制器已经存在，取消才生效。
+						 */
+						if (handle.aborting) {
+							queueMicrotask(() => (handle.session as { abortRetry?: () => void }).abortRetry?.());
+						}
+						return;
+					}
+					if (record.type === "agent_settled") {
+						interrupted = record.aborted === true || handle.aborting;
+						markSettled?.();
+					}
+				});
+				handle.subscriptions.add(off);
+
+				try {
+					if (index === 0) {
+						const session = handle.session as unknown as {
+							prompt: (text: string, options: typeof promptOptions) => Promise<void>;
+						};
+						try {
+							await session.prompt(text, promptOptions);
+						} catch (error) {
+							/**
+							 * pi 说「已经在跑了」= 宿主的忙碌判断和 pi 的 `isStreaming` 错开了一步（排队排空恰好撞上
+							 * 上一轮还没真正 settle、看门狗强制收尾、插队与 settle 抢跑……）。
+							 * 这**不是**「回合失败」而是「该插队」：补一次 steer 交给 pi 排队（与 turn-queue 的
+							 * flushSteer 同一语义），别把用户那条消息变成界面上的一条红条、然后人也没了。
+							 * 已经就是 steer 还报这句 = 真异常，照旧报错。
+							 */
+							if (promptOptions.streamingBehavior === "steer" || !isAlreadyProcessing(error)) throw error;
+							await session.prompt(text, { ...promptOptions, streamingBehavior: "steer" });
+							steered = true;
+						}
+					} else {
+						// 重试：从当前转录接着跑（那条失败的回复已经被 omitFailedAttempt 抹掉了，
+						// 所以这里**不会**再发一遍用户消息）
+						const agent = handle.session.agent;
+						if (!agent?.continue) throw new Error("这个 pi 版本不支持从转录续跑，无法自动重试");
+						await agent.continue();
+					}
+					// 等 settle：prompt() 返回后仍可能有收尾事件（插队那条更要等整轮真结束，否则会提前收尾）
+					if (steered)
+						await Promise.race([
+							settled,
+							new Promise<void>((done) => setTimeout(done, STEER_SETTLE_FALLBACK_MS).unref?.()),
+						]);
+					else await Promise.race([settled, sleep(SETTLE_GRACE_MS)]);
+				} catch (error) {
+					failed = { code: "engine.prompt_failed", message: errorMessageOf(error) };
+				} finally {
+					off();
+					handle.subscriptions.delete(off);
+				}
+
+				return { failed, errors, interrupted, producedOutput, steered, completed };
+			}
+
+			let attempt = 0;
+			let outcome = await runAttempt(0);
+			/**
+			 * 自动重试（见 pi-retry.ts）：pi 只重试它认得出来的瞬时错误，
+			 * 「This operation was aborted」这种传输层 abort 它一律当终态 —— 实际观感就是
+			 * 「模型刚连上就被掐断，界面一条红条，这一轮没了，而用户什么都没干」。
+			 *
+			 * 三条边界：
+			 *   1. 用户点停 / 看门狗中断（`aborting` / `interrupted`）—— 绝不重试；
+			 *   2. 这一轮已经往界面上吐过东西（正文 / 思考 / 工具卡）—— 不重试：
+			 *      重来的答案会和上一段粘在同一个气泡里，比报错更让人困惑；
+			 *   3. 插队（steer）那条不重试：它属于正在跑的那一轮，重跑会把上下文搅乱。
+			 */
+			const retryBudget = messageOptions?.streamingBehavior ? 0 : RETRY_MAX_ATTEMPTS;
+			/**
+			 * 重试进度走事件（`retry`）而不是 `onNotice`：
+			 *   · `retry` → 显示在「正在等待模型…」那一行（退避期间屏幕是静的，必须有一行字说明还在跑）；
+			 *   · `notice`（同 key 原地替换）→ 恢复后一句「已自动恢复」，不堆行。
+			 * 引擎的 `sessionId` 就是会话 id（宿主 `engine.sendMessage(conv, …)`）。
+			 */
+			const retryNoticeKey = `engine-retry:${sessionId}`;
+			while (
+				attempt < retryBudget &&
+				outcome.failed === null &&
+				!outcome.interrupted &&
+				!handle.aborting &&
+				!outcome.producedOutput &&
+				!outcome.completed &&
+				!outcome.steered
+			) {
+				const transient = outcome.errors.find((error) => classifyProviderError(error.message) === "transient");
+				if (!transient) break;
+				attempt += 1;
+				log("warn", "模型调用被打断，自动重试", {
+					sessionId,
+					attempt,
+					maxAttempts: retryBudget,
+					code: transient.code,
+					message: transient.message,
+				});
+				// 只在「正在等待模型…」那一行显示（不走提示条：这一行一直挂到真的重新吐字为止，
+				// 而提示条 4 秒就消失，退避期间反而以为卡死了）
+				onEvent({ type: "retry", attempt, maxAttempts: retryBudget });
+				await sleep(retryDelayMs(attempt));
+				// 退避期间用户点了停止 → 别再折腾了
+				if (handle.aborting) break;
+				if (!omitFailedAttempt(handle, log, sessionId)) break;
+				outcome = await runAttempt(attempt);
+			}
+
+			handle.running = false;
+			if (outcome.failed) {
+				log("error", "这一轮没能发出去", { sessionId, message: outcome.failed.message });
+				onEvent({ type: "error", code: outcome.failed.code, message: outcome.failed.message });
+				onEvent({ type: "turn_end", reason: "error" });
+				return;
+			}
+			// `handle.aborting` 是兵底：中断时它已经被 interrupt() 置 true，
+			// 即使 agent_settled 没来得及到，也不要把「点停」报成「完成」
+			const aborted = outcome.interrupted || handle.aborting;
+			// 按「这一轮最终是不是出错」收尾：已经正常说完的回合，迟到的报错不算失败
+			const turnErrored = turnFailed({
+				aborted,
+				errorCount: outcome.errors.length,
+				completed: outcome.completed,
+			});
+			// 用户自己停的不再往界面上扔红条：他已经知道这一轮停了（日志里留一笔就够复盘）；
+			// 真正失败（重试用尽 / 不可重试）才把最后那条错发出去。
+			if (turnErrored) {
+				for (const error of outcome.errors) {
+					onEvent({ type: "error", code: error.code, message: error.message });
+				}
+			}
+			if (aborted) {
+				log("info", "这一轮被中断", { sessionId, attempt });
+			} else if (turnErrored) {
+				log("error", "模型调用失败", { sessionId, attempt, message: outcome.errors.at(-1)?.message });
+			} else if (outcome.errors.length > 0) {
+				// 正常说完之后的报错：只留日志，不改判这一轮
+				log("warn", "回合已正常完成，忽略其后的 provider 报错", {
+					sessionId,
+					message: outcome.errors.at(-1)?.message,
+				});
+			} else if (attempt > 0) {
+				log("info", "自动重试成功", { sessionId, attempt });
+				onEvent({
+					type: "notice",
+					level: "info",
+					key: retryNoticeKey,
+					text: `模型调用已自动恢复（重试 ${attempt} 次）`,
+				});
+			}
+			onEvent({ type: "turn_end", reason: aborted ? "interrupted" : turnErrored ? "error" : "done" });
+		},
+
+		async interrupt(sessionId: string) {
+			const handle = sessions.get(sessionId);
+			if (!handle) return;
+			handle.aborting = true;
+			const turnNo = handle.turnSeq;
+			const cancelRetry = () => (handle.session as { abortRetry?: () => void }).abortRetry?.();
+			cancelRetry();
+			try {
+				await handle.session.abort();
+			} catch (error) {
+				notice(`中断失败：${error instanceof Error ? error.message : String(error)}`);
+			}
+			/**
+			 * pi 的 `abort()` 有竞态：它在「这一轮刚结束、正准备自动重试」的窗口里调用时，
+			 * 既没有可停的流、也没有已建好的退避控制器，于是停止无效，重试照跑，回合永远不 settle，
+			 * 界面一直显示「正在跑 / 回车排队」，「停止」按了也没用。
+			 *
+			 * 所以只要**这一轮**还没结束，就隔一秒补一次（最多 8 次，约 8 秒）。
+			 * 盯住回合序号：停止期间如果排队的下一轮已经开始，就不再打扰它。
+			 */
+			void keepAbortingUntilSettled({
+				stillStopping: () => handle.running && handle.turnSeq === turnNo,
+				cancelRetry,
+				abortOnce: () => handle.session.abort(),
+				sleep,
+			});
+		},
+
+		async readTranscript(sessionId: string): Promise<EngineMessage[]> {
+			const handle = sessions.get(sessionId);
+			if (!handle) return [];
+			return handle.session.messages.map((message) => {
+				const record = asRecord(message);
+				const content = asRecord(record.content);
+				const text =
+					typeof record.content === "string"
+						? record.content
+						: Array.isArray(content)
+							? content
+									.map((part) => {
+										const item = asRecord(part);
+										return typeof item.text === "string" ? item.text : "";
+									})
+									.join("")
+							: "";
+				const role = record.role === "assistant" ? "assistant" : "user";
+				return { role, text, ts: typeof record.timestamp === "number" ? record.timestamp : Date.now() };
+			});
+		},
+
+		setApprovalHandler(handler: ApprovalHandler) {
+			approvalHandler = handler;
+		},
+
+		listProviderCatalog,
+
+		async listModels(sessionId?: string) {
+			// 模型注册表挂在会话的 modelRuntime 上：没有会话时给不出（界面在打开会话后才显示列表）
+			const handle = sessionId ? sessions.get(sessionId) : [...sessions.values()].at(-1);
+			const runtime = (handle?.session as { modelRuntime?: { getAvailable?: () => Promise<unknown[]> } } | undefined)
+				?.modelRuntime;
+			if (!runtime?.getAvailable) return [];
+			try {
+				const models = (await runtime.getAvailable()) as Array<{
+					provider?: string;
+					id?: string;
+					name?: string;
+					baseUrl?: string;
+					api?: string;
+					type?: string;
+				}>;
+				const current = await this.currentModel?.(sessionId ?? "");
+				/**
+				 * 只留**聊天**模型（`providers/model-kind.ts`）。
+				 * `getAvailable()` 报的是所有类型：分类器 `typesafe/jev-latest` 也被报了上来，
+				 * 于是面板把它当成一个「引擎已可用」的服务商，界面上多一条既删不掉、又聊不了的条目
+				 * （2026-11-03 用户截图报的那个 typesafe）。
+				 * 引擎报上来的对象不一定带 `api` / `type`，所以再查一眼 pi 的静态目录：
+				 * 目录里登记成分类器 / 出图模型的 id，一律不算聊天模型。
+				 */
+				const nonChatIds = new Set<string>();
+				for (const providerId of new Set(models.map((model) => String(model.provider ?? "")))) {
+					const builtin = [
+						...getBuiltinClassifierModels(providerId as Parameters<typeof getBuiltinModels>[0]),
+						...getBuiltinImageModels(providerId as Parameters<typeof getBuiltinModels>[0]),
+					];
+					for (const model of builtin) nonChatIds.add(`${providerId}/${String(model.id)}`);
+				}
+				return models
+					.filter((model) => isChatModel(model))
+					.filter((model) => !nonChatIds.has(`${String(model.provider ?? "?")}/${String(model.id ?? "?")}`))
+					.map((model) => {
+						const id = `${String(model.provider ?? "?")}/${String(model.id ?? "?")}`;
+						return {
+							id,
+							label: String(model.name ?? model.id ?? id),
+							...(typeof model.baseUrl === "string" ? { baseUrl: model.baseUrl } : {}),
+							...(typeof model.api === "string" ? { api: model.api } : {}),
+							current: current ? id === `${current.provider}/${current.model}` : false,
+						};
+					})
+					.sort((a, b) => Number(b.current) - Number(a.current) || a.id.localeCompare(b.id));
+			} catch {
+				return [];
+			}
+		},
+
+		listThinkingLevels: thinking.listThinkingLevels,
+		getThinkingLevel: thinking.getThinkingLevel,
+		setThinkingLevel: thinking.setThinkingLevel,
+
+		/**
+		 * 模型探针：**pi 自己**发一次最小请求（一个 ping 回合，没有工具 / 没有审批）。
+		 *
+		 * 为什么不让工作台拿 key 直连（`/api/providers/:p/models/:id/test` 那条路）：
+		 * 那条路只能测「key 落盘在 auth.json / models.json 里」的 provider。pi 的凭证还有另一种来源 ——
+		 * **环境变量**（opencode 读的就是 `OPENCODE_API_KEY`），而且 provider 还会要求自己的 header
+		 * （opencode 要 `x-opencode-session`，见 pi-ai 的 `withOpenCodeSessionHeader`）。
+		 * 结果就是：opencode 在对话里用得挺好，面板上测速却一律报「这个 provider 还没有凭证」。
+		 * 这里走 `modelRuntime.streamSimple` —— 鉴权解析、协议选择、这些专属 header 全是 pi 自己套的，
+		 * 和对话用的完全是同一条路，不重复也不猜。
+		 *
+		 * 语义上这是一次**真实调用**（会花额度）：界面必须已经在用户确认后才调到这里。
+		 */
+		async probeModel(modelId: string): Promise<ModelProbeResult> {
+			const slash = modelId.indexOf("/");
+			if (slash <= 0 || slash === modelId.length - 1) {
+				return { ok: false, message: `模型 id 形状不认识：${modelId}` };
+			}
+			const providerId = modelId.slice(0, slash);
+			const wanted = modelId.slice(slash + 1);
+			const runtime = (await authRuntime()) as ProbeRuntime | null;
+			if (!runtime?.streamSimple) {
+				return { ok: false, message: "引擎还没准备好模型表（先新建一个会话再测）" };
+			}
+			const model = runtime.getModels(providerId).find((entry) => String(entry?.id ?? "") === wanted);
+			if (!model) return { ok: false, message: `引擎里没有这个模型：${modelId}` };
+
+			const startedAt = Date.now();
+			let ttftMs: number | null = null;
+			let firstTokenAt = 0;
+			/** 30s 收不住就当测不出来：面板上宁可报错，也别让按钮一直转 */
+			const controller = new AbortController();
+			const timer = setTimeout(() => controller.abort(), 30_000);
+			try {
+				const stream = runtime.streamSimple(
+					model,
+					{ messages: [{ role: "user", content: "ping", timestamp: Date.now() }] },
+					{ signal: controller.signal },
+				);
+				for await (const event of stream) {
+					// 首字（包括思考流）：这才是用户感知的「多久才动」
+					if (ttftMs === null && (event.type === "text_start" || event.type === "text_delta")) {
+						ttftMs = Date.now() - startedAt;
+						firstTokenAt = Date.now();
+					}
+				}
+				const message = (await stream.result()) as ProbeMessage | undefined;
+				const totalMs = Date.now() - startedAt;
+				if (message?.stopReason === "error" || message?.stopReason === "aborted") {
+					return { ok: false, message: message.errorMessage ?? `引擎回了 ${message.stopReason}` };
+				}
+				const outputTokens = message?.usage?.output ?? 0;
+				const generationMs = firstTokenAt === 0 ? 0 : Date.now() - firstTokenAt;
+				return {
+					ok: true,
+					ttftMs,
+					totalMs,
+					outputTokens,
+					// 与 EngineModelsPanel 同一套纪律：窗口太短 / 没 token 就给 null，不拿噪声充数
+					tps: outputTokens > 0 && generationMs >= 500 ? (outputTokens / generationMs) * 1000 : null,
+					averageTps: outputTokens > 0 && totalMs > 0 ? (outputTokens / totalMs) * 1000 : null,
+				};
+			} catch (error) {
+				return { ok: false, message: error instanceof Error ? error.message : String(error) };
+			} finally {
+				clearTimeout(timer);
+			}
+		},
+
+		async switchModel(sessionId: string, modelId: string) {
+			// ModelRuntime 上没有 find（那是 ModelRegistry 的方法）→ 从可用列表里自己匹配
+			const handle = sessions.get(sessionId);
+			const runtime = (handle?.session as { modelRuntime?: { getAvailable?: () => Promise<unknown[]> } } | undefined)
+				?.modelRuntime;
+			if (!handle || !runtime?.getAvailable) return false;
+			const [provider, ...rest] = modelId.split("/");
+			const wanted = rest.join("/");
+			const available = (await runtime.getAvailable()) as Array<{ provider?: string; id?: string }>;
+			const model = available.find((item) => String(item.provider) === provider && String(item.id) === wanted);
+			if (!model) return false;
+			try {
+				await (handle.session as unknown as { setModel: (model: unknown) => Promise<void> }).setModel(model);
+				return true;
+			} catch (error) {
+				options.onNotice?.(`切换模型失败：${error instanceof Error ? error.message : String(error)}`, "error");
+				return false;
+			}
+		},
+
+		async currentModel(sessionId: string) {
+			const handle = sessions.get(sessionId);
+			const model = (handle?.session as { model?: { id?: string; provider?: string } } | undefined)?.model;
+			if (!model) return null;
+			return { provider: String(model.provider ?? "?"), model: String(model.id ?? "?") };
+		},
+
+		sessionModel: async (sessionId) => readSessionModel(sessions.get(sessionId)),
+
+		async closeSession(sessionId: string) {
+			const handle = sessions.get(sessionId);
+			if (!handle) return;
+			handle.unsubscribe();
+			try {
+				handle.session.dispose();
+			} catch {
+				// 已经关掉了
+			}
+			sessions.delete(sessionId);
+		},
+
+		/**
+		 * 关会话：给了 id 就关那一个；**不给就是引擎级 dispose（切引擎时宿主就是这么调的）**，
+		 * 把所有会话一起关掉。以前这个签名必填 sessionId，宿主 `dispose?.()` 传空 →
+		 * `sessions.get(undefined)` 什么也没关，每切一次引擎就漏一批 SDK 会话与资源加载器。
+		 */
+		async dispose(sessionId?: string) {
+			/**
+			 * 引擎级 dispose（切引擎/退出）**必须连子代理一起收掉**。
+			 *
+			 * 子代理会话是 `pi-subagents` 自己 `createAgentSession` 起的，**不在下面这个 sessions map 里** ——
+			 * 只关 sessions 就会漏掉它们：切走引擎后旧子代理还在跑（还在调工具、还在烧 token），
+			 * 而且再也没人能把它们停下（宿主已经换了引擎，`interrupt_subagent` 会发给新引擎）。
+			 */
+			if (!sessionId && subagents.dispose) {
+				try {
+					await subagents.dispose();
+				} catch {
+					// 收不掉也不阻断切换（旧引擎的子代理最多多跑一会儿，但不会再阻塞切引擎）
+				}
+			}
+			const ids = sessionId ? [sessionId] : [...sessions.keys()];
+			for (const id of ids) {
+				const handle = sessions.get(id);
+				if (!handle) continue;
+				handle.unsubscribe();
+				try {
+					handle.session.dispose();
+				} catch {
+					// 已经关掉了
+				}
+				sessions.delete(id);
+			}
+		},
+	} as EnginePort;
+}

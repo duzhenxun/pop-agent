@@ -1,0 +1,265 @@
+/**
+ * Runtime 的公开类型（ADR-0010 的拆分）：从 runtime.ts 搬出来，让那边留在 400 行护栏内。
+ * 对外入口不变 —— runtime.ts 仍 `export type { Runtime, Result, RuntimeEmit }`。
+ */
+import type { ClientView } from "./client-view.js";
+import type {
+	AttachmentRef,
+	ApprovalDecision,
+	ApprovalMode,
+	CanvasDoc,
+	CanvasNodeStatus,
+	PiProject,
+	Notice,
+	ProtocolError,
+	SendMode,
+	ServerEvent,
+	ProviderView,
+	Snapshot,
+	SubagentProfileView,
+	SubagentSettingsView,
+} from "../protocol.js";
+import type { ServerState } from "../snapshot/state.js";
+import type { SuggestTitleResult } from "./suggest-title.js";
+import type { GenerateTemplatePromptResult, TemplatePromptInput } from "./template-prompt.js";
+import type { GenerateCronPromptResult } from "./cron-prompt.js";
+import type { CompleteTextInput, TextCompletion } from "./one-shot.js";
+import type { EnginePort } from "../engine/port.js";
+import type { EngineCatalog } from "../engine/catalog.js";
+import type { RuleStore } from "../approval/rules.js";
+import type { SettingsStore } from "./settings.js";
+import type { ConversationSeed } from "./conversation-create.js";
+
+export type RuntimeEmit = {
+	snapshot(snapshot: Snapshot): void;
+	event(event: ServerEvent): void;
+};
+export type Result = { ok: true } | { ok: false; error: ProtocolError };
+export type Runtime = {
+	init(): Promise<void>;
+	snapshot(): Snapshot;
+	/** 按客户端生成快照：`active` 用这个客户端自己选中的会话（ADR-0033） */
+	snapshotFor(clientId: string | undefined): Snapshot;
+	/** 客户端记录（看哪个会话 / 是否 slim / 清单版本）：SSE 连接与断开时要用 */
+	clientView: ClientView;
+	state(): ServerState;
+	sendMessage(
+		text: string,
+		attachments?: AttachmentRef[],
+		mode?: SendMode,
+		targetConversationId?: string,
+		/** 发起请求的客户端：懒建会话时要把它的视图指到新会话（ADR-0033） */
+		clientId?: string,
+	): Promise<Result>;
+	/** 中断某个会话的回合；不给就挑「当前会话 / 第一个在跑的」 */
+	interrupt(conversationId?: string): Promise<Result>;
+	/**
+	 * 打开一条会话（历史里的也行），让它进入「已打开」状态。
+	 *
+	 * 为什么需要这一条：切模型是按引擎会话句柄走的（pi 的 `switchModel` 要先 `sessions.get(id)`），
+	 * 定时任务续跑一条**历史会话**时得先把它打开，否则「选了模型却没生效」。
+	 */
+	openConversation(conversationId: string): Promise<Result>;
+	approve(requestId: string, decision: ApprovalDecision): Result;
+	/** 新建会话：成功时带回新会话 id（定时任务要往它里面发第一条提示词） */
+	newConversation(
+		workspace?: string,
+		clientId?: string,
+		seed?: ConversationSeed,
+	): Promise<{ ok: true; conversationId: string } | { ok: false; error: ProtocolError }>;
+	/** 临时会话转正：把内存里的内容写成真正的会话文件（id 不变） */
+	persistConversation(conversationId: string): Promise<Result>;
+	/** 关闭临时会话：内存里的内容直接丢弃（没有磁盘文件，关掉就真没了） */
+	closeEphemeral(conversationId: string): Result;
+	/** 从某条消息派生新会话（分支）；原会话不动，自动切到新的那条 */
+	forkSession(conversationId: string, messageId?: string, clientId?: string): Promise<Result>;
+	/** 改会话显示名（写进 pi 的会话文件；成功后重扫列表把新名字带回来） */
+	renameSession(conversationId: string, title: string): Promise<Result>;
+	/**
+	 * 让 AI 按会话内容重新起名（一次性问答 → 清洗 → 走 `renameSession` 落盘）。
+	 * 成功时把最终用的标题带回来，界面可直接拿来提示。
+	 */
+	suggestSessionTitle(conversationId: string): Promise<SuggestTitleResult>;
+	/**
+	 * 提示词模板「AI 生成」：按标题 / 说明 / 已有草稿写一份标准提示词（不落盘，结果交回界面）。
+	 * `conversationId` 只用来挑模型（该会话在用的那个优先），可以没有。
+	 */
+	generateTemplatePrompt(
+		input: Partial<Record<keyof TemplatePromptInput, unknown>>,
+		conversationId?: string | null,
+	): Promise<GenerateTemplatePromptResult>;
+	/** 定时任务「AI 生成」：按任务标题写一段任务描述（不落盘，结果交回界面） */
+	generateCronPrompt(name: unknown, conversationId?: string | null): Promise<GenerateCronPromptResult>;
+	/** 一次性文本补全（标题 / 模板 / 想想共用）：给「想想」路由之外的直连入口 */
+	completeText(input: CompleteTextInput): Promise<TextCompletion>;
+	/**
+	 * 「完整历史」：把这条会话导成 pi 的 HTML 导出页（整份转录，含工具调用 / 思考 / 分支）。
+	 *
+	 * 为什么放在 runtime 而不是在 HTTP 路由里直接叫引擎：会话文件路径这事只有宿主知道
+	 * （opener 记得的 + 历史清单里的），引擎拿不到「没开在当前进程里」的会话。
+	 * 当前引擎没这个能力时回 `engine.unsupported`（界面按 capabilities.historyExport 早就不画入口）。
+	 */
+	sessionHistoryHtml(
+		conversationId: string,
+	): Promise<{ ok: true; html: string } | { ok: false; code: string; message: string }>;
+	/** 「系统提示词」：这次运行**实际在用**的那段（AGENTS.md / 技能 / 附加段都拼完了） */
+	sessionSystemPrompt(
+		conversationId: string,
+	): Promise<{ ok: true; prompt: string } | { ok: false; code: string; message: string }>;
+	/**
+	 * 「刷新网页时顺手重载资源」：让引擎把这条会话的技能 / MCP / AGENTS.md 重新读一遒。
+	 *
+	 * 为什么需要：浏览器刷新只是重连 WS，引擎那边的会话并未重开 —— 代理里改了技能、
+	 * 加了 MCP，提示词还停在旧的那份（要等下一句话才生效）。引擎没这个能力就当没事（幂等）。
+	 */
+	refreshConversationResources(conversationId: string, options?: { force?: boolean }): Promise<Result>;
+	/** 删除会话：引擎原生删除（codex）或文件改名（pi）；已经不在的按成功处理（`gone`）。
+	 * `purge` 为真时 pi 那条路是真删（`unlink`），默认只是改名 —— 见 `delete-session.ts` */
+	deleteSession(
+		conversationId: string,
+		options?: { purge?: boolean },
+	): Promise<
+		| { ok: true; mode: "engine" | "file" | "purged" | "gone"; movedTo?: string }
+		| { ok: false; error: { code: string; message: string } }
+	>;
+	/** 把会话拖到另一个项目（改 cwd，id 与历史不变） */
+	moveSession(
+		conversationId: string,
+		workspace: string,
+	): Promise<{ ok: true; workspace: string } | { ok: false; error: { code: string; message: string } }>;
+	/** 改客户端设置（ADR-0020 §P1）：归一化 → 落盘 → 推快照 */
+	applySettings(patch: unknown): Promise<Result>;
+	/** 切换指定会话的模型（未传会话 ID 时兼容旧调用，使用当前 active 会话） */
+	setModel(modelId: string, conversationId?: string): Promise<Result>;
+	/** 思考强度（P4）：档位由引擎给，不支持时界面隐藏控件 */
+	setThinkingLevel(level: string): Promise<Result>;
+	/** 「想一想」：隐藏回合重新向模型要一批建议（不进对话区/历史） */
+	refreshActions(conversationId?: string, count?: number): Promise<Result>;
+	/** 只推一帧快照（不制造提示条） */
+	pushSnapshot(): void;
+	/** 热重载模型表（改完 provider / 模型配置后调用，免重启） */
+	reloadModels(): Promise<void>;
+	/** 取消一条排队消息（真删队列，不是只从界面移除） */
+	cancelQueued(queueId: string): Result;
+	/**
+	 * 审批模式（P4）：**按会话**存在内存里（不落盘），重启回到默认 allow。
+	 * `conversationId` 由界面给（它才知道自己正看着哪条会话）；没给就落到全局 activeId。
+	 */
+	setApprovalMode(mode: ApprovalMode, conversationId?: string | null): Result;
+	/** 画布：用户手改节点状态 / 删节点 / 拖动回写坐标（都需要宿主提供 canvasWrite） */
+	canvasSetStatus(conversationId: string, nodeId: string, status: CanvasNodeStatus, parent?: string | null): Result;
+	canvasDelete(conversationId: string, ids: readonly string[], parent?: string | null): Result;
+	canvasMove(conversationId: string, moves: readonly { id: string; x: number; y: number }[], parent?: string | null): Result;
+	/** 让模型给几条"用户可能想说的话"（输入框的候选指令）；失败时退回固定候选 */
+	canvasSuggest(
+		conversationId: string,
+		nodeIds: readonly string[],
+		parent?: string | null,
+	): Promise<{ ok: true; result: { suggestions: string[] } }>;
+	/** 改节点的标题 / 说明 */
+	canvasUpdateNode(
+		conversationId: string,
+		nodeId: string,
+		patch: { title?: string; detail?: string },
+		parent?: string | null,
+	): Result;
+	/** 让 agent 开始做某一步：标 doing → 发一圈回合 → 回合结束自动推 done / blocked */
+	canvasStartNode(conversationId: string, nodeId: string, parent?: string | null): Promise<Result>;
+	/** 停掉一个子代理（只停它，不动主会话那一轮） */
+	interruptSubagent(runId: string): Promise<Result>;
+	/** 新建 / 覆盖一个子代理模板（写 `~/.pi/agent/agents/<id>.md`） */
+	saveSubagentProfile(profile: SubagentProfileView): Promise<Result>;
+	/** 删掉一个用户模板（内置模板只能停用） */
+	deleteSubagentProfile(profileId: string): Promise<Result>;
+	/** 子代理总开关 / 并发上限 */
+	setSubagentSettings(patch: Partial<SubagentSettingsView>): Promise<Result>;
+	switchConversation(conversationId: string, clientId?: string): Promise<Result>;
+	/** 重新读 provider 配置（models-store.json 可能被外部改动；页面刷新时顺手更新） */
+	refreshProviders(): Promise<void>;
+	/**
+	 * 模型测速（「模型 → 测速」按钮）：交给**当前引擎**真跑一个最小回合。
+	 * 当前引擎没实现（没有 `probeModel`）就回一条可读错误，而不是假装测过。
+	 */
+	probeModel(modelId: string): Promise<import("../engine/port.js").ModelProbeResult>;
+	/** 重新扫 pi 已有的项目/会话（ADR-0021 §1）；带最小间隔，避免每次刷新都扫盘 */
+	refreshPiSessions(force?: boolean): Promise<void>;
+	/** 给宿主其他部分（引擎、启动流程）推一条界面提示 */
+	notify(text: string, level?: Notice["level"]): void;
+	/**
+	 * 切智能体引擎（零重启）：项目清单 / 模型 / 能力矩阵跟着换。
+	 * 回合在飞时返回 `engine.busy`（不把半截回合丢给另一个引擎）。
+	 */
+	setEngine(name: string): Promise<Result>;
+	isBusy(): boolean;
+};
+
+export type RuntimeOptions = {
+	/** 启动信息（只进日志，不进对话流） */
+	onStartupInfo?: (text: string) => void;
+	engine: EnginePort;
+	/**
+	 * 取某条会话的画布（快照里带上它，画布标签据此渲染）。
+	 * 不给 = 一律 null（没有画布）：单测／最小启动不需要画布。
+	 */
+	canvasOf?: (conversationId: string | null) => CanvasDoc | null;
+	/**
+	 * 把改过的画布写回去（落盘 + 推快照）。和 `canvasOf` 成对：一个读、一个写。
+	 * 不给 = 画布只读（工具和手改都不生效）。
+	 */
+	canvasWrite?: (conversationId: string, doc: CanvasDoc) => Promise<void> | void;
+	/** 审批规则落盘（ADR-0006）：「总是允许这类」跨重启生效 */
+	rules: RuleStore;
+	/** 回合看门狗超时（ADR-0023）；不给就用默认 20 分钟 */
+	turnTimeoutMs?: number;
+	/** 「下一步」要建议的超时（默认 20 秒：超时就中断，不让隐藏回合一直挂着） */
+	actionsTimeoutMs?: number;
+	/** 附件上传存储（ADR-0020 §P3）：读回上传的文件；不给则附件一律失效 */
+	uploadStore?: {
+		read: (id: string) => Promise<{ bytes: Buffer; mime: string } | null>;
+		pathOf?: (id: string) => string;
+	};
+	/** 客户端设置存储（ADR-0020 §P1）；不给就用默认值（可选） */
+	settings?: SettingsStore;
+	/** 子代理模板目录的父目录（pi 的 agentDir，默认等于 workspace：不读真实 ~/.pi） */
+	subagentAgentDir?: string;
+	/** pi 已有会话的扫描器（ADR-0021 §1）；不给就不显示那一栏（可选） */
+	piSessions?: () => Promise<PiProject[]>;
+	/**
+	 * 引擎目录（ADR-0024）：提供「有哪些引擎 / 按名字取实例 / 每个引擎的历史会话来源」。
+	 * 不给就只有 `engine` 一个（最小启动），切换请求会被拒。
+	 */
+	engines?: EngineCatalog;
+	/** 回合结束时回调（index 用它发推送通知）；failed/interrupted 决定推送文案的前缀 */
+	onTurnFinished?: (info: {
+		conversationId: string;
+		title: string;
+		workspace: string;
+		failed: boolean;
+		interrupted: boolean;
+	}) => void;
+	/** 读 provider 列表（index 注入：它同时知道内置 provider 的分组） */
+	loadProviders?: () => Promise<ProviderView[]>;
+	/**
+	 * 一次性文本补全（index 注入）：标题 / 模板 / 想想三处共用。
+	 * 引擎直连优先、工作台凭证兜底 —— 具体怎么选模型在 `session/one-shot.ts` 里。
+	 */
+	completeText?: (input: CompleteTextInput) => Promise<TextCompletion>;
+	/** 两次扫描的最小间隔（默认 10s） */
+	piSessionsMinIntervalMs?: number;
+	workspace: string;
+	/** 当前引擎名（ADR-0016）：会进快照，供界面决定提示语 */
+	engineName?: string;
+	/** 新会话的默认审批模式（ADR-0034）：不给就 allow（旧调用不变） */
+	approvalMode?: "ask" | "allow";
+	/** 引擎能力（ADR-0024 §2）；不给就当作全能（可选） */
+	engineCapabilities?: import("../protocol.js").EngineCapabilities;
+	emit: RuntimeEmit;
+	now?: () => number;
+	/** 测试注入可预测的 id；默认 `<前缀>-<序号>` */
+	idSeq?: (prefix: string) => string;
+	noticeDedupeMs?: number;
+	maxNotices?: number;
+	titleChars?: number;
+	/** 诊断日志（切会话分段耗时）；不给就什么都不记 */
+	log?: (message: string, ctx?: Record<string, unknown>) => void;
+};

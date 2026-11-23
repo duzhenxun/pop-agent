@@ -1,0 +1,62 @@
+# 桌面 App 打包配置（ADR-0053）。
+#
+# 三条规矩写在这里，省得以后有人「顺手」改掉：
+#   1. **服务与前端放在 asar 外面**（extraResources）：服务是 spawn 出去的独立 node 进程，
+#      让它从 asar 里读 `web/dist` 属于给自己找麻烦；也让用户能看见文件在哪。
+#   2. **node_modules 不进包**：App 用的是壳内置运行时 + 仓库自己编译出来的 dist/server。
+#      第三方引擎由用户自己装（ADR-0052），pi 随包发的话放 resources 里那份依赖即可。
+#   3. 不出 universal 包：arm64 / x64 各出一份（合并会翻到 ~250MB，见 canvas 上的体积结论）。
+appId: com.popagent.app
+productName: PopAgent
+directories:
+  output: release
+  buildResources: build
+# 不要把原生模块按 Electron 的 ABI 重编（electron-builder 默认会这么做）。
+# 服务跑在**真 node** 进程里（ADR-0053 §2），node-pty 又是 N-API 的预编译包 ——
+# 按 Electron 重编既没必要，还会要求用户机器上有完整的编译链（实测直接卡在 node-gyp）。
+npmRebuild: false
+# Electron 自带 55 个语言包（Chromium 的界面文案，约 27MB）。界面是我们自己的网页，
+# 这些只影响系统级对话框/右键菜单，留中英就够。
+electronLanguages:
+  - en
+  - zh_CN
+files:
+  # 只打包壳自己的 JS。**排除 node_modules**：依赖是给「服务进程」用的，
+  # 它从 Resources/node_modules 加载（extraResources 那份）。不排除的话 electron-builder
+  # 会把生产依赖再塞进 app.asar 一份 —— 实测 94MB 的重复。
+  - "!node_modules/**/*"
+  - electron-dist/**/*
+  - package.json
+extraResources:
+  - from: dist
+    to: dist
+  - from: web/dist
+    to: web/dist
+  # 服务进程要 import pi 与 node-pty：把**只含生产依赖**的那份放到 resources/node_modules，
+  # 从 `resources/dist/server/cli.js` 往上找正好命中（scripts/prepare-package.mjs 生成）。
+  # 不能直接拷仓库的 node_modules —— 里面躺着一整套 devDependencies。
+  - from: .pkg/node_modules
+    to: node_modules
+  # Node 运行时（scripts/fetch-node-runtime.mjs 下载）。壳启动时会实测它；没有的话会退到
+  # 用户自己的 node（>=22.19）。不想带就把这个条目和 runtime:fetch 一起去掉，包小 ~50MB。
+  - from: node-runtime
+    to: node-runtime
+mac:
+  category: public.app-category.developer-tools
+  icon: web/public/icons/icon-512.png
+  target:
+    - dmg
+  hardenedRuntime: true
+  # 麦克风（本地识别）、录屏与辅助功能（电脑控制）都要在 Info.plist 里说清楚用途，
+  # 否则签名之后系统不会弹授权框，功能静默失效
+  extendInfo:
+    NSMicrophoneUsageDescription: 用本机做语音识别（听写）
+    NSCameraUsageDescription: 屏幕共享与画面采集时需要
+win:
+  icon: web/public/icons/icon-512.png
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false

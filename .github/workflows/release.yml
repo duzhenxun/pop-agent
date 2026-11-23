@@ -1,0 +1,116 @@
+# 发布流水线（Trusted Publishing / OIDC）—— **标签驱动**
+#
+# 合并/推送到 main **不发版**；发版只认两件事：
+#   1. 推 `v*` 标签（正常路径：`npm version patch && git push --follow-tags`）
+#   2. 手动 Run workflow（重试/补发：发布 `package.json` 里当前版本，不再 +1）
+#
+# 为什么不用 NPM_TOKEN：
+#   token 是长期凭证，泄一次就要全轮换；这里用 GitHub 的短期 OIDC 令牌换 npm 的一次性发布凭证，
+#   npm 端还要你**本人**在网页上把「这个仓库 + 这个文件名」加进白名单才认（见 docs/release.md）。
+#
+# 三个必须对齐的细节（错一个就静默失败或回落到 token）：
+#   1. `permissions: id-token: write` —— 没它 GitHub 根本不发 OIDC 令牌；
+#   2. 工作流里**不能**出现 NODE_AUTH_TOKEN / NPM_TOKEN —— 哪怕空串 npm 也优先用它，
+#      所以刻意不给 setup-node 传 `registry-url`（它会写 `_authToken=${NODE_AUTH_TOKEN}`）；
+#   3. npm 必须 >= 11.5.1（OIDC 交换的最低版本），setup-node 自带的是 10.x。
+#
+# Trusted Publisher 白名单是绑**文件名**的：改/拆这个文件之前先去 npm 页面同步，
+# 否则发布会 404（`ENEEDAUTH`）。所以新增入口也留在本文件里，别另起一个 yml。
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# 只读仓库 + OIDC：发布不需要写 git（版本号由本地的 npm version 决定）
+# 唯一的例外是最后那一步「建 GitHub Release」—— 它要 `contents: write` 才能往仓库写 release 对象。
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 升级 npm（OIDC 需要 >= 11.5.1）
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - name: 校验 tag 与 package.json 版本一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          echo "tag=$tag package.json=$pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 package.json 的 $pkg 对不上：先 npm version $tag"
+            exit 1
+          fi
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # dist/ 和 web/dist/ 都在 package.json 的 files 里 —— 不构建就发出去是个空壳
+      - name: 构建
+        run: npm run build
+
+      - name: 确认产物真的进包
+        run: |
+          # 只 build 不 pack 的话，最典型的翻车是 web/dist 被 .gitignore 顺带漏掉
+          npm pack --dry-run 2>&1 | grep -E "package size|total files|dist/server/cli.js|web/dist/index.html"
+          # 本地识别程序的预编译包（ubuntu 上编不了 Swift，只能靠仓库里这份）
+          # 漏了也不会崩：用户点「安装」会退回 GitHub 下载；但有些网络不通，所以提个醒
+          npm pack --dry-run 2>&1 | grep -q "helper/asr/release/ASRBridge.zip" \
+            || echo "::warning::npm 包里没有 helper/asr/release/ASRBridge.zip —— 先跑 npm run asr:release 并提交"
+
+      - name: 发布
+        run: npm publish --access public
+
+      # 只有 npm 上有、仓库 /releases 上什么都没有的话，看「这次发了什么」得去翻 tag，
+      # 而 /releases 的“Latest”又只认 Release 对象（不是 tag）—— 于是补这一出。
+      # 说明用**附注标签自己的内容**，中英双语写在标签里就能直接上页面。
+      # 不用 `gh release create --notes-from-tag`：实测在 CI 里它会静默回退成
+      # commit 说明（`chore(release): 1.1.0`），双语说明丢了；这里显式读一次标签内容。
+      # 已存在就跳过：重跑 / 补发（workflow_dispatch）不该因为这个红一次。
+      - name: 建 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag 已有 Release，跳过"
+            exit 0
+          fi
+          # checkout 出来的可能是「指向该 commit 的轻量 ref」，附注对象不一定在本地：先显式取一次
+          git fetch --no-tags --depth=1 origin "+refs/tags/$tag:refs/tags/$tag" >/dev/null 2>&1 || true
+          git tag -l --format='%(contents)' "$tag" > /tmp/notes.md
+          if [ -s /tmp/notes.md ]; then
+            gh release create "$tag" --title "$tag" --notes-file /tmp/notes.md --latest
+          else
+            # 标签没写附注：宁可给自动生成的 commit 列表，也不要一个空白页面
+            echo "标签没有附注说明，回退到自动生成"
+            gh release create "$tag" --title "$tag" --generate-notes --latest
+          fi

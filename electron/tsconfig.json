@@ -1,0 +1,19 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"lib": ["ES2023"],
+		"outDir": "../electron-dist",
+		// 壳要和几个**纯工具模块**共用同一份实现（ready 行解析、数据目录名），
+		// 所以这些文件一起编译；rootDir 取仓库根，产物保持 electron-dist/{electron,server}/ 的结构
+		"rootDir": "..",
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"verbatimModuleSyntax": true,
+		"types": ["node"]
+	},
+	"include": ["./**/*.ts", "../server/brand.ts", "../server/util/desktop.ts", "../server/util/env.ts"]
+}

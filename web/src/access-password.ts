@@ -1,0 +1,146 @@
+/**
+ * 访问密码（「设置 → 远程」里那个输入框）：只在**本机**能读状态 / 改密码。
+ *
+ * 为什么要有它（用户 2026-10-30）：
+ *   「需要远程访问时，那个密码不用系统变量；密码保存在 ~/.pop-agent 下面的配置里，
+ *     在访问 127.0.0.1 时于 设置/远程 里增加密码输入框进行设置。」
+ *
+ * 服务端（`server/http/auth-routes.ts`）：
+ *   - GET  谁都能问，只回 `{ set }` 与登录保护阀值，绝不回显密码；
+ *   - POST 本机直接改（落盘到 `<dataDir>/password`，立即生效）；远程改必须带上 `currentPassword`，
+ *     对不上就 401 并计入登录锁。远程还没设过密码时不许远程来设。
+ */
+import { tNow } from "./use-language.ts";
+
+/** 「登录保护」的两个旋钮：连续输错几次 → 暂停多少分钟（服务端默认 3 / 30） */
+export type LoginGuardSettings = { maxFailures: number; lockMinutes: number };
+
+export const DEFAULT_LOGIN_GUARD_SETTINGS: LoginGuardSettings = { maxFailures: 3, lockMinutes: 30 };
+
+/** 「读状态」带回登录保护阀值；「改密码」只关心成没成 */
+type PasswordResult = { ok: true; set: boolean; guard: LoginGuardSettings } | { ok: false; error: string };
+type PasswordSaveResult = { ok: true } | { ok: false; error: string };
+
+/** 把服务端回的两个数字读出来；旧版服务端没这两项时用默认值（不报错） */
+function guardOf(body: Record<string, unknown> | null): LoginGuardSettings {
+	const maxFailures =
+		typeof body?.maxFailures === "number" ? body.maxFailures : DEFAULT_LOGIN_GUARD_SETTINGS.maxFailures;
+	const lockMinutes =
+		typeof body?.lockMinutes === "number" ? body.lockMinutes : DEFAULT_LOGIN_GUARD_SETTINGS.lockMinutes;
+	return { maxFailures, lockMinutes };
+}
+
+/** 从响应里取 body；取不到（HTML / 网络层问题）时给 null，不抛错 */
+async function readBody(response: Response): Promise<Record<string, unknown> | null> {
+	try {
+		const body: unknown = await response.json();
+		return body !== null && typeof body === "object" ? (body as Record<string, unknown>) : null;
+	} catch {
+		return null;
+	}
+}
+
+function errorOf(body: Record<string, unknown> | null, status: number): string {
+	return typeof body?.error === "string" && body.error !== ""
+		? body.error
+		: tNow(`请求失败（HTTP ${status}）`, `Request failed (HTTP ${status})`);
+}
+
+/** 现在有没有设访问密码（只回布尔值）+ 「登录保护」当前的阀值 */
+export async function fetchAccessPasswordStatus(): Promise<PasswordResult> {
+	try {
+		const response = await fetch("/api/auth/password", { cache: "no-store", credentials: "same-origin" });
+		const body = await readBody(response);
+		if (!response.ok || body?.ok !== true) return { ok: false, error: errorOf(body, response.status) };
+		return { ok: true, set: body.set === true, guard: guardOf(body) };
+	} catch {
+		return { ok: false, error: tNow("网络异常，请重试", "Network error — try again") };
+	}
+}
+
+/**
+ * 设置 / 修改访问密码：保存后立即生效（服务端写 `<dataDir>/password` 并换掉内存里的那份）。
+ * 远程改密码要带上 `currentPassword`（当前密码），本机不用。
+ * 长度校验服务端也有一份（4–200）；这里先挡一下，省一次往返。
+ */
+export async function saveAccessPassword(password: string, currentPassword?: string): Promise<PasswordSaveResult> {
+	try {
+		const response = await fetch("/api/auth/password", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(currentPassword === undefined ? { password } : { password, currentPassword }),
+			cache: "no-store",
+			credentials: "same-origin",
+		});
+		const body = await readBody(response);
+		if (!response.ok || body?.ok !== true) return { ok: false, error: errorOf(body, response.status) };
+		return { ok: true };
+	} catch {
+		return { ok: false, error: tNow("网络异常，请重试", "Network error — try again") };
+	}
+}
+
+/** 登录活动中的一条（设置 → 远程 的那一列） */
+export type LoginActivityEntry = {
+	at: number;
+	address: string;
+	kind: "success" | "failure" | "locked";
+	attempts?: number;
+	lockMinutes?: number;
+};
+
+type LoginActivityResult = { ok: true; entries: LoginActivityEntry[] } | { ok: false; error: string };
+
+/** 读登录活动（服务端已经按**最新在最前面**排好，这里不再排） */
+export async function fetchLoginActivity(): Promise<LoginActivityResult> {
+	try {
+		const response = await fetch("/api/auth/activity", { cache: "no-store", credentials: "same-origin" });
+		const body = await readBody(response);
+		if (!response.ok || body?.ok !== true) return { ok: false, error: errorOf(body, response.status) };
+		const raw = Array.isArray(body.entries) ? body.entries : [];
+		const entries: LoginActivityEntry[] = [];
+		for (const item of raw) {
+			if (item === null || typeof item !== "object") continue;
+			const record = item as Record<string, unknown>;
+			const kind = record.kind;
+			if (kind !== "success" && kind !== "failure" && kind !== "locked") continue;
+			if (typeof record.at !== "number" || typeof record.address !== "string") continue;
+			entries.push({
+				at: record.at,
+				address: record.address,
+				kind,
+				...(typeof record.attempts === "number" ? { attempts: record.attempts } : {}),
+				...(typeof record.lockMinutes === "number" ? { lockMinutes: record.lockMinutes } : {}),
+			});
+		}
+		return { ok: true, entries };
+	} catch {
+		return { ok: false, error: tNow("网络异常，请重试", "Network error — try again") };
+	}
+}
+
+/**
+ * 保存「登录保护」（连续错几次 / 暂停多久）。
+ *
+ * 只在本机能改（服务端 `POST /api/auth/guard` 也只认本机），改完落盘、立即生效：
+ * 已经在锁里的来源不会因为改了数字而解开（改密码才会 `clearAll`）。
+ * 范围校验客户端先挡一道，省一次往返（服务端 `login-guard.ts` 里还有一份）。
+ */
+export async function saveLoginGuard(
+	settings: LoginGuardSettings,
+): Promise<{ ok: true; guard: LoginGuardSettings } | { ok: false; error: string }> {
+	try {
+		const response = await fetch("/api/auth/guard", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(settings),
+			cache: "no-store",
+			credentials: "same-origin",
+		});
+		const body = await readBody(response);
+		if (!response.ok || body?.ok !== true) return { ok: false, error: errorOf(body, response.status) };
+		return { ok: true, guard: guardOf(body) };
+	} catch {
+		return { ok: false, error: tNow("网络异常，请重试", "Network error — try again") };
+	}
+}

@@ -1,0 +1,37 @@
+# 依赖与构建产物（ADR-0010：构建产物一律不入库）
+node_modules/
+dist/
+web/dist/
+electron-dist/
+release/
+# 打包期的临时产物（Node 运行时 / 生产依赖）：按需生成，不进库
+node-runtime/
+.pkg/
+
+# 本机运行数据（默认在 ~/.pop-agent，这里是兜底）
+.pop-agent/
+.pop-agent/
+*.log
+
+# 编辑器与系统
+.DS_Store
+.idea/
+.vscode/
+
+# 本地运行日志与截图（npm run dev 的输出、UI 验证截图）
+.run/
+
+# 临时
+.tmp-*
+*.tgz
+
+# playwright-cli 的临时产物（页面快照 / 控制台日志），不是源码
+.playwright-cli/
+
+# 图表/统计导出（本次会话的临时产物）
+out/
+
+# 本地创作 / 出图工地（小说、天气图、小红书文案）：内容和仓库无关，别跟着发版
+novel/
+weather-charts/
+xhs/

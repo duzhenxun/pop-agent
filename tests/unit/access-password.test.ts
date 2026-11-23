@@ -1,0 +1,311 @@
+/**
+ * 访问密码（用户 2026-10-30）：
+ *   1. 密码存在数据目录的 `password` 文件里（不是系统变量），启动时给了 `-P` 也要写进去；
+ *   2. 本机（127.0.0.1）可以在 设置 → 远程 里读状态 / 设 / 改，改完立即生效；
+ *   3. 远程（对端不是回环，或 Host 不是回环）：改密码必须带上当前密码，登录活动要先登录且 IP 打码；
+ *   4. 跨站页面（Origin 与 Host 不同源）也不能改 —— 这两个端点注册在鉴权中间件之前。
+ */
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, before, describe, it } from "node:test";
+import express from "express";
+import { applyStoredOptions } from "../../server/cli-config.ts";
+import { authCookieHeader } from "../../server/http/auth.ts";
+import { registerAuthRoutes } from "../../server/http/auth-routes.ts";
+import { createLoginGuard } from "../../server/http/login-guard.ts";
+import { createLoginActivity } from "../../server/http/login-activity.ts";
+import { createPasswordStore, resolveStartupPassword, writePasswordFile } from "../../server/http/password-store.ts";
+
+const tempDirs: string[] = [];
+
+async function tempDir(): Promise<string> {
+	const dir = await mkdtemp(join(tmpdir(), "pop-agent-password-"));
+	tempDirs.push(dir);
+	return dir;
+}
+
+after(async () => {
+	await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+describe("password 文件：存下来的那份就是「配置里的密码」", () => {
+	it("writePasswordFile 落一行明文；createPasswordStore 能读回来；命令行优先", async () => {
+		const dir = await tempDir();
+		await writePasswordFile(join(dir, "password"), "from-cli");
+		assert.equal(await readFile(join(dir, "password"), "utf8"), "from-cli\n");
+
+		// 启动时没给 -P：读文件兜底
+		const env: Record<string, string | undefined> = {};
+		assert.deepEqual(await applyStoredOptions(env, dir), { password: true, allowedHosts: false });
+		assert.equal(env.POP_AGENT_PASSWORD, "from-cli");
+
+		// 显式给的密码优先（不被文件覆盖）
+		const explicit: Record<string, string | undefined> = { POP_AGENT_PASSWORD: "typed-by-user" };
+		await applyStoredOptions(explicit, dir);
+		assert.equal(explicit.POP_AGENT_PASSWORD, "typed-by-user");
+
+		// 运行时改密码：写盘 + 立即生效
+		const store = createPasswordStore("from-cli", join(dir, "password"));
+		assert.equal(store.get(), "from-cli");
+		await store.set("changed-at-runtime");
+		assert.equal(store.get(), "changed-at-runtime");
+		assert.equal(await readFile(join(dir, "password"), "utf8"), "changed-at-runtime\n");
+	});
+
+	it("没有 password 文件时不补任何东西（= 只允许本机）", async () => {
+		const dir = await tempDir();
+		const env: Record<string, string | undefined> = {};
+		assert.deepEqual(await applyStoredOptions(env, dir), { password: false, allowedHosts: false });
+		assert.equal(env.POP_AGENT_PASSWORD, undefined);
+	});
+});
+
+describe("/api/auth/password：只认本机", () => {
+	let server: import("node:http").Server;
+	let base = "";
+	let password: string | null = null;
+	/** 登录保护（只在本机可改）：这里用内存版，不落盘 */
+	const loginGuard = createLoginGuard();
+	/** 登录活动：同样用内存版 */
+	const loginActivity = createLoginActivity();
+
+	before(async () => {
+		const app = express();
+		registerAuthRoutes(app, {
+			getPassword: () => password,
+			setPassword: async (next) => {
+				password = next;
+			},
+			guard: loginGuard,
+			activity: loginActivity,
+		});
+		server = app.listen(0, "127.0.0.1");
+		await new Promise<void>((done) => server.once("listening", () => done()));
+		const address = server.address() as AddressInfo;
+		base = `http://127.0.0.1:${address.port}`;
+	});
+
+	after(async () => {
+		await new Promise<void>((done) => server.close(() => done()));
+	});
+
+	it("本机：GET 状态 → POST 设密码 → 立即生效并种 cookie", async () => {
+		password = null;
+		const status = await fetch(`${base}/api/auth/password`);
+		assert.equal(status.status, 200);
+		assert.deepEqual(await status.json(), { ok: true, set: false, maxFailures: 3, lockMinutes: 30 });
+
+		const saved = await fetch(`${base}/api/auth/password`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ password: "newpass123" }),
+		});
+		assert.equal(saved.status, 200);
+		assert.match(String(saved.headers.get("set-cookie")), /pop-agent-auth=/);
+		assert.equal(password, "newpass123");
+
+		const again = await fetch(`${base}/api/auth/password`);
+		assert.deepEqual(await again.json(), { ok: true, set: true, maxFailures: 3, lockMinutes: 30 });
+	});
+
+	it("登录保护：本机可改（次数 / 分钟），非法值直接 400", async () => {
+		const saved = await fetch(`${base}/api/auth/guard`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ maxFailures: 5, lockMinutes: 10 }),
+		});
+		assert.equal(saved.status, 200);
+		assert.deepEqual(await saved.json(), { ok: true, maxFailures: 5, lockMinutes: 10 });
+		assert.deepEqual(loginGuard.policy(), { maxFailures: 5, lockMinutes: 10 });
+
+		// GET 状态顺带回当前阀值（设置页只发一次请求）
+		const status = await fetch(`${base}/api/auth/password`);
+		assert.deepEqual(await status.json(), { ok: true, set: true, maxFailures: 5, lockMinutes: 10 });
+
+		const bad = await fetch(`${base}/api/auth/guard`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ maxFailures: 0, lockMinutes: 10 }),
+		});
+		assert.equal(bad.status, 400, "0 次等于「一错就锁」，不能存进去");
+		assert.deepEqual(loginGuard.policy(), { maxFailures: 5, lockMinutes: 10 }, "被拒的输入不该改到当前策略");
+
+		// 改回默认，免得影响后面的用例
+		await fetch(`${base}/api/auth/guard`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ maxFailures: 3, lockMinutes: 30 }),
+		});
+	});
+
+	it("登录活动：错、成功、被锁都记下来，且最新的在最前面", async () => {
+		// 前一个用例已把密码设为 "newpass123"
+		const wrong = await fetch(`${base}/api/auth/login`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ password: "nope-1" }),
+		});
+		assert.equal(wrong.status, 401);
+
+		const right = await fetch(`${base}/api/auth/login`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ password: "newpass123" }),
+		});
+		assert.equal(right.status, 204);
+
+		const list = await fetch(`${base}/api/auth/activity`);
+		assert.equal(list.status, 200, "本机可以看");
+		const body = (await list.json()) as {
+			ok: boolean;
+			entries: { kind: string; address: string; attempts?: number }[];
+		};
+		assert.equal(body.ok, true);
+		assert.deepEqual(
+			body.entries.slice(0, 2).map((entry) => entry.kind),
+			["success", "failure"],
+			"最新的在最前面，而且成功与失败都入账",
+		);
+		assert.equal(body.entries[1]?.attempts, 1, "失败那条要带「连续第几次」");
+		assert.equal(body.entries[0]?.address, "127.0.0.1");
+	});
+
+	it("太短 / 空密码 → 400（不改动已存的那份）", async () => {
+		password = "keep-me";
+		const response = await fetch(`${base}/api/auth/password`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ password: "  ab " }),
+		});
+		assert.equal(response.status, 400);
+		assert.equal(password, "keep-me");
+	});
+
+	it("远程来源（X-Forwarded-For 非回环）：不带当前密码 → 401，密码不变", async () => {
+		password = "keep-me";
+		const response = await fetch(`${base}/api/auth/password`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9" },
+			body: JSON.stringify({ password: "hijacked" }),
+		});
+		assert.equal(response.status, 401);
+		assert.equal(password, "keep-me");
+	});
+
+	it("远程来源：带上正确的当前密码 → 改成功，并给这个浏览器种新 cookie", async () => {
+		password = "keep-me";
+		const response = await fetch(`${base}/api/auth/password`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9" },
+			body: JSON.stringify({ password: "rotated-remote", currentPassword: "keep-me" }),
+		});
+		assert.equal(response.status, 200);
+		assert.match(String(response.headers.get("set-cookie")), /pop-agent-auth=/);
+		assert.equal(password, "rotated-remote");
+		password = "keep-me";
+	});
+
+	it("远程来源：当前密码错 → 401 并计入登录锁，密码不变", async () => {
+		password = "keep-me";
+		const response = await fetch(`${base}/api/auth/password`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.10" },
+			body: JSON.stringify({ password: "hijacked", currentPassword: "guess" }),
+		});
+		assert.equal(response.status, 401);
+		assert.equal(password, "keep-me");
+	});
+
+	it("远程还没设过密码：不许远程来设 → 403", async () => {
+		password = null;
+		const response = await fetch(`${base}/api/auth/password`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.11" },
+			body: JSON.stringify({ password: "first-come" }),
+		});
+		assert.equal(response.status, 403);
+		assert.equal(password, null);
+	});
+
+	it("远程看登录活动：没登录 → 403；登录后可看，IP 打码", async () => {
+		password = "keep-me";
+		const anonymous = await fetch(`${base}/api/auth/activity`, { headers: { "x-forwarded-for": "203.0.113.9" } });
+		assert.equal(anonymous.status, 403);
+
+		const cookie = authCookieHeader("keep-me").split(";")[0] ?? "";
+		const signedIn = await fetch(`${base}/api/auth/activity`, {
+			headers: { "x-forwarded-for": "203.0.113.9", cookie },
+		});
+		assert.equal(signedIn.status, 200);
+		const body = (await signedIn.json()) as { entries: { address: string }[] };
+		assert.ok(body.entries.length > 0);
+		for (const entry of body.entries) assert.ok(entry.address.includes("*") || entry.address === "unknown", entry.address);
+	});
+
+	it("远程改登录保护：没登录 → 403；登录后可改", async () => {
+		const anonymous = await fetch(`${base}/api/auth/guard`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9" },
+			body: JSON.stringify({ maxFailures: 4, lockMinutes: 15 }),
+		});
+		assert.equal(anonymous.status, 403);
+
+		const cookie = authCookieHeader("keep-me").split(";")[0] ?? "";
+		const signedIn = await fetch(`${base}/api/auth/guard`, {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9", cookie },
+			body: JSON.stringify({ maxFailures: 3, lockMinutes: 30 }),
+		});
+		assert.equal(signedIn.status, 200);
+	});
+
+	it("跨站页面（Origin 与 Host 不同源）→ 403", async () => {
+		password = "keep-me";
+		const response = await fetch(`${base}/api/auth/password`, {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example.com" },
+			body: "password=hijacked",
+		});
+		assert.equal(response.status, 403);
+		assert.equal(password, "keep-me");
+	});
+});
+
+describe("密码的唯一来源是 <dataDir>/password（不看 POP_AGENT_PASSWORD）", () => {
+	it("文件有值 → 用文件；环境变量给的另一个值被忽略（并标记冲突）", async () => {
+		const dir = await tempDir();
+		await writePasswordFile(join(dir, "password"), "from-file");
+		const resolved = resolveStartupPassword(join(dir, "password"), "from-env");
+		assert.deepEqual(resolved, { password: "from-file", source: "file", conflict: true });
+		// 文件里那份不能被环境变量改掉
+		assert.equal(await readFile(join(dir, "password"), "utf8"), "from-file\n");
+	});
+
+	it("文件不存在 + 环境变量给了 → 一次性写进文件（以后都读文件）", async () => {
+		const dir = await tempDir();
+		const file = join(dir, "password");
+		const resolved = resolveStartupPassword(file, "from-env");
+		assert.deepEqual(resolved, { password: "from-env", source: "migrated", conflict: false });
+		assert.equal(await readFile(file, "utf8"), "from-env\n");
+		// 0644：跟 writePasswordFile 一致（用户 2026-10-30：同机任何账户可读）
+		assert.equal((await stat(file)).mode & 0o777, 0o644);
+		// 第二次启动（这次没给环境变量）拿到的还是同一份
+		assert.deepEqual(resolveStartupPassword(file, undefined), {
+			password: "from-env",
+			source: "file",
+			conflict: false,
+		});
+	});
+
+	it("都没有 → 没有密码（远程一律不开，和以前一致）", async () => {
+		const dir = await tempDir();
+		assert.deepEqual(resolveStartupPassword(join(dir, "password"), ""), {
+			password: null,
+			source: "none",
+			conflict: false,
+		});
+	});
+});
