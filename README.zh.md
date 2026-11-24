@@ -26,7 +26,16 @@
 到 [Releases](https://github.com/duzhenxun/pop-agent/releases/latest) 下载 `PopAgent-<版本>-arm64.dmg`（Apple Silicon），拖进 `/Applications` 就能用 —— **不用装 Node、不用碰终端**。App 里已经带了运行时，装好点开就是一个完整的工作台。
 
 > Intel Mac 暂时只有 npm 那条路（见下面），或者用 Rosetta 跑 arm64 包。
-> 第一次打开如果被系统拦（没有 Apple 开发者签名），`右键 → 打开` 一次即可。
+
+首次打开可能被系统拦，两种提示对应两种处理（这套包只有打包时补的 ad-hoc 签名，没有 Apple 开发者签名）：
+
+- **「无法验证开发者」** → `右键 → 打开` 一次即可；macOS 15 及以上也可以去「系统设置 → 隐私与安全性」点「仍要打开」。
+- **「已损坏，无法打开。你应该将它移到废纸篓」** → **别扔**，这不是包坏了，是签名和资源对不上。在终端跑这两条就好：
+
+  ```bash
+  codesign --force --deep --sign - /Applications/PopAgent.app
+  xattr -dr com.apple.quarantine /Applications/PopAgent.app
+  ```
 
 ### 其它平台 / 想要命令行：npm 全局安装（推荐）
 

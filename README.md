@@ -26,7 +26,16 @@ Beyond "watch it work", there are six things most other agent front-ends never b
 Grab `PopAgent-<version>-arm64.dmg` (Apple Silicon) from [Releases](https://github.com/duzhenxun/pop-agent/releases/latest) and drag it into `/Applications` — **no Node, no terminal**. The runtime ships inside the app; double-click and you have the whole workbench.
 
 > Intel Macs: use the npm route below for now (or run the arm64 build under Rosetta).
-> If macOS blocks the first launch (the build is not notarised), `Right-click → Open` once.
+
+The first launch may be blocked. Two different messages, two different fixes (these builds carry only an ad-hoc signature added at packaging time — no Apple Developer identity):
+
+- **"Cannot be opened because the developer cannot be verified"** → `Right-click → Open` once. On macOS 15 and later you can also allow it under System Settings → Privacy & Security → "Open Anyway".
+- **"is damaged and can't be opened. You should move it to the Trash"** → **don't delete it.** That is not a corrupt download; the signature no longer matches the bundle. Run these two lines:
+
+  ```bash
+  codesign --force --deep --sign - /Applications/PopAgent.app
+  xattr -dr com.apple.quarantine /Applications/PopAgent.app
+  ```
 
 ### Other platforms, or you prefer the CLI: install globally with npm (recommended)
 

@@ -16,6 +16,11 @@ extraMetadata:
 directories:
   output: release
   buildResources: build
+# 打包后兜底签名：找不到证书时 electron-builder 只警告不签名，产出的 .app 在别人机器上
+# 会报「已损坏，无法打开」（用「右键 → 打开」绕不过去）。这个钩子在没有可用身份时
+# 补一个 ad-hoc 签名，有身份时什么都不做。详见 scripts/after-pack.cjs 的头注释。
+# 发版门禁（宁可不发包，也不发未签名包）：POP_AGENT_REQUIRE_DEV_ID=1 npm run app:dist
+afterPack: scripts/after-pack.cjs
 # 不要把原生模块按 Electron 的 ABI 重编（electron-builder 默认会这么做）。
 # 服务跑在**真 node** 进程里（ADR-0053 §2），node-pty 又是 N-API 的预编译包 ——
 # 按 Electron 重编既没必要，还会要求用户机器上有完整的编译链（实测直接卡在 node-gyp）。
@@ -52,6 +57,9 @@ extraResources:
     to: node-runtime
 mac:
   category: public.app-category.developer-tools
+  # 故意不开 `forceCodeSigning: true`：没有证书的机器上它会让整条打包链直接失败，
+  # 连一个 ad-hoc 包都出不来（连本机自测都做不了）。而「不许发未签名包」这个诉求
+  # 由 after-pack.cjs 里的 POP_AGENT_REQUIRE_DEV_ID=1 承担 —— 效果一样，不误伤本地打包。
   icon: web/public/icons/icon-512.png
   target:
     - dmg
