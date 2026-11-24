@@ -913,14 +913,17 @@ function startBrowserInput(): void {
 	beginListening();
 }
 
-export async function startVoiceInput(): Promise<void> {
+export function startVoiceInput(): void {
 	if (status !== "idle") return;
 	// 用户自己点的：解除「暂停」，并清掉之前的错误计数
 	manualPause = false;
 	errorStreak = 0;
-	// 本地可用性会变（用户可能刚装好 helper、刚打开它、刚授权）：判过不可用就再问一次。
-	// /api/asr/status 走本地服务端，几毫秒就回来。
-	if (localUnusable) await probeLocalAvailability();
+	// 本地可用性会变（用户可能刚装好 helper、刚打开它、刚授权），判过不可用就重新问一次。
+	// **但绝不能 await**：下面的启动链路必须在同一个用户手势里走到 ensureContext()，
+	// 否则 AudioContext 会停在 suspended、ScriptProcessor 永不回调 —— 表现就是
+	// 「红点在闪、麦克风在录，但一个字都不出」（这个坑代码里本来就写了注释，我又踩了一次）。
+	// 所以这次探测只影响**下一次**开麦，不阻塞本次。
+	if (localUnusable) void probeLocalAvailability();
 	voiceLog("start", {
 		engineSetting: settings.engine,
 		autoSend: settings.autoSend,
