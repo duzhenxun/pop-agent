@@ -61,7 +61,7 @@ import { registerHealthAndStatic } from "./http/health-and-static.js";
 import { registerWebSocketRoutes } from "./http/ws-routes.js";
 import { decide, effectiveAddress, isCrossOriginRejected, isLoopback } from "./http/auth.js";
 import { registerUploadRoutes } from "./uploads/upload-routes.js";
-import { AsrBridge } from "./asr/bridge.js";
+import { AsrService } from "./asr/service.js";
 import { asrRawErrorHandler, registerAsrRoutes } from "./asr/routes.js";
 import { readConfig, validateConfig } from "./util/env.js";
 import { createLogger } from "./util/log.js";
@@ -735,10 +735,10 @@ const uploadStore = createUploadStore({ dataDir: config.dataDir });
 registerUploadRoutes(app, { uploadStore, logger }); // 附件（ADR-0020 §P3）
 // 本地语音识别（macOS 原生、离线）：桥由 `open` 拉起，首次会弹一次系统授权。
 // .app 的路径不在这里定死 —— 桥每次启动时现找，用户刚点完「安装」就能直接用
-const asrBridge = new AsrBridge({ log: logger, dataDir: config.dataDir });
-registerAsrRoutes(app, asrBridge, logger);
+const asrService = new AsrService({ log: logger, dataDir: config.dataDir });
+registerAsrRoutes(app, asrService, logger);
 app.use("/api/asr", asrRawErrorHandler);
-process.once("exit", () => asrBridge.dispose());
+process.once("exit", () => asrService.dispose());
 // 网页代理（ADR-0047）：必须挂在鉴权之后 —— 它是「拿你的网络身份去取任意网页」的入口
 registerWebProxyRoutes(app, { log: (text) => logger.warn(text) });
 // 网页诊断日志（语音状态机那几个节点）：只写日志，见 client-log-routes.ts 的说明

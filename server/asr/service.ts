@@ -23,10 +23,10 @@ import { readSttConfig } from "../stt/config.js";
 import { createSttSession } from "../stt/index.js";
 import type { SttConfig, SttSession } from "../stt/types.js";
 
-export type AsrBridgeState = "missing" | "idle" | "starting" | "authorizing" | "ready" | "error";
+export type AsrState = "missing" | "idle" | "starting" | "authorizing" | "ready" | "error";
 
-export type AsrBridgeStatus = {
-	state: AsrBridgeState;
+export type AsrStatus = {
+	state: AsrState;
 	/** 给人看的一句话（missing / error 时必填；authorizing 时说明要等什么） */
 	message?: string;
 	locale?: string;
@@ -45,10 +45,10 @@ const FEED_TIMEOUT_MS = 15_000;
 const CONTROL_TIMEOUT_MS = 5000;
 const CLIENT_NAME = "pop-agent-asr";
 
-export class AsrBridge {
+export class AsrService {
 	private readonly log: Logger;
 	private client: HelperClient | null = null;
-	private status: AsrBridgeStatus = { state: "idle" };
+	private status: AsrStatus = { state: "idle" };
 	private text = "";
 	private audioBytes = 0;
 	private connecting = false;
@@ -84,7 +84,7 @@ export class AsrBridge {
 		return existsSync(socketPath());
 	}
 
-	current(): AsrBridgeStatus {
+	current(): AsrStatus {
 		// 云端模式：不需要 helper、也不需要本地授权，直接算就绪
 		if (this.cloudConfig) {
 			return { state: "ready", locale: this.cloudConfig.language ?? "zh-CN", onDevice: false };
@@ -108,7 +108,7 @@ export class AsrBridge {
 	 * **不要 await 到 ready**：首次授权要等用户在系统弹框里点一下，可能几十秒，
 	 * HTTP 请求不该挂在那儿 —— 前端轮询状态即可。
 	 */
-	ensureStarted(): AsrBridgeStatus {
+	ensureStarted(): AsrStatus {
 		if (this.cloudConfig) return this.current();
 		if (this.client) return this.status;
 		if (this.connecting) return this.status;

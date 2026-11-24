@@ -12,7 +12,7 @@
  */
 import express, { type ErrorRequestHandler, type Express, type Response } from "express";
 import { findHelperApp, helperDownloadUrl } from "../computer/paths.js";
-import type { AsrBridge } from "./bridge.js";
+import type { AsrService } from "./service.js";
 
 type Logger = { warn: (message: string, ctx?: Record<string, unknown>) => void };
 
@@ -42,11 +42,11 @@ function asrInstallHint(): AsrInstallHint {
 	};
 }
 
-function notReady(res: Response, bridge: AsrBridge): void {
+function notReady(res: Response, bridge: AsrService): void {
 	res.status(503).json(bridge.current());
 }
 
-export function registerAsrRoutes(app: Express, bridge: AsrBridge, _log?: Logger): void {
+export function registerAsrRoutes(app: Express, bridge: AsrService, _log?: Logger): void {
 	app.get("/api/asr/status", (request, response) => {
 		// 默认**只读状态**（打开设置面板不该顺带拉起一个会弹系统授权的进程）；
 		// `?start=1` 才真的启动。开始听写时 `/api/asr/start` 本来就会拉起。

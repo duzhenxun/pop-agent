@@ -63,7 +63,7 @@ pop-agent
 
 ## 再加一家厂商（火山豆包、阿里千问…）
 
-三步，都不用碰 `server/asr/bridge.ts`：
+三步，都不用碰 `server/asr/service.ts`：
 
 1. **新建 `server/stt/<厂商>.ts`**，实现 `SttProvider`：
 
@@ -127,4 +127,4 @@ const PROVIDERS: SttProvider[] = [openaiCompatible, volcengine];
 | `server/stt/openai.ts` | 内置的 OpenAI 兼容实现（含 PCM→WAV） |
 | `server/stt/config.ts` | 配置读取（文件 + 环境变量） |
 | `server/stt/index.ts` | 注册表：`PROVIDERS` 加一行就多一家 |
-| `server/asr/bridge.ts` | 分流：有云端配置就走云端，否则走本地 helper |
+| `server/asr/service.ts` | 分流：有云端配置就走云端，否则走本地 helper |
