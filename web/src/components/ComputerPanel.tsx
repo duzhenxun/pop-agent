@@ -249,8 +249,8 @@ export function ComputerPanel() {
 			 * 所以这里恢复成 下载 + 右键打开 + 授权限 三步，装好后点「装好了，重新检测」。
 			 */}
 			{status?.install ? (
-				<section className="computer-section" aria-label={t("安装 helper", "Install the helper")}>
-					<h3>{t("还差一个本机 helper", "One local helper left")}</h3>
+				<section className="computer-section" aria-label={t("安装 Agent Computer", "Install Agent Computer")}>
+					<h3>{t("还差一个本机小工具", "One local app left")}</h3>
 					<p className="computer-hint">
 						{t(
 							"操作桌面应用需要一个独立的 macOS 小工具。它不在 npm 包里（要单独分发），装好之后回到这一页就能看到「运行中」。",
@@ -287,8 +287,8 @@ export function ComputerPanel() {
 				</section>
 			) : null}
 
-			<section className="computer-section" aria-label={t("helper 状态", "Helper status")}>
-				<h3>{t("helper 状态", "Helper status")}</h3>
+			<section className="computer-section" aria-label={t("Agent Computer 状态", "Agent Computer status")}>
+				<h3>{t("Agent Computer 状态", "Agent Computer status")}</h3>
 				<ul className="computer-status">
 					<li>
 						<span>{t("安装", "Installed")}</span>
@@ -314,7 +314,7 @@ export function ComputerPanel() {
 									title={t("打开 Agent Computer 并等它连上来", "Open Agent Computer and wait for it to connect")}
 									onClick={() => void run(startHelper)}
 								>
-									{busy ? t("正在启动…", "Starting…") : t("启动 helper", "Start helper")}
+									{busy ? t("正在启动…", "Starting…") : t("启动 Agent Computer", "Start Agent Computer")}
 								</button>
 							) : null}
 						</span>
