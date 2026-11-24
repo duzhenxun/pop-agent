@@ -735,7 +735,7 @@ const uploadStore = createUploadStore({ dataDir: config.dataDir });
 registerUploadRoutes(app, { uploadStore, logger }); // 附件（ADR-0020 §P3）
 // 本地语音识别（macOS 原生、离线）：桥由 `open` 拉起，首次会弹一次系统授权。
 // .app 的路径不在这里定死 —— 桥每次启动时现找，用户刚点完「安装」就能直接用
-const asrBridge = new AsrBridge({ log: logger });
+const asrBridge = new AsrBridge({ log: logger, dataDir: config.dataDir });
 registerAsrRoutes(app, asrBridge, logger);
 app.use("/api/asr", asrRawErrorHandler);
 process.once("exit", () => asrBridge.dispose());

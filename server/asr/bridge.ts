@@ -19,6 +19,9 @@
 import { existsSync } from "node:fs";
 import { HelperClient } from "../computer/helper-client.js";
 import { helperBinaryPath, helperTransport, socketPath } from "../computer/paths.js";
+import { readSttConfig } from "../stt/config.js";
+import { createSttSession } from "../stt/index.js";
+import type { SttConfig, SttSession } from "../stt/types.js";
 
 export type AsrBridgeState = "missing" | "idle" | "starting" | "authorizing" | "ready" | "error";
 
@@ -54,9 +57,24 @@ export class AsrBridge {
 	 * cancel / end 也排在这条链上，保证「上一句收尾」一定发生在「下一句喂音频」之前。
 	 */
 	private chain: Promise<unknown> = Promise.resolve();
+	/** 云端 STT 配置：配了就不碰本地 helper，直接转发厂商 API（见 server/stt/） */
+	private readonly cloudConfig: SttConfig | null;
+	private cloudSession: SttSession | null = null;
 
-	constructor(options: { log: Logger }) {
+	constructor(options: { log: Logger; dataDir?: string }) {
 		this.log = options.log;
+		const read = readSttConfig(options.dataDir);
+		this.cloudConfig = read.config;
+		if (read.config) {
+			// 不打印 apiKey
+			this.log.warn("云端语音识别已启用", {
+				provider: read.config.provider,
+				endpoint: read.config.endpoint,
+				model: read.config.model ?? "(默认)",
+				source: read.source,
+			});
+		}
+		if (read.error) this.log.warn("云端 STT 配置读不懂，按未配置处理", { error: read.error });
 	}
 
 	/** helper 在不在（内嵌二进制，或用户自己装的那份 app 的 socket） */
@@ -67,6 +85,10 @@ export class AsrBridge {
 	}
 
 	current(): AsrBridgeStatus {
+		// 云端模式：不需要 helper、也不需要本地授权，直接算就绪
+		if (this.cloudConfig) {
+			return { state: "ready", locale: this.cloudConfig.language ?? "zh-CN", onDevice: false };
+		}
 		if (this.status.state !== "idle") return this.status;
 		// 一次都没启动过、helper 也不在：如实说「没装」，别让面板显示「就绪」
 		if (this.helperAvailable()) return this.status;
@@ -87,6 +109,7 @@ export class AsrBridge {
 	 * HTTP 请求不该挂在那儿 —— 前端轮询状态即可。
 	 */
 	ensureStarted(): AsrBridgeStatus {
+		if (this.cloudConfig) return this.current();
 		if (this.client) return this.status;
 		if (this.connecting) return this.status;
 		this.connecting = true;
@@ -154,6 +177,11 @@ export class AsrBridge {
 	startUtterance(): void {
 		this.text = "";
 		this.audioBytes = 0;
+		if (this.cloudConfig) {
+			this.cloudSession?.cancel();
+			this.cloudSession = null;
+			return;
+		}
 		const client = this.client;
 		if (!client) return;
 		this.chain = this.chain
@@ -164,6 +192,14 @@ export class AsrBridge {
 
 	/** 送一段 16k 单声道 int16 PCM；返回当前 partial（到这块为止识别出的文字） */
 	async pushAudio(pcm: Buffer): Promise<string> {
+		if (this.cloudConfig) {
+			if (this.audioBytes + pcm.length > MAX_UTTERANCE_BYTES) return this.text;
+			this.audioBytes += pcm.length;
+			this.cloudSession ??= createSttSession(this.cloudConfig, this.log);
+			this.cloudSession.push(pcm);
+			// 整段识别的 provider 在 end() 之前拿不到文字，所以这里一直是空串
+			return this.cloudSession.text;
+		}
 		const client = this.client;
 		if (!client || pcm.length === 0) return this.text;
 		if (this.audioBytes + pcm.length > MAX_UTTERANCE_BYTES) return this.text; // 兜底：别把进程喂爆
@@ -184,6 +220,18 @@ export class AsrBridge {
 
 	/** 说完：让 helper `endAudio()`，等 final（超时就用已经识别到的部分） */
 	async endUtterance(timeoutMs = 8000): Promise<string> {
+		if (this.cloudConfig) {
+			const session = this.cloudSession;
+			this.cloudSession = null;
+			if (!session) return this.text;
+			try {
+				this.text = await session.end();
+			} catch (error) {
+				// 云端挂了不该把整条语音路径弄死：这一句没结果，下一句照旧试
+				this.log.warn("云端识别失败", { message: error instanceof Error ? error.message : String(error) });
+			}
+			return this.text;
+		}
 		const client = this.client;
 		if (!client) return this.text;
 		try {
@@ -202,6 +250,8 @@ export class AsrBridge {
 
 	/** 服务端退出时收摊：只断开连接 —— helper 常驻与否由它自己的菜单栏决定，不归我们管 */
 	dispose(): void {
+		this.cloudSession?.cancel();
+		this.cloudSession = null;
 		this.client?.close();
 		this.client = null;
 		if (this.status.state === "ready" || this.status.state === "authorizing") {
