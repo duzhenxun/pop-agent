@@ -50,7 +50,7 @@ pi-agent coding-agent agent-ui claude-code codex opencode llm local-first self-h
 **Website 字段（填这个）：**
 
 ```
-https://duzhenxun.github.io/pop-agent/
+https://pop.xs25.cn/
 ```
 
 > 别填 npm 页或 README 锚点：这里放**落地页**，落地页上有截图、有安装命令、有 GitHub 链接，

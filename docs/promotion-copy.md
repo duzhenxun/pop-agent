@@ -96,11 +96,11 @@ Happy to hear which agent you'd want supported next, or where the "no database" 
 
 | 渠道 | 链接 |
 |---|---|
-| V2EX | `https://duzhenxun.github.io/pop-agent/zh.html?utm_source=v2ex` |
-| Linux.do | `https://duzhenxun.github.io/pop-agent/zh.html?utm_source=linuxdo` |
-| 掘金 | `https://duzhenxun.github.io/pop-agent/zh.html?utm_source=juejin` |
-| Show HN | `https://duzhenxun.github.io/pop-agent/?utm_source=hackernews` |
-| X | `https://duzhenxun.github.io/pop-agent/?utm_source=x` |
+| V2EX | `https://pop.xs25.cn/zh?utm_source=v2ex` |
+| Linux.do | `https://pop.xs25.cn/zh?utm_source=linuxdo` |
+| 掘金 | `https://pop.xs25.cn/zh?utm_source=juejin` |
+| Show HN | `https://pop.xs25.cn/?utm_source=hackernews` |
+| X | `https://pop.xs25.cn/?utm_source=x` |
 
 > 落地页是纯静态 GitHub Pages，UTM 参数本身不会被记录——要统计来源得在落地页加一点前端埋点，
 > 或者干脆看「哪个渠道发完之后 npm 下载涨」。两周后回看，把带来真实下载最多的那篇文案角度复用一遍。

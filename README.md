@@ -5,11 +5,11 @@
 [![GitHub stars](https://img.shields.io/github/stars/duzhenxun/pop-agent?style=flat-square&color=f5c542&label=stars)](https://github.com/duzhenxun/pop-agent/stargazers)
 [![node](https://img.shields.io/badge/node-%E2%89%A522.19-3c873a?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![license](https://img.shields.io/badge/license-MIT-2f5fe0?style=flat-square)](LICENSE)
-[![site](https://img.shields.io/badge/site-live-7b5cf0?style=flat-square)](https://duzhenxun.github.io/pop-agent/)
+[![site](https://img.shields.io/badge/site-live-7b5cf0?style=flat-square)](https://pop.xs25.cn/)
 
 > This project is a fork of [oh-my-agent-web](https://github.com/duzhenxun/oh-my-agent-web). Versioning restarts at **0.1.0** (upstream was on 1.5.x at fork time); version numbers mentioned in the README and ADRs refer to that upstream history.
 
-[中文](README.zh.md) · **English** · [Website](https://duzhenxun.github.io/pop-agent/) · [Gitee mirror](https://gitee.com/duzhenxun/pop-agent)
+[中文](README.zh.md) · **English** · [Website](https://pop.xs25.cn/) · [Gitee mirror](https://gitee.com/duzhenxun/pop-agent)
 
 > When GitHub is slow or unreachable from China, use the Gitee mirror:
 > `git clone https://gitee.com/duzhenxun/pop-agent.git`. The helper (`Agent Computer.app`) can be downloaded from Gitee too — see "Distribution".

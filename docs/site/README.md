@@ -17,6 +17,22 @@ open index.html
 python3 -m http.server 8080 --directory docs/site
 ```
 
+## 线上
+
+正式域名 <https://pop.xs25.cn>，托管在 **Cloudflare Pages**（项目名 `pop-agent`，生产分支 `main`，
+备份地址 `pop-agent.pages.dev`）。没有构建步骤，直接传目录：
+
+```bash
+wrangler pages deploy docs/site --project-name=pop-agent --branch=main --commit-dirty=true
+```
+
+自定义域名与 DNS：`pop.xs25.cn` 的 CNAME 指向 `pop-agent.pages.dev`（proxied）。
+Pages 项目里加域名后，**如果 zone 里没自动建 CNAME，要手动补一条**，否则域名会一直卡在 `pending`
+（报 `CNAME record not set`）。
+
+> 同一份内容也会被 `.github/workflows/pages.yml` 发到 GitHub Pages（`duzhenxun.github.io/pop-agent`）。
+> 改完记得两边都更：推 main 自动走 GitHub，Cloudflare 那条要自己跑上面的命令（或等接上 CI）。
+
 ## 改内容
 
 文案与结构都在 `index.html`（英文）和 `zh.html`（中文）里，两份**内容一一对应、要改一起改**，按下面的顺序排：
@@ -47,7 +63,7 @@ node scripts/make-og.mjs   # 读 assets/og.svg + docs/screenshots/01-chat.png �
 
 改版式/文案/配色就改 `assets/og.svg`（截图在 SVG 里写的是相对路径，脚本渲染前会换成 data URI——
 rsvg-convert 对相对路径的外部位图会**静默跳过**，右侧会变成空框）。
-两个 HTML 里的 `og:url` / `og:locale` 各指自己那一页（`zh.html` 与根路径），换域名时三处一起改。
+两个 HTML 里的 `og:url` / `og:image` / `canonical` 各指自己那一页（`/` 与 `/zh`），换域名时一起改。
 
 ## 截图怎么来的
 

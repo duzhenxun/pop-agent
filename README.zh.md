@@ -5,11 +5,11 @@
 [![GitHub stars](https://img.shields.io/github/stars/duzhenxun/pop-agent?style=flat-square&color=f5c542&label=stars)](https://github.com/duzhenxun/pop-agent/stargazers)
 [![node](https://img.shields.io/badge/node-%E2%89%A522.19-3c873a?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![license](https://img.shields.io/badge/license-MIT-2f5fe0?style=flat-square)](LICENSE)
-[![site](https://img.shields.io/badge/site-live-7b5cf0?style=flat-square)](https://duzhenxun.github.io/pop-agent/zh.html)
+[![site](https://img.shields.io/badge/site-live-7b5cf0?style=flat-square)](https://pop.xs25.cn/zh)
 
 > 本项目分叉自 [oh-my-agent-web](https://github.com/duzhenxun/oh-my-agent-web)，版本号从 **0.1.0** 重新起（上游当时是 1.5.x）；README 与 ADR 里提到的旧版本号指的是上游历史。
 
-**中文** · [English](README.md) · [官网](https://duzhenxun.github.io/pop-agent/zh.html) · [Gitee 镜像](https://gitee.com/duzhenxun/pop-agent)
+**中文** · [English](README.md) · [官网](https://pop.xs25.cn/zh) · [Gitee 镜像](https://gitee.com/duzhenxun/pop-agent)
 
 > 国内访问 GitHub 不稳时用 Gitee：`git clone https://gitee.com/duzhenxun/pop-agent.git`。
 > helper（`Agent Computer.app`）也可以直接从 Gitee 下载，见「分发」一节。
