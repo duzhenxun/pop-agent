@@ -18,13 +18,6 @@
 
 单用户、只听回环、**会话的事实源永远是引擎自己的落盘文件** —— 不引数据库、不建账号体系、不把会话复制一份到自己的库里。一个 `pop-agent` 进程就是一个人的工作台。
 
-![一次真实会话：左侧项目与会话、中间过程里的思考段与工具卡、右侧同一个仓库的文件预览](docs/site/assets/zh/hero.webp)
-
-> 下面所有截图都是本仓库跑起来后的真实界面 —— pi 引擎 + DeepSeek，工作区是一个 `demo-app` 演示项目。
-> 大部分是 1.1.0 的构建（与官网共用，在 `docs/site/assets/zh/`）；终端与临时对话两张来自 0.8.0 的运行（在 `docs/screenshots/`）；语音、定时任务、电脑控制三张是 1.5.x 的构建。
-> 目录、命令、diff、token 与花费都是真实运行留下的，没有拼图也没有 mock。
-> 1.1.0 截图的拍法见 [`docs/site/README.md`](docs/site/README.md)。
-
 ---
 
 ## 安装
@@ -170,13 +163,11 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 
 **流式正文 + 可折叠思考块 + 工具卡**。工具卡上给参数、完整命令（可复制）、输出、耗时与成败；一次回合里的思考与工具调用**跑的时候只显示最新一组里的那句说明**（思考和命令卡都不画，正在跑的命令由最底下那行状态位实时报；顶上那行「N 段思考 · N 次工具 · 耗时」带秒表），**跑完自动收成那一行**（最后结论之前的一切都进折叠），点它看完整时间线。
 
-![一条回复的尾注：markdown 表格、改动文件 chip、这一轮的 token / 缓存 / 花费](docs/site/assets/zh/answer.webp)
-
 每条回复的尾注是**这一轮**的用量：输入（未命中缓存）/ 输出 / 缓存命中 / 花费，点「复制」可以整段带走；整段会话的累计在状态栏的上下文环里点开看（子代理是独立会话、单独计费，不算在里面）。
 
 对话里还埋了几个能点的东西：
 
-- **改动文件 chip**：这条回复改过哪些文件（上图底部的 `改动 1 个文件 / store.ts`），点一下直接落到右栏的 diff。
+- **改动文件 chip**：这条回复改过哪些文件（回复底部一行 `改动 1 个文件 / store.ts`），点一下直接落到右栏的 diff。
 - **分支图标**：从这条消息「创建分支」，原对话一字不动。
 - **文件路径**：正文里的 `web/src/App.tsx` 这类路径可直接点开预览。
 
@@ -198,11 +189,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 
 在对话里**选中一段文字**，会浮出一个小工具条：`添加到会话` / `标注` / `在临时会话中提问`。
 
-<table><tr>
-<td width="50%"><img src="docs/site/assets/zh/selection.webp" alt="选中一段回复后浮出的工具条"></td>
-<td width="50%"><img src="docs/site/assets/zh/annotations.webp" alt="标注之后：正文里留下编号徽标，输入框里多出「1 条注释」"></td>
-</tr></table>
-
 「标注」给这段文字挂一条评论，正文上会留一个 **①②③ 编号徽标**，输入框里多出一个「N 条注释」的胶囊 —— 点开能逐条看、改评论、删掉，或者「放进输入框」。
 
 发送时会自动拼成这样的块（也可以手动「放进输入框」，那就只发你自己写的话）：
@@ -221,8 +207,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 ---
 
 ## 临时对话：问一句就走
-
-![右边这条「临时聊天」是独立通道：不落盘，主对话照旧在跑](docs/screenshots/13-tempchat.png)
 
 顶栏那颗「临时会话」（或右栏工作区落地页的第一张卡）会在**右栏**另开一条聊天：
 
@@ -250,8 +234,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 
 ### 改动（diff）
 
-![改动视图：与 HEAD 对比，`+6 −1` 概览 + 行级红绿](docs/site/assets/zh/diff.webp)
-
 预览页顶部切「改动」就是与 `HEAD` 的对比：`+285 −78` 概览、行级红绿高亮、可「只看改动」也可回到全文。从回答里的「改动文件」chip 点进来会直接落在 diff。
 
 ### git
@@ -265,8 +247,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 ---
 
 ## 终端
-
-![右栏的终端是真 PTY：zsh、颜色、git 输出、cwd 与会话一致](docs/screenshots/04-terminal.png)
 
 右栏的终端是**真 PTY**（`node-pty` + xterm.js）：vim / top / Ctrl-C / 颜色 / 行编辑都正常，cwd 与会话所在项目一致，可带一条初始命令（升级流程就用它）。
 
@@ -311,8 +291,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 
 ## 模型与供应商
 
-![模型面板：左边是当前有 key / 已登录的服务商，右边是该 provider 的端点、API 形态、模型白名单](docs/site/assets/zh/models.webp)
-
 - **订阅服务**：OAuth 登录（9 家），登录后直接能用，不用手抄 key。
 - **官方内置**：pi 目录里带模型的那批，**填一把 key 就能用**，端点与模型表由目录提供。
 - **自己输入**：可改 API 形态（openai-completions / responses / anthropic-messages / codex / typesafe）、base url、自定义 headers，逐个加模型。
@@ -326,8 +304,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 
 ## 技能
 
-![技能面板：已装 / 启用 / 禁用三档，右边是这个技能的 SKILL.md 摘要与目录文件](docs/site/assets/zh/skills.webp)
-
 读 `~/.agents/skills/<目录>/SKILL.md`，列表只解析 frontmatter（不引 yaml 依赖）。**启停 = 把 `SKILL.md` 改名成 `.SKILL.md.disabled`**，没有第二份状态文件 —— 所以在 CLI 里看到的一致。
 
 **Skill Hub**：分类搜索 + 一键安装（索引 20 万+），也能从 Git 仓库装指定 `skills/<name>`，或手动建一个。
@@ -335,8 +311,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 ---
 
 ## MCP
-
-![MCP 面板：全局与项目两份配置、启停与暴露方式、测试连接、OAuth](docs/site/assets/zh/mcp.webp)
 
 读写两份配置：`~/.pi/agent/mcp.json`（全局）与 `<workspace>/.pi/mcp.json`（项目），**项目同名条目覆盖全局**，写回保留缩进与 CRLF。
 
@@ -349,8 +323,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 
 ## 插件
 
-![插件面板：pi package 的四态与按包停用](docs/site/assets/zh/plugins.webp)
-
 插件就是 pi package：`settings.json` 里的 `packages`（npm / git / 本地目录）+ 散装 `~/.pi/agent/extensions/`、`<ws>/.pi/extensions/`。
 
 状态由 pi SDK 的 `resolve()` 决定（**查询不会触发 npm install**），四态 `loaded / installed / missing / disabled`；按包停用写 `autoload:false`，不删文件。
@@ -358,8 +330,6 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 ---
 
 ## 子代理：并行开，逐个管
-
-![子代理面板：内置模板、默认并发、启用开关](docs/site/assets/zh/agents.webp)
 
 主 agent 拿到 `Agent` 工具后，可以一次并行开好几个子代理，每个都是**一个真实的会话**（自己的上下文、会话文件、工具白名单）。
 
@@ -374,16 +344,12 @@ pop-agent -H 0.0.0.0 -P 'my-pass'             # 直接带密码起，远程用 I
 
 ## 推送
 
-![推送：本机推送状态、目标设备、测试推送](docs/site/assets/zh/push.webp)
-
 **推送**：Web Push（VAPID）订阅，回合结束推一条 —— 标题=项目名、正文=会话名，失败 ❌ / 中断 ⏹ 带前缀；多设备管理、测试推送、一键清空。需要 https 或 localhost。
 
 VAPID 密钥与联系方式都在面板里管：密钥首次启动自动生成到 `<dataDir>/vapid-keys.json`（0600，可用 `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` 覆盖），联系方式（subject）存 `<dataDir>/push-config.json`（可用 `VAPID_SUBJECT` 覆盖）。
 **subject 得填真实邮箱或 https 站点**：默认值 `mailto:noreply@localhost` 会被 Apple 判 `403 BadJwtToken`（Chrome/FCM 不看这个，所以常见症状是「电脑能收、iPhone 收不到」）。换密钥会让所有已订阅设备失效（面板会顺手清空订阅，各设备重按一次「注册推送」）；改联系方式不影响任何订阅。
 
 ## 语音
-
-![语音面板：四类事件提示音（可试听、音量可调）、提示音量与语速、语音输入与朗读](docs/site/assets/zh/voice.webp)
 
 四类事件提示音（开始 / 结束 / 出错 / 等待审批）可试听、音量可调；TTS 播报最终回复，语速与音色可调。**默认用浏览器内置语音** —— 离线、不出机器；想统一音色可以在同一个面板里把「语音引擎」切成 `edge`（微软，需联网），或指向自建的 `kokoro` / `qwen3`。
 
@@ -408,8 +374,6 @@ VAPID 密钥与联系方式都在面板里管：密钥首次启动自动生成�
 
 ## 定时任务：说一句，它每天早上自己跑
 
-![定时任务面板：三条任务的类型、下次运行时间与启停，右侧是运行历史](docs/site/assets/zh/cron.webp)
-
 一个任务 = 一条提示词 + 一个五字段 cron 表达式 + 时区。面板里的「计划」能选每隔几分钟 / 每隔几小时 / 每天 / 工作日 / 每周 / 每月，剩下的一律按原始表达式填（`0 9 * * *` 就是每天 9:00）。
 
 - **两种任务**：`文本任务` 直连模型，不给工具、不碰仓库，最便宜，适合把话写出来；`Agent 任务` 在工作区里真跑一个回合（能读文件、跑命令、改代码）。
@@ -424,8 +388,6 @@ VAPID 密钥与联系方式都在面板里管：密钥首次启动自动生成�
 
 ## 电脑控制：让 agent 真的动手
 
-![电脑控制面板：总开关、helper 状态与两项权限，以及操作时屏幕上显示什么](docs/site/assets/zh/computer.webp)
-
 **只支持 macOS**，而且需要一个本机 helper —— *Agent Computer.app*，面板会去 `/Applications` 和 `~/Applications` 里找。没装就直说并给下载链接；装了就是一块真实状态：装在哪、有没有在跑（+ 版本号）、**辅助功能**、**屏幕录制**。
 
 - **总开关就是那个技能**：打开会把 `~/.agents/skills/agent-computer` 写出来，所以**任何有 bash 的引擎**都能操作这台 Mac，不只 pi；关掉只是把技能改名成禁用，不删任何东西。
@@ -437,8 +399,6 @@ VAPID 密钥与联系方式都在面板里管：密钥首次启动自动生成�
 ---
 
 ## 设置
-
-![设置 → 外观：三处字号、内容宽度 4 档、6 套色板](docs/site/assets/zh/settings.webp)
 
 顶栏那一排就是全部面板入口，**可以在「设置 → 界面」里逐项隐藏**；新装默认只勾**模型 / 定时任务 / 技能**（推送、语音、插件、MCP、子代理、设置、临时会话按需自己勾回来；顶上的「设置」默认不显示，底部状态栏最左边那颗是同一张面板）；底部状态栏默认只留**设置 / 引擎 / 审批模式**，其余（排队、工作中、上下文、完整历史、系统提示词、终端、顶部）在 设置 → 界面 → 底部 里勾回来或拖动改顺序；侧栏、右栏也都能拖宽、收起，宽度记在本机 `localStorage`。
 
@@ -460,11 +420,6 @@ VAPID 密钥与联系方式都在面板里管：密钥首次启动自动生成�
 ---
 
 ## 手机
-
-<table><tr>
-<td width="34%"><img src="docs/site/assets/zh/mobile.webp" alt="手机单栏：顶栏入口只留图标、输入框 18px"></td>
-<td width="34%"><img src="docs/site/assets/zh/mobile-drawer.webp" alt="手机上的项目侧栏是覆盖式抽屉"></td>
-</tr></table>
 
 窄屏（手机 UA 或 ≤400px）自动切成单栏：
 

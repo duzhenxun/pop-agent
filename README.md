@@ -18,13 +18,6 @@ One line: **an external control surface for the agent you're already running.** 
 
 Single user, loopback only, and **the engine's own on-disk files are always the source of truth for a conversation** — no database, no account system, no second copy of the session in our own store. One `pop-agent` process is one person's workbench.
 
-![A real session: projects and sessions on the left, thinking blocks and tool cards in the middle, a file preview of the same repo on the right](docs/site/assets/en/hero.webp)
-
-> Every screenshot below is a real UI capture of this repo — pi engine + DeepSeek, on a small `demo-app` project.
-> Most are the 1.1.0 build (shared with the landing page under `docs/site/assets/en/`); the terminal and side-chat shots are from the 0.8.0 run under `docs/screenshots/`; the voice, scheduled-task and computer-control shots are the 1.5.x build.
-> Directories, commands, diffs, tokens and cost all come from actual runs — no collages, no mockups.
-> How the 1.1.0 shots were taken: [`docs/site/README.md`](docs/site/README.md).
-
 ---
 
 ## Install
@@ -170,13 +163,11 @@ Three hard rules:
 
 **Streaming text + collapsible thinking blocks + tool cards.** A tool card shows arguments, the full command (copyable), output, duration and pass/fail. While the turn runs, thinking and tool calls **show only the one line of narration from the newest group** (no thinking rows, no tool cards — the command that is actually running is reported by the status line at the very bottom; the "N thinking · N tools · Xs" stopwatch sits on top), then **fold into that row when the turn ends** (everything before the final conclusion) — click it to get the full timeline back, so only the final answer stays on screen.
 
-![The footer of one reply: a markdown table, the changed-files chip, and this turn's tokens / cache / cost](docs/site/assets/en/answer.webp)
-
 The footer of every reply is the usage **for that turn**: input (cache miss) / output / cache read / cost, with a "Copy" that takes the whole block. The running total for the session is behind the context ring in the status bar (subagents are separate sessions billed separately and are not counted there).
 
 A few things in the conversation are clickable:
 
-- **Changed-files chip**: which files this reply touched (the chip at the bottom of the screenshot above shows `store.ts`); one click lands you straight on the diff in the right pane.
+- **Changed-files chip**: which files this reply touched (a chip at the bottom of the reply, e.g. `1 file changed / store.ts`); one click lands you straight on the diff in the right pane.
 - **Branch icon**: "Branch from here", which starts a new conversation at this message; the original stays byte-for-byte unchanged.
 - **File paths**: a path like `web/src/App.tsx` in the body opens in the preview.
 
@@ -198,11 +189,6 @@ Steering is pi-only (its SDK has `streamingBehavior: "steer"`). Other engines ha
 
 **Select some text in the conversation** and a small toolbar floats up: `Add to session` / `Annotate` / `Ask in a temp session`.
 
-<table><tr>
-<td width="50%"><img src="docs/site/assets/en/selection.webp" alt="The toolbar that floats up after you select a passage"></td>
-<td width="50%"><img src="docs/site/assets/en/annotations.webp" alt="After annotating: a numbered badge stays in the body, and a 1-note pill shows up in the composer"></td>
-</tr></table>
-
 "Annotate" attaches a comment to that text. The body keeps a **①②③ numbered badge**, and an "N notes" pill appears in the composer — open it to read, edit or delete each comment, or `Quote it`.
 
 On send it is assembled into a block like this (you can also hit `Quote it` yourself, in which case only your own words go out):
@@ -221,8 +207,6 @@ Notes are **local anchors**: they locate themselves by "quoted text + surroundin
 ---
 
 ## Side chat: ask one question and go
-
-![The "side chat" on the right is a channel of its own: never saved, while the main conversation keeps running](docs/screenshots/13-tempchat.png)
 
 The `Temp session` button in the top bar (or the first card on the right pane's landing page) opens another conversation **in the right pane**:
 
@@ -250,8 +234,6 @@ The files area sits at the bottom of the sidebar and also works as a tab in the 
 
 ### Diff
 
-![The diff view: against HEAD, a `+6 −1` summary plus line-level red/green](docs/site/assets/en/diff.webp)
-
 The "diff" toggle at the top of the preview is a comparison against `HEAD`: a `+285 −78` summary, line-level red/green, and a switch between "changes only" and the full file. Coming in from a changed-files chip lands directly on the diff.
 
 ### git
@@ -265,8 +247,6 @@ The branch chip at the top of the files area lists local branches and switches t
 ---
 
 ## Terminal
-
-![The right-pane terminal is a real PTY: zsh, colors, git output, and a cwd that matches the session](docs/screenshots/04-terminal.png)
 
 The terminal in the right pane is a **real PTY** (`node-pty` + xterm.js): vim / top / Ctrl-C / colors / line editing all behave, the cwd matches the session's project, and you can pass one initial command (the upgrade flow uses exactly that).
 
@@ -311,8 +291,6 @@ Engines are switched in the **bottom status bar** (not the top bar), and every s
 
 ## Models and providers
 
-![The models panel: the providers with a key or a signed-in subscription on the left, and that provider's endpoint, API shape and model allowlist on the right](docs/site/assets/en/models.webp)
-
 - **Subscriptions**: OAuth login (9 providers), usable right after signing in — no key to copy by hand.
 - **Official built-ins**: the ones pi's catalog carries models for — **paste one key and it works**; endpoints and model tables come from the catalog.
 - **Bring your own**: change the API shape (openai-completions / responses / anthropic-messages / codex / typesafe), the base URL and custom headers, and add models one by one.
@@ -326,8 +304,6 @@ The truth is spread across `~/.pi/agent/models.json` (the provider catalog), `mo
 
 ## Skills
 
-![The skills panel: installed / enabled / disabled on the left, this skill's SKILL.md summary and its directory files on the right](docs/site/assets/en/skills.webp)
-
 Reads `~/.agents/skills/<dir>/SKILL.md`; the list parses frontmatter only (no yaml dependency). **Enabling or disabling means renaming `SKILL.md` to `.SKILL.md.disabled`** — there is no second state file, so what you see in the CLI agrees with what you see here.
 
 **Skill Hub**: search by category plus one-click install (200k+ index); it can also install a specific `skills/<name>` from a Git repo, or create one by hand.
@@ -335,8 +311,6 @@ Reads `~/.agents/skills/<dir>/SKILL.md`; the list parses frontmatter only (no ya
 ---
 
 ## MCP
-
-![The MCP panel: global and project configs, enable/disable and exposure, test connection, OAuth](docs/site/assets/en/mcp.webp)
 
 Reads and writes two config files: `~/.pi/agent/mcp.json` (global) and `<workspace>/.pi/mcp.json` (project), where **a project entry with the same name overrides the global one**, and writes preserve indentation and CRLF.
 
@@ -349,8 +323,6 @@ Reads and writes two config files: `~/.pi/agent/mcp.json` (global) and `<workspa
 
 ## Plugins
 
-![The plugins panel: the four states of a pi package, and disabling per package](docs/site/assets/en/plugins.webp)
-
 Plugins are pi packages: the `packages` entry in `settings.json` (npm / git / local directory) plus the loose `~/.pi/agent/extensions/` and `<ws>/.pi/extensions/`.
 
 State comes from the pi SDK's `resolve()` (**querying never triggers `npm install`**), with four states `loaded / installed / missing / disabled`; disabling per package writes `autoload:false` and deletes nothing.
@@ -358,8 +330,6 @@ State comes from the pi SDK's `resolve()` (**querying never triggers `npm instal
 ---
 
 ## Subagents: run many, manage each
-
-![The subagents panel: built-in templates, default concurrency, the master switch](docs/site/assets/en/agents.webp)
 
 Once the main agent has the `Agent` tool it can run several subagents in parallel, and each one is **a real session** (its own context, session file and tool allowlist).
 
@@ -374,16 +344,12 @@ A subagent's session file is archived next to the parent session (`<parent sessi
 
 ## Push
 
-![Push: local push state, target devices, test push](docs/site/assets/en/push.webp)
-
 **Push**: Web Push (VAPID) subscriptions, one notification per finished turn — title is the project, body is the session, with a ❌ / ⏹ prefix for failures and interrupts. Multiple devices, a test push, and a one-click clear-all. Needs https or localhost.
 
 The VAPID key pair and the contact (subject) are managed in the same panel: the pair is generated on first start into `<dataDir>/vapid-keys.json` (0600, overridable with `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`), the contact is stored in `<dataDir>/push-config.json` (overridable with `VAPID_SUBJECT`).
 **The subject must be a real email or an https site**: the default `mailto:noreply@localhost` is rejected by Apple with `403 BadJwtToken` (Chrome/FCM ignores it, so the usual symptom is “works on the desktop, silent on the iPhone”). Replacing the key pair invalidates every subscription (the panel clears them; re-register each device). Changing the contact invalidates nothing.
 
 ## Voice
-
-![The voice panel: four event sounds with preview and volume, cue volume and rate, speech in and out](docs/site/assets/en/voice.webp)
 
 Four event sounds (start / finish / error / waiting for approval) with preview and adjustable volume; TTS reads the final reply, with adjustable rate and voice. By default speech output is the **browser's built-in voices** — offline, nothing leaves the machine; switch the speech engine to `edge` (Microsoft, needs network) or point it at your own `kokoro` / `qwen3` in the same panel.
 
@@ -408,8 +374,6 @@ Three things people trip on:
 
 ## Scheduled tasks: say it once, it runs every morning
 
-![The scheduled-tasks panel: three tasks with mode, next run time and switch, plus the run history on the right](docs/site/assets/en/cron.webp)
-
 A task is a prompt plus a five-field cron expression and a timezone. The panel's schedule picker covers every-N-minutes / every-N-hours / daily / weekdays / weekly / monthly, and anything else goes in as a raw expression (`0 9 * * *` = 09:00 every day).
 
 - **Two kinds of task**: `Text` calls the model directly — no tools, no repo access, the cheapest way to draft something; `Agent` runs a real turn in the workspace (read files, run commands, change code).
@@ -424,8 +388,6 @@ A task is a prompt plus a five-field cron expression and a timezone. The panel's
 
 ## Computer control: let the agent drive your Mac
 
-![The computer-control panel: master switch, helper status with its two permissions, and what shows on screen while it works](docs/site/assets/en/computer.webp)
-
 **macOS only**, and it needs a local helper — *Agent Computer.app* — which the panel looks for in `/Applications` and `~/Applications`. When it's missing the panel says so and links the download; when it's there you get a real status block: installed path, running + version, **Accessibility**, **Screen recording**.
 
 - **The master switch is the skill**: turning it on writes `~/.agents/skills/agent-computer`, so *any* engine that has bash can drive the Mac — not just pi. Turning it off renames the skill to disabled; nothing is deleted.
@@ -437,8 +399,6 @@ A task is a prompt plus a five-field cron expression and a timezone. The panel's
 ---
 
 ## Settings
-
-![Settings → Appearance: three font sizes, content width in 4 steps, 6 palettes](docs/site/assets/en/settings.webp)
 
 The top bar is the entry point for every panel, and **each entry can be hidden in Settings → Interface**. A fresh install ticks only **models / scheduled tasks (cron) / skills**; push, voice, plugins, MCP, subagents, settings and the temp session are ticked back on when you want them (the top-bar Settings button starts hidden — the leftmost chip in the bottom status bar opens the same panel). The bottom status bar starts with **settings / engine / approval mode** only; queued, running, context, full history, system prompt, terminal and the top toggle come back from Settings → Interface → Bottom, where you can also drag to reorder. The sidebar and the right pane both drag wider and collapse, and their widths are remembered locally in `localStorage`.
 
@@ -460,11 +420,6 @@ Appearance, theme, interface and language preferences stay on the device only (`
 ---
 
 ## Mobile
-
-<table><tr>
-<td width="34%"><img src="docs/site/assets/en/mobile.webp" alt="Mobile single column: icon-only top-bar entries, 18px composer"></td>
-<td width="34%"><img src="docs/site/assets/en/mobile-drawer.webp" alt="On a phone the project sidebar is an overlay drawer"></td>
-</tr></table>
 
 On narrow screens (mobile UA or ≤400px) the layout collapses to a single column:
 
