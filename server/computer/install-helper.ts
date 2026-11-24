@@ -15,7 +15,7 @@ import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, rmSync, writ
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { helperDownloadUrl } from "./paths.js";
+import { findHelperApp, helperDownloadUrl, socketPath } from "./paths.js";
 
 const run = promisify(execFile);
 
@@ -103,4 +103,46 @@ export async function installHelper(log?: Logger): Promise<InstallHelperResult> 
 	} finally {
 		rmSync(tmp, { recursive: true, force: true });
 	}
+}
+
+/**
+ * 启动已装好的 helper（不碰安装内容）。
+ *
+ * 为什么需要它：helper 是「装了但可能没在跑」的独立 app —— 用户关掉了、
+ * 或系统登录项没配、或它自己崩了，面板上就只剩一条 `connect ENOENT …sock`。
+ * 让用户自己去 Finder 里翻 app 太蠢，这里给一颗按钮。
+ */
+export async function startHelper(log?: Logger): Promise<{ ok: boolean; message: string; appPath?: string }> {
+	if (process.platform !== "darwin") {
+		return { ok: false, message: "电脑控制只有 macOS 版" };
+	}
+	const appPath = findHelperApp(process.env);
+	if (!appPath) {
+		return { ok: false, message: "还没安装 Agent Computer，先点「一键安装」" };
+	}
+
+	try {
+		await run("open", ["-a", appPath]);
+	} catch (error) {
+		return {
+			ok: false,
+			message: `打不开 ${appPath}：${error instanceof Error ? error.message : String(error)}`,
+			appPath,
+		};
+	}
+
+	// 等它 bind 出 socket：起进程到 listen 之间通常几十毫秒，给 5 秒余量
+	const sock = socketPath();
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		await new Promise((resolve) => setTimeout(resolve, 250));
+		if (existsSync(sock)) {
+			log?.warn("helper 已启动", { appPath });
+			return { ok: true, message: `已启动：${appPath}`, appPath };
+		}
+	}
+	return {
+		ok: false,
+		message: "已经尝试打开 Agent Computer，但 5 秒内没等到它连上来（首次打开可能要点一下系统授权）",
+		appPath,
+	};
 }

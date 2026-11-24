@@ -69,6 +69,19 @@ export function ComputerPanel() {
 		await load();
 	};
 
+	/**
+	 * 启动已装好但没在跑的 helper。
+	 *
+	 * 用户场景：面板上只剩一行 connect ENOENT 报错（helper 被关掉 / 崩了 / 没设登录项），
+	 * 让他自己去 Finder 翻 app 太蠢 —— 这里一颗按钮直接 open 它，并等 socket 出来。
+	 */
+	const startHelper = async () => {
+		const response = await fetch("/api/computer/helper/start", { method: "POST", credentials: "same-origin" });
+		const body = (await response.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+		if (!response.ok || body.ok !== true) throw new Error(body.message ?? t("启动失败", "Failed to start"));
+		await load();
+	};
+
 	const run = async (action: () => Promise<void>) => {
 		setBusy(true);
 		setError(null);
@@ -288,9 +301,22 @@ export function ComputerPanel() {
 					<li>
 						<span>{t("运行", "Running")}</span>
 						<span className={status?.running ? "computer-ok" : "computer-bad"}>
-							{status?.running
-								? `${t("已连接", "Connected")}${status.helperVersion ? ` · ${status.helperVersion}` : ""}`
-								: (status?.error ?? t("未连接", "Not connected"))}
+							<span>
+								{status?.running
+									? `${t("已连接", "Connected")}${status.helperVersion ? ` · ${status.helperVersion}` : ""}`
+									: (status?.error ?? t("未连接", "Not connected"))}
+							</span>
+							{!status?.running && status?.helper.installed ? (
+								<button
+									type="button"
+									className="btn btn-tiny"
+									disabled={busy}
+									title={t("打开 Agent Computer 并等它连上来", "Open Agent Computer and wait for it to connect")}
+									onClick={() => void run(startHelper)}
+								>
+									{busy ? t("正在启动…", "Starting…") : t("启动 helper", "Start helper")}
+								</button>
+							) : null}
 						</span>
 					</li>
 					<li>

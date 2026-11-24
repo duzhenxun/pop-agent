@@ -19,6 +19,7 @@
 import { existsSync } from "node:fs";
 import { HelperClient } from "../computer/helper-client.js";
 import { helperBinaryPath, helperTransport, socketPath } from "../computer/paths.js";
+import { startHelper } from "../computer/install-helper.js";
 import { readSttConfig } from "../stt/config.js";
 import { createSttSession } from "../stt/index.js";
 import type { SttConfig, SttSession } from "../stt/types.js";
@@ -120,26 +121,45 @@ export class AsrService {
 
 	private async connect(): Promise<void> {
 		const binary = helperBinaryPath();
-		const client = new HelperClient({
-			socketPath: socketPath(),
-			binaryPath: binary,
-			transport: helperTransport(process.env, binary),
-			clientName: CLIENT_NAME,
-			session: { sessionId: `asr-${process.pid}`, turnId: null },
-		});
+		const makeClient = () =>
+			new HelperClient({
+				socketPath: socketPath(),
+				binaryPath: binary,
+				transport: helperTransport(process.env, binary),
+				clientName: CLIENT_NAME,
+				session: { sessionId: `asr-${process.pid}`, turnId: null },
+			});
+
+		let client = makeClient();
 		try {
 			await client.connect(CONNECT_TIMEOUT_MS);
-		} catch (error) {
+		} catch {
 			client.close();
-			this.connecting = false;
-			this.status = {
-				state: "missing",
-				message: "本地识别已经并进 Agent Computer：先在「电脑控制」里安装并打开它，再回来试",
-			};
-			this.log.warn("ASR：连不上 Agent Computer helper", {
-				message: error instanceof Error ? error.message : String(error),
-			});
-			return;
+			// 连不上最常见的原因不是「没装」，而是**装了但没在跑**（helper 是独立 app，
+			// 用户关掉了、或系统重启后没自启）。语音和电脑控制共用它，让用户自己去
+			// Finder 里翻太蠢 —— 这里直接帮他把 app 打开，再试一次。
+			this.log.warn("ASR：连不上 helper，尝试自动启动它");
+			const started = await startHelper(this.log);
+			if (!started.ok) {
+				this.connecting = false;
+				this.status = { state: "missing", message: started.message };
+				return;
+			}
+			client = makeClient();
+			try {
+				await client.connect(CONNECT_TIMEOUT_MS);
+			} catch (error) {
+				client.close();
+				this.connecting = false;
+				this.status = {
+					state: "missing",
+					message: "已经尝试启动 Agent Computer，但仍连不上：到「电脑控制」面板点「启动 helper」，或看它有没有被系统拦下",
+				};
+				this.log.warn("ASR：自动启动后仍连不上 helper", {
+					message: error instanceof Error ? error.message : String(error),
+				});
+				return;
+			}
 		}
 
 		this.client = client;

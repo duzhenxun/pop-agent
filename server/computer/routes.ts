@@ -11,7 +11,7 @@
 import { spawn } from "node:child_process";
 import express, { type Response } from "express";
 import { getComputerStatus, requestComputerAccess } from "./status.js";
-import { installHelper } from "./install-helper.js";
+import { installHelper, startHelper } from "./install-helper.js";
 import { listInstalledApps, searchApps } from "./apps.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { disableSkill, enableSkill } from "./skill.js";
@@ -123,6 +123,12 @@ export function createComputerRouter(): express.Router {
 	 */
 	router.post("/helper/install", async (_req, res) => {
 		const result = await installHelper();
+		res.status(result.ok ? 200 : 502).json(result);
+	});
+
+	/** 启动已装好的 helper：面板上「连接 helper 失败」时那颗按钮用它 */
+	router.post("/helper/start", async (_req, res) => {
+		const result = await startHelper();
 		res.status(result.ok ? 200 : 502).json(result);
 	});
 
