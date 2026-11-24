@@ -11,6 +11,7 @@
 import { spawn } from "node:child_process";
 import express, { type Response } from "express";
 import { getComputerStatus, requestComputerAccess } from "./status.js";
+import { installHelper } from "./install-helper.js";
 import { listInstalledApps, searchApps } from "./apps.js";
 import { readSettings, writeSettings } from "./settings.js";
 import { disableSkill, enableSkill } from "./skill.js";
@@ -111,6 +112,18 @@ export function createComputerRouter(): express.Router {
 		} catch (error) {
 			failure(res, error);
 		}
+	});
+
+	/**
+	 * 一键安装 helper：服务端下载 → 解压 → 装进「应用程序」→ 打开。
+	 *
+	 * 为什么不让用户从浏览器下载：浏览器会给 zip 打 com.apple.quarantine，
+	 * 解压出的 .app 被 Gatekeeper 拦，而新版 macOS 不允许用「右键 → 打开」绕过，
+	 * 用户得去「系统设置 → 隐私与安全性」点「仍要打开」—— 四步，每步都像出了事。
+	 */
+	router.post("/helper/install", async (_req, res) => {
+		const result = await installHelper();
+		res.status(result.ok ? 200 : 502).json(result);
 	});
 
 	return router;

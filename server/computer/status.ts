@@ -165,9 +165,9 @@ export async function getComputerStatus(): Promise<ComputerStatus> {
 						downloadUrl: helperDownloadUrl(),
 						requiresRightClickOpen: true,
 						steps: [
-							"下载 Agent Computer.zip（就在项目仓库里），解压后把 Agent Computer.app 拖进「应用程序」",
-							"在 Finder 里右键它 → 打开（还没做开发者签名，第一次会被系统拦一次）",
-							"按提示到「系统设置 → 隐私与安全性」勾上「辅助功能」和「屏幕录制」",
+							"下载 Agent Computer.zip，解压后把 Agent Computer.app 拖进「应用程序」",
+							"第一次双击会被系统拦下（没有开发者签名）：到「系统设置 → 隐私与安全性」，在下方点「仍要打开」再确认一次。新版 macOS 已经不再允许用「右键 → 打开」跳过这一步",
+							"打开后按窗口提示勾上「辅助功能」和「屏幕录制」；要用语音输入，再给「麦克风」与「语音识别」",
 						],
 					}
 				: null,

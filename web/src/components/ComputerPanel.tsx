@@ -54,6 +54,21 @@ export function ComputerPanel() {
 	}, []);
 
 	/** 执行一次写操作：忙的时候禁用按钮，失败就把错误显示出来 */
+	/**
+	 * 一键安装：服务端下载 → 解压 → 装进「应用程序」→ 打开。
+	 * 比让用户从浏览器下好得多：浏览器下载的 zip 带 quarantine，解压出的 app 会被
+	 * Gatekeeper 拦，而新版 macOS 不允许右键绕过，得去系统设置点「仍要打开」。
+	 */
+	const installHelper = async () => {
+		const response = await fetch("/api/computer/helper/install", {
+			method: "POST",
+			credentials: "same-origin",
+		});
+		const body = (await response.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+		if (!response.ok || body.ok !== true) throw new Error(body.message ?? t("安装失败", "Install failed"));
+		await load();
+	};
+
 	const run = async (action: () => Promise<void>) => {
 		setBusy(true);
 		setError(null);
@@ -235,8 +250,16 @@ export function ComputerPanel() {
 						))}
 					</ol>
 					<div className="computer-install-actions">
+						<button
+							type="button"
+							className="computer-btn"
+							disabled={busy}
+							onClick={() => void run(installHelper)}
+						>
+							{busy ? t("正在安装…", "Installing…") : t("一键安装", "Install for me")}
+						</button>
 						<a className="computer-btn" href={status.install.downloadUrl} target="_blank" rel="noreferrer">
-							{t("下载 Agent Computer.app", "Download Agent Computer.app")}
+							{t("手动下载", "Download manually")}
 						</a>
 						<button type="button" className="computer-btn" onClick={() => void run(load)}>
 							{t("装好了，重新检测", "Installed — check again")}
