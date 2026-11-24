@@ -201,6 +201,9 @@ function startServer(): Promise<ReadyInfo> {
 			...runtime.env,
 			// 桌面模式（ADR-0051）：关掉 npm 自更新、打 ready 行、锁被别人占着时复用而不是报错
 			POP_AGENT_APP: "1",
+			// 版本号显式给：打包后服务在 Resources/dist 下，往上找不到 package.json，
+			// 不传就会把抬头显示成 vunknown（这个值本来就来自 package.json，由 electron-builder 写进 Info.plist）
+			POP_AGENT_VERSION: app.getVersion(),
 			// 前端目录显式给：打包后的层级和源码不一样，不让服务去猜
 			POP_AGENT_WEB_DIST: webDist(),
 			// 别让服务把启动 banner 打进管道后不分行 —— 它本来就一行一行打印
