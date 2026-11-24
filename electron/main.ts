@@ -287,6 +287,10 @@ function createWindow(url: string): BrowserWindow {
 		center: true,
 		resizable: true,
 		maximizable: true,
+		/* 绿钮要能真的进全屏（用户 2026-11-24：「第三个绿色的按钮，点击后是全屏才对」）：
+		 * 实测这个 Electron 版本**不写它时 `isFullScreenable()` 是 false**，绿钮只会「缩放」到
+		 * 标准尺寸、永远进不了全屏。写死成 true，剩下的交给 macOS 自己（点一次进、再点一次出）。 */
+		fullscreenable: true,
 		fullscreen: false,
 		title: BRAND_NAME,
 		backgroundColor: "#141414",
@@ -365,6 +369,20 @@ const TRAFFIC_LIGHT_DIAMETER = 12;
  * 高度一变就 `console.log("__POP_AGENT_APPBAR_H__=36")`；这边听 `console-message` 换算成 y 再摆。
  * 页面不动的时候一个请求都没有。
  */
+/**
+ * 绿钮 = 真全屏。
+ *
+ * 实测（2026-11-24，Electron 33）：**不写 `fullscreenable` 时 `isFullScreenable()` 返回 false** ——
+ * 绿钮于是只能做「缩放」（窗口在你那块屏上是 1496×874 → 1152×621，只是回到标准尺寸），
+ * 永远进不了系统全屏。用户 2026-11-24：「第三个绿色的按钮，点击后是全屏才对」。
+ *
+ * 用一个同选项的最小 Electron 窗（不碰本应用）验证过：显式 `fullscreenable: true` 后点绿钮，
+ * 立刻发出 `enter-full-screen`、窗口变成整块屏幕。所以这里的做法就是把它显式打开
+ * （见 `createWindow` 的窗口选项），不再自己用几何判据去「猜」用户点了绿钮。
+ *
+ * 已知取舍：全屏后从全屏退出来是 macOS 自己的行为（回到进全屏前的矩形），不需要额外代码。
+ */
+
 function watchTrafficLights(win: BrowserWindow): void {
 	if (!isMac) return;
 	let lastY = -1;

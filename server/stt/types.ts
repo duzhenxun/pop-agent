@@ -32,6 +32,14 @@ export type SttConfig = {
 	extraFields?: Record<string, string>;
 	/** 一次识别的超时（毫秒），默认 60s */
 	timeoutMs?: number;
+	/**
+	 * 是否在录音过程中就把已录音频送上去、边出边显示文字（默认开）。
+	 * 只对**没有流式接口**的厂商有意义（如 DeepSeek）：靠反复整段识别模拟出字。
+	 * 关掉 = 只在 end() 时识别一次，省钱但说完才出字。
+	 */
+	incremental?: boolean;
+	/** 第一次增量识别的延迟（毫秒），默认 1500；之后指数退避到 15s */
+	incrementalMs?: number;
 };
 
 /** 一次「说一句话」的会话：push 音频，end 拿文本 */
@@ -60,6 +68,8 @@ export type SttProvider = {
 	/** 配置文件里 `provider` 填的值 */
 	id: string;
 	label: string;
+	/** 不写 endpoint 时用它（厂商官方端点）；不提供 = endpoint 必填 */
+	defaultEndpoint?: string;
 	fields: SttField[];
 	create(config: SttConfig, log: Logger): SttSession;
 };

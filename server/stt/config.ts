@@ -1,11 +1,28 @@
 /**
  * 云端 STT 的配置读取。
  *
- * 两种来源，环境变量优先（方便临时切换 / 容器里注入）：
+ * 和 TTS 一模一样的原则（用户 2026-11-24：「这 2 块可以各配置各的」）：合成、识别
+ * 各读一个文件，厂商之间也各配各的块 —— 换掉识别厂商不该动到合成的密钥。
+ *
+ * 来源，环境变量优先（方便临时切换 / 容器里注入）：
  *   1. `~/.pop-agent/stt.json`（或 `POP_AGENT_STT_CONFIG` 指定的文件）
  *   2. `POP_AGENT_STT_PROVIDER` / `_ENDPOINT` / `_KEY` / `_MODEL` / `_LANGUAGE`
+ *      以及按厂商分开的 `POP_AGENT_STT_<厂商>_KEY`（如 `POP_AGENT_STT_DEEPSEEK_KEY`）
  *
- * 没配（或缺 provider/endpoint）= 继续用本地识别，不报错 —— 这是默认状态。
+ * 文件形状（推荐，按厂商分块）：
+ *
+ *   {
+ *     "provider": "deepseek",
+ *     "providers": {
+ *       "deepseek":   { "apiKey": "sk-…" },
+ *       "qwen":       { "apiKey": "sk-…", "model": "qwen3-asr-flash" }
+ *     }
+ *   }
+ *
+ * 也认老的单厂商扁平写法：`{ "provider": "openai-compatible", "endpoint": "…", "apiKey": "…" }`，
+ * 以及只有一家时的省略写法 `{ "providers": { "deepseek": { "apiKey": "…" } } }`（自动选中那家）。
+ *
+ * 没配（缺 provider）= 继续用本地识别，不报错 —— 这是默认状态。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -20,9 +37,84 @@ export function sttConfigPath(dataDir?: string): string {
 	return join(dataDir ?? join(homedir(), ".pop-agent"), FILE_NAME);
 }
 
-function envOverrides(): Partial<SttConfig> {
+/** 把一段来路不明的对象收敛成配置字段（只认白名单，别的键一律丢掉） */
+function asFields(value: unknown): Partial<SttConfig> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	const raw = value as Record<string, unknown>;
+	const fields: Partial<SttConfig> = {};
+	const text = (name: string) => {
+		const item = raw[name];
+		return typeof item === "string" && item.trim() ? item.trim() : undefined;
+	};
+	const provider = text("provider");
+	if (provider) fields.provider = provider;
+	const endpoint = text("endpoint");
+	if (endpoint) fields.endpoint = endpoint;
+	const apiKey = text("apiKey");
+	if (apiKey) fields.apiKey = apiKey;
+	const model = text("model");
+	if (model) fields.model = model;
+	const language = text("language");
+	if (language) fields.language = language;
+	if (typeof raw.timeoutMs === "number" && Number.isFinite(raw.timeoutMs)) fields.timeoutMs = raw.timeoutMs;
+	// 增量（准实时）出字：显式关掉/调快调慢
+	if (typeof raw.incremental === "boolean") fields.incremental = raw.incremental;
+	if (typeof raw.incrementalMs === "number" && Number.isFinite(raw.incrementalMs)) {
+		fields.incrementalMs = raw.incrementalMs;
+	}
+	if (raw.headers && typeof raw.headers === "object" && !Array.isArray(raw.headers)) {
+		const headers: Record<string, string> = {};
+		for (const [key, item] of Object.entries(raw.headers as Record<string, unknown>)) {
+			if (typeof item === "string" && item.trim()) headers[key] = item.trim();
+		}
+		if (Object.keys(headers).length > 0) fields.headers = headers;
+	}
+	if (raw.extraFields && typeof raw.extraFields === "object" && !Array.isArray(raw.extraFields)) {
+		const extra: Record<string, string> = {};
+		for (const [key, item] of Object.entries(raw.extraFields as Record<string, unknown>)) {
+			if (typeof item === "string" && item.trim()) extra[key] = item.trim();
+		}
+		if (Object.keys(extra).length > 0) fields.extraFields = extra;
+	}
+	return fields;
+}
+
+/** 文件 → { 顶层字段, 各厂商块 }；容忍三种写法（见文件头） */
+function parseFile(parsed: unknown, source: string): {
+	flat: Partial<SttConfig>;
+	providers: Record<string, Partial<SttConfig>>;
+	error?: string;
+} {
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return { flat: {}, providers: {}, error: `${source} 的内容不是 JSON 对象` };
+	}
+	const root = parsed as Record<string, unknown>;
+	const flat = asFields(root);
+	const providers: Record<string, Partial<SttConfig>> = {};
+
+	if (root.providers && typeof root.providers === "object" && !Array.isArray(root.providers)) {
+		for (const [id, block] of Object.entries(root.providers as Record<string, unknown>)) {
+			const fields = asFields(block);
+			// 块里可以省掉 provider（外面写着呢），这里补上，日志与 registry 才找得到
+			providers[id] = { ...fields, provider: fields.provider ?? id };
+		}
+	} else if (!flat.provider) {
+		// 没有 providers 这一层、也没写 provider：把「顶层厂商名」当块（只有一家时才这么猜）
+		const entries = Object.entries(root).filter(
+			([, value]) => value && typeof value === "object" && !Array.isArray(value),
+		);
+		const named = entries.filter(([id]) => asFields(root[id]).apiKey || asFields(root[id]).endpoint);
+		if (named.length === 1) {
+			const [id] = named[0];
+			providers[id] = { ...asFields(root[id]), provider: id };
+		}
+	}
+	return { flat, providers };
+}
+
+function envOverrides(): { flat: Partial<SttConfig>; providers: Record<string, Partial<SttConfig>> } {
 	const pick = (name: string) => process.env[name]?.trim() || undefined;
-	const overrides: Partial<SttConfig> = {
+	const flat: Partial<SttConfig> = {
 		provider: pick("POP_AGENT_STT_PROVIDER"),
 		endpoint: pick("POP_AGENT_STT_ENDPOINT"),
 		apiKey: pick("POP_AGENT_STT_KEY"),
@@ -30,10 +122,18 @@ function envOverrides(): Partial<SttConfig> {
 		language: pick("POP_AGENT_STT_LANGUAGE"),
 	};
 	// 把 undefined 的键去掉，免得覆盖掉文件里的值
-	for (const key of Object.keys(overrides) as Array<keyof SttConfig>) {
-		if (overrides[key] === undefined) delete overrides[key];
+	for (const key of Object.keys(flat) as Array<keyof SttConfig>) {
+		if (flat[key] === undefined) delete flat[key];
 	}
-	return overrides;
+	const providers: Record<string, Partial<SttConfig>> = {};
+	for (const [name, value] of Object.entries(process.env)) {
+		const match = /^POP_AGENT_STT_([A-Z0-9]+)_(KEY|ENDPOINT|MODEL|LANGUAGE)$/.exec(name);
+		if (!match || !value?.trim()) continue;
+		const id = match[1].toLowerCase();
+		const field = match[2].toLowerCase() as "apiKey" | "endpoint" | "model" | "language";
+		providers[id] = { ...providers[id], [field]: value.trim() };
+	}
+	return { flat, providers };
 }
 
 export type SttConfigRead = {
@@ -48,21 +148,28 @@ export type SttConfigRead = {
 export function readSttConfig(dataDir?: string): SttConfigRead {
 	const source = sttConfigPath(dataDir);
 	let fromFile: Partial<SttConfig> = {};
+	let fileProviders: Record<string, Partial<SttConfig>> = {};
 	let error: string | undefined;
 
 	if (existsSync(source)) {
 		try {
 			const parsed = JSON.parse(readFileSync(source, "utf8")) as unknown;
-			if (parsed && typeof parsed === "object") fromFile = parsed as Partial<SttConfig>;
-			else error = `${source} 的内容不是 JSON 对象`;
+			const read = parseFile(parsed, source);
+			fromFile = read.flat;
+			fileProviders = read.providers;
+			error = read.error;
 		} catch (cause) {
 			error = `${source} 不是合法 JSON：${cause instanceof Error ? cause.message : String(cause)}`;
 		}
 	}
 
-	const merged = { ...fromFile, ...envOverrides() } as SttConfig;
-	if (!merged.provider || !merged.endpoint) {
-		return { config: null, source, error };
-	}
+	const env = envOverrides();
+	// provider 决定取哪个厂商块：环境变量 > 文件顶层 > 只有一家时的那个块
+	const provider = env.flat.provider ?? fromFile.provider ?? (Object.keys(fileProviders).length === 1 ? Object.keys(fileProviders)[0] : undefined);
+	if (!provider) return { config: null, source, error };
+
+	const block = { ...fileProviders[provider], ...env.providers[provider] };
+	const merged: SttConfig = { ...fromFile, ...block, ...env.flat, provider } as SttConfig;
+	// endpoint 可以不写：各 provider 自己有默认端点（见 server/stt/index.ts）；这里只保证 provider 在
 	return { config: merged, source, error };
 }

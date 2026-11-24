@@ -40,6 +40,10 @@ mac:
   target:
     - dmg
   hardenedRuntime: true
+  # 同 electron-builder.yml：麦克风要 `com.apple.security.device.audio-input`，
+  # 不开的话 hardened runtime 下 TCC 直接拒绝且不弹授权框（语音输入静默失效）
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSMicrophoneUsageDescription: 用本机做语音识别（听写）
     NSCameraUsageDescription: 屏幕共享与画面采集时需要

@@ -56,8 +56,13 @@ mac:
   target:
     - dmg
   hardenedRuntime: true
+  # 签名权限：麦克风（语音输入）必须显式声明 `com.apple.security.device.audio-input`，
+  # 否则 hardened runtime 下 TCC 连弹窗都不给、直接拒绝（系统设置里也不会出现 PopAgent）。
+  # `entitlementsInherit` 给子进程（PopAgent Helper 的音频服务）—— 真正开麦的是它。
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   # 麦克风（本地识别）、录屏与辅助功能（电脑控制）都要在 Info.plist 里说清楚用途，
-  # 否则签名之后系统不会弹授权框，功能静默失效
+  # 否则签名之后系统不会弹授权框，功能静默失效（用途说明 ≠ 权限，两个都要有）
   extendInfo:
     NSMicrophoneUsageDescription: 用本机做语音识别（听写）
     NSCameraUsageDescription: 屏幕共享与画面采集时需要

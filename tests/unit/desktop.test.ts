@@ -148,29 +148,58 @@ describe("withRuntimeEnv", () => {
 });
 
 describe("applyDesktopEnv", () => {
+	// 单测里一律 `shellPath: []`：不去起用户真实的登录 shell（慢、且结果随人变）
 	it("不是桌面模式 → 空操作（npm 安装的用户 PATH 不能被改）", () => {
 		const env = { PATH: "/usr/bin", POP_AGENT_RUNTIME_DIR: "/opt/pop" };
-		assert.deepEqual(applyDesktopEnv(env, { platform: "darwin", exists: () => false }), { applied: false, dirs: [] });
+		assert.deepEqual(applyDesktopEnv(env, { platform: "darwin", exists: () => false, shellPath: [] }), {
+			applied: false,
+			dirs: [],
+			fromShell: [],
+		});
 		assert.equal(env.PATH, "/usr/bin");
 	});
 
 	it("桌面模式 → 真的写进 env，并回报注了哪些目录（给启动日志）", () => {
 		const env = { POP_AGENT_APP: "1", POP_AGENT_RUNTIME_DIR: "/opt/pop", PATH: "/usr/bin" };
-		const result = applyDesktopEnv(env, { platform: "darwin", exists: () => false });
-		assert.deepEqual(result, { applied: true, dirs: ["/opt/pop"] });
+		const result = applyDesktopEnv(env, { platform: "darwin", exists: () => false, shellPath: [] });
+		assert.deepEqual(result, { applied: true, dirs: ["/opt/pop"], fromShell: [] });
 		assert.equal(env.PATH, "/opt/pop:/usr/bin");
+	});
+
+	/**
+	 * 用户 2026-11-24（「我本机安装过 codex 了」，切引擎却提示没装）：
+	 * App 从 Finder 起时 PATH 只有系统目录，nvm 里的 codex 根本不在里面。
+	 * 所以要把登录 shell 的 PATH 也合进来 —— 但**运行时必须仍排在最前面**（node 得是包里那颗）。
+	 */
+	it("桌面模式 → 合并登录 shell 的 PATH，且内置运行时排在它前面", () => {
+		const env = { POP_AGENT_APP: "1", POP_AGENT_RUNTIME_DIR: "/opt/pop", PATH: "/usr/bin:/bin" };
+		const result = applyDesktopEnv(env, {
+			platform: "darwin",
+			exists: () => false,
+			shellPath: ["/Users/me/.nvm/versions/node/v22.22.0/bin", "/opt/homebrew/bin", "/usr/bin"],
+		});
+		assert.deepEqual(result.fromShell, ["/Users/me/.nvm/versions/node/v22.22.0/bin", "/opt/homebrew/bin", "/usr/bin"]);
+		assert.equal(
+			env.PATH,
+			"/opt/pop:/Users/me/.nvm/versions/node/v22.22.0/bin:/opt/homebrew/bin:/usr/bin:/bin",
+			"运行时第一，用户命令紧随，已有的系统目录去重后仍在末尾",
+		);
 	});
 
 	it("重复调用幂等（cli → index 两段启动都会调）", () => {
 		const env = { POP_AGENT_APP: "1", POP_AGENT_RUNTIME_DIR: "/opt/pop", PATH: "/usr/bin" };
-		applyDesktopEnv(env, { platform: "darwin", exists: () => false });
-		applyDesktopEnv(env, { platform: "darwin", exists: () => false });
+		applyDesktopEnv(env, { platform: "darwin", exists: () => false, shellPath: [] });
+		applyDesktopEnv(env, { platform: "darwin", exists: () => false, shellPath: [] });
 		assert.equal(env.PATH, "/opt/pop:/usr/bin");
 	});
 
 	it("桌面模式但壳没给运行时目录 → applied=false（不假装注入了）", () => {
 		const env = { POP_AGENT_APP: "1", PATH: "/usr/bin" };
-		assert.deepEqual(applyDesktopEnv(env, { platform: "darwin", exists: () => false }), { applied: false, dirs: [] });
+		assert.deepEqual(applyDesktopEnv(env, { platform: "darwin", exists: () => false, shellPath: [] }), {
+			applied: false,
+			dirs: [],
+			fromShell: [],
+		});
 		assert.equal(env.PATH, "/usr/bin");
 	});
 });

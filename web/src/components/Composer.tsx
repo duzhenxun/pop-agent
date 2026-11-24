@@ -19,7 +19,14 @@ import { ThinkButton } from "./ThinkButton.tsx";
 import { TemplateEditor, TemplateGallery } from "./TemplateModals.tsx";
 import { setDraft as setStoreDraft, useAppState } from "../store.ts";
 import { textOfMessage } from "../message-text.ts";
-import { COMPOSER_ITEM_KEY, COMPOSER_TOGGLES, composerItemDefault } from "../ui-prefs.ts";
+import {
+	COMPOSER_ENTER_SEND_DEFAULT,
+	COMPOSER_ENTER_SEND_KEY,
+	COMPOSER_ITEM_KEY,
+	COMPOSER_TOGGLES,
+	composerItemDefault,
+} from "../ui-prefs.ts";
+import { useStoredBool } from "../use-stored-bool.ts";
 import { usePrefFlags } from "../use-pref-flags.ts";
 import type { AttachmentRef, PromptTemplate, SendMode } from "../types.ts";
 import { interrupt, sendMessage, createSessionAndSend } from "../ws.ts";
@@ -50,6 +57,7 @@ import {
 } from "../at-mentions.ts";
 import { useFileMention } from "../use-file-mention.ts";
 import { NewSessionScope } from "./NewSessionScope.tsx";
+import { onComposerAction, type ComposerAction } from "../composer-actions.ts";
 import {
 	commandDraft,
 	filterCommands,
@@ -280,6 +288,10 @@ export function Composer({
 	// 纯本机偏好（localStorage）：手机和桌面各一份，一边关掉不会带走另一边。
 	// 默认值交给 `composerItemDefault`（「快捷指令」默认关，其余默认开）
 	const [showBlocks] = usePrefFlags(COMPOSER_TOGGLES, COMPOSER_ITEM_KEY, composerItemDefault);
+	/** 裸回车是发送还是换行（设置 → 界面 → 对话窗口；默认发送） */
+	const [enterSend] = useStoredBool(COMPOSER_ENTER_SEND_KEY, COMPOSER_ENTER_SEND_DEFAULT);
+	/** 输入框提示语里那颗键叫法：跟真实行为对齐，别在一处写「回车发」、另一处要 ⌘↩ 才发 */
+	const sendKeyLabel = enterSend ? t("回车", "Enter") : t("⌘↩", "⌘↩");
 	/**
 	 * 斜杠命令面板：输入框里打 `/` 开头就弹，**选中只是把命令补全**（不直接执行），
 	 * 执行发生在发送时（见 submit）：带参数的命令得让人先把参数敲完。
@@ -847,6 +859,36 @@ export function Composer({
 	// 语音输入的自动发送拿这里的最新一版（见上面 submitRef 的注释）
 	submitRef.current = submit;
 
+	/**
+	 * 快捷键派发过来的「对话操作」（设置 → 快捷键 → 对话操作）。
+	 *
+	 * 用 ref 存最新一版处理函数：订阅只挂一次（挂卸跟着组件走），但里面的 `submit` /
+	 * `running` / 引擎能力每一帧都是新的 —— 直接闭包会拿到挂载那一刻的旧状态。
+	 */
+	const composerActionRef = useRef<(action: ComposerAction) => void>(() => {});
+	composerActionRef.current = (action) => {
+		// 插队要按引擎能力走：不能插的引擎降级成排队（服务端也会兜底提示，这边先少一条无用的请求）
+		const steerable = snapshot?.engineCapabilities?.steer !== false;
+		switch (action) {
+			case "send":
+				// 空闲 = 发送；正在跑 = 和「插队」按钮一致（插不了就排队）
+				submit(running ? (steerable ? "steer" : "queue") : "now");
+				return;
+			case "queue":
+				submit("queue");
+				return;
+			case "steer":
+				submit(steerable ? "steer" : "queue");
+				return;
+			case "stop":
+				if (!conversationId) return;
+				if (surface) surface.interrupt(conversationId);
+				else interrupt(conversationId);
+				return;
+		}
+	};
+	useEffect(() => onComposerAction((action) => composerActionRef.current(action)), []);
+
 	return (
 		<div className="composer-wrap">
 			<div className="composer-topbar">
@@ -989,40 +1031,39 @@ export function Composer({
 				</div>
 			) : null}
 
-			{slashOpen && mention === null ? (
-				<SlashPalette
-					commands={slashCommands}
-					skills={slashSkills}
-					active={slashActive}
-					onPick={(command) => {
-						// 技能条目（名字带 `skill:` 前缀）走「插入技能」；其它命令照旧补全成 `/name `
-						if (command.name.startsWith("skill:")) pickSkill(command.name.slice("skill:".length));
-						else pickCommand(command);
-					}}
-					onHover={setSlashActive}
-				/>
-			) : null}
-
-			{/*
-			 * 「@ 提及」面板：和斜杠面板同一个位置 —— 两个浮层不会同时出现
-			 * （`/命令` 里一带空格斜杠面板自己就关了，`@` 才是那一段的主角）。
-			 */}
-			{mention !== null ? (
-				<MentionPalette
-					rows={mentionRows}
-					active={mentionIndex}
-					loading={mentionSearch.loading}
-					error={mention.term.trim() === "" ? null : mentionSearch.error}
-					onPick={(row) => applyReference(row.path, row.isDir)}
-					onHover={setMentionActive}
-					onBrowse={(target) => void browsePath(target)}
-					/* 相对路径按 `mentionRoot` 那个根算（搜出来的就是相对它的）；
-					   工作区外的绝对路径原样交给面板 —— 服务端认得绝对是哪个文件 */
-					onOpenFile={onOpenFile ? (path) => onOpenFile(path, mentionRoot) : undefined}
-				/>
-			) : null}
-
 			<div className="composer" ref={composerRef}>
+				{slashOpen && mention === null ? (
+					<SlashPalette
+						commands={slashCommands}
+						skills={slashSkills}
+						active={slashActive}
+						onPick={(command) => {
+							// 技能条目（名字带 `skill:` 前缀）走「插入技能」；其它命令照旧补全成 `/name `
+							if (command.name.startsWith("skill:")) pickSkill(command.name.slice("skill:".length));
+							else pickCommand(command);
+						}}
+						onHover={setSlashActive}
+					/>
+				) : null}
+
+				{/*
+				 * 「@ 提及」面板：和斜杠面板同一个位置 —— 两个浮层不会同时出现
+				 * （`/命令` 里一带空格斜杠面板自己就关了，`@` 才是那一段的主角）。
+				 */}
+				{mention !== null ? (
+					<MentionPalette
+						rows={mentionRows}
+						active={mentionIndex}
+						loading={mentionSearch.loading}
+						error={mention.term.trim() === "" ? null : mentionSearch.error}
+						onPick={(row) => applyReference(row.path, row.isDir)}
+						onHover={setMentionActive}
+						onBrowse={(target) => void browsePath(target)}
+						/* 相对路径按 `mentionRoot` 那个根算（搜出来的就是相对它的）；
+						   工作区外的绝对路径原样交给面板 —— 服务端认得绝对是哪个文件 */
+						onOpenFile={onOpenFile ? (path) => onOpenFile(path, mentionRoot) : undefined}
+					/>
+				) : null}
 				{annotationSummary}
 				{/* 麦克风与输入框同一个 flex 行（在输入框**里面**的左侧）：对齐交给布局，不用绝对定位去凑像素 */}
 				<div className="composer-row">
@@ -1035,13 +1076,13 @@ export function Composer({
 					   回车键印字跟着状态走：空闲时就是「发送」（跟 Enter 直接发一致），
 					   跑的时候是「排队」——手感与真正的动作对齐，不在这儿许诺做不到的事。 */
 						{...PLAIN_TEXT_INPUT}
-						enterKeyHint={running ? "enter" : "send"}
+						enterKeyHint={enterSend && !running ? "send" : "enter"}
 						value={draft}
 						placeholder={
 							running
-								? t("正在跑…回车排队", "Running… Enter to queue")
+								? t(`正在跑…${sendKeyLabel}排队`, `Running… ${sendKeyLabel} to queue`)
 								: draft.trim() === "" && notes !== ""
-									? t(`回车发送 ${pendingNotes} 条注释`, `Enter to send ${pendingNotes} note(s)`)
+									? t(`${sendKeyLabel}发送 ${pendingNotes} 条注释`, `${sendKeyLabel} to send ${pendingNotes} note(s)`)
 									: currentMobileShell()
 										? t("消息…", "Message…")
 										: t("消息…输入 / 使用命令，输入 @ 查找文件", "Message… type / for commands, @ to find a file")
@@ -1134,7 +1175,15 @@ export function Composer({
 									}
 								}
 							}
+							/**
+							 * 带修饰键的 Enter 一律**让给全局快捷键**（⌘↩ 发送 / ⌘⇧↩ 排队 / ⌘⌥↩ 插队）。
+							 * 这里不 preventDefault，事件继续冒泡到 App 的派发器。
+							 */
+							if (event.key === "Enter" && (event.metaKey || event.ctrlKey || event.altKey)) return;
 							if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+							// 关掉「回车发送」的人要的是回车换行：不拦、不 preventDefault，让 textarea 自己换行，
+							// 发送交给 ⌘↩（`sendMessage` 那条快捷键，键位还能自己再改）。
+							if (!enterSend) return;
 							event.preventDefault();
 							// 回车默认：空闲时直接发；回合进行中默认「排队」（想插队再点「插队」）
 							submit(running ? "queue" : "now");
@@ -1148,7 +1197,10 @@ export function Composer({
 							<button
 								type="button"
 								className="btn btn-send"
-								title={t("等这一轮结束后再发（回车默认就是它）", "Send after this turn ends (the Enter default)")}
+								title={t(
+									`等这一轮结束后再发（${sendKeyLabel}默认就是它）`,
+									`Send after this turn ends (the ${sendKeyLabel} default)`,
+								)}
 								onClick={() => submit("queue")}
 							>
 								{t("排队", "Queue")}
@@ -1162,10 +1214,18 @@ export function Composer({
 								<button
 									type="button"
 									className="btn btn-queue"
-									title={t(
-										"插进当前这一轮（打断它，按新指示继续）",
-										"Insert into the running turn (interrupt it, continue with new instructions)",
-									)}
+									title={
+										// interrupt 档要如实说清楚：它不是「往这一轮里塞一句」，而是真的把当前步骤停下（ADR-0054）
+										snapshot?.engineCapabilities?.steerMode === "interrupt"
+											? t(
+													"打断当前步骤，先听你这句话（这一轮没跑完的部分会停下）",
+													"Interrupt the current step and do what you just typed (unfinished work in this turn stops)",
+												)
+											: t(
+													"插进当前这一轮（打断它，按新指示继续）",
+													"Insert into the running turn (interrupt it, continue with new instructions)",
+												)
+									}
 									onClick={() => submit("steer")}
 								>
 									{t("插队", "Steer")}

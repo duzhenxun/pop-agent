@@ -142,7 +142,7 @@
 	background: transparent;
 }
 
-/* 命中区还是 8px（好抓），但**画出来只有 2px**：
+/* 命中区还是 8px（好抓），但**画出来只有 1px**：
  * 以前 hover 整个 8px 都刷成强调色，看着像侧栏边上贴了一条蓝胶带。
  * 现在细线压在分割线上（resizer 从侧栏右边缘起算，所以 left:0 正好骑在那条 1px 边框上），
  * 看起来像「这条线可以拖」，而不是「这里多了个色块」。 */
@@ -152,9 +152,9 @@
 	top: 0;
 	bottom: 0;
 	left: 0;
-	width: 2px;
+	width: 1px;
 	margin-left: -1px;
-	border-radius: 2px;
+	border-radius: 0;
 	background: transparent;
 	/* 宽度也一起过渡：hover 时这条线会从 2px 长到 4px（「变粗了 = 能抓」）。
 	 * 中间那颗 ↔ 胶囊把手已经去掉（用户 2026-10-29：「这个不要」），
@@ -199,13 +199,15 @@
 	cursor: col-resize;
 }
 
-/* hover / 拖动：线变粗变亮（**没有把手了**，粗线自己就是「能拖」的提示）。
+/* hover / 拖动：线**变蓝但不变粗**（**没有把手**，蓝线自己就是「能拖」的提示）。
  * 拖动中鼠标可能已经飘出 8px 命中区：靠 html 上的类名把这条线留住。 */
 .side-resizer:hover::after,
 .side-resizer:active::after,
 .is-resizing .side-resizer::after {
-	/* 2px：悬停只是把线染成主色，不再加粗、也不加外圈晕光（用户：线别这么粗） */
-	width: 2px;
+	/* 1px：跟顶栏那段分割线一样粗（用户 2026-11-24：「这根蓝线太粗了，跟上面一样细」）。
+	 * 前几轮已经从 4px 降到 2px，这次降到 1px —— 它压在侧栏原有边框上，
+	 * 再宽就不是「那条线变蓝」，而是「边上多了一道蓝条」。 */
+	width: 1px;
 	margin-left: -1px;
 	background: var(--accent);
 	box-shadow: none;

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>pop-agent · 给你正在跑的 agent 配一个外部操作页</title>
-<meta name="description" content="pop-agent 是一个多 Agent 统一 Web 工作台：引擎跑在本机，你在网页里看它干活、管模型与工具、随时插话纠正，还能翻文件、开终端、在网页上圈出要改的地方。" />
+<title>PopAgent · 给你正在跑的 agent 配一个外部操作页</title>
+<meta name="description" content="PopAgent 是一个多 Agent 统一 Web 工作台：引擎跑在本机，你在网页里看它干活、管模型与工具、随时插话纠正，还能翻文件、开终端、在网页上圈出要改的地方。" />
 <meta name="color-scheme" content="light dark" />
 <meta name="theme-color" content="#0a0e18" />
 
@@ -12,22 +12,22 @@
      图片是 scripts/make-og.mjs 从 assets/og.svg 生成的，改文案去改那份 SVG。
      og:image 必须是绝对地址（抓取方不解析相对路径），换域名时记得一起改。 -->
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="pop-agent" />
-<meta property="og:title" content="pop-agent · 给你正在跑的 agent 配一个外部操作页" />
+<meta property="og:site_name" content="PopAgent" />
+<meta property="og:title" content="PopAgent · 给你正在跑的 agent 配一个外部操作页" />
 <meta property="og:description" content="引擎跑在本机，会话就是引擎的落盘文件。看过程、插话纠正、管模型与工具；支持 pi / Codex / Claude Code / opencode。不引数据库，不建账号体系。" />
 <meta property="og:url" content="https://duzhenxun.github.io/pop-agent/zh.html" />
 <meta property="og:image" content="https://duzhenxun.github.io/pop-agent/assets/og.png" />
 <meta property="og:image:width" content="1280" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="pop-agent：给你正在跑的 agent 配一个外部操作页" />
+<meta property="og:image:alt" content="PopAgent：给你正在跑的 agent 配一个外部操作页" />
 <meta property="og:locale" content="zh_CN" />
 <meta property="og:locale:alternate" content="en_US" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="pop-agent" />
+<meta name="twitter:title" content="PopAgent" />
 <meta name="twitter:description" content="给你正在跑的 agent 配一个外部操作页。引擎跑在本机，会话就是引擎的落盘文件，不引数据库。" />
 <meta name="twitter:image" content="https://duzhenxun.github.io/pop-agent/assets/og.png" />
 
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f5fe0'/%3E%3Cpath d='M9 11l6 5-6 5' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M18 21h5' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23111827'/%3E%3Cg%20fill='%23F8FAFC'%3E%3Crect%20x='7.6'%20y='9'%20width='3.2'%20height='14'%20rx='1.6'/%3E%3Cpath%20d='M10.8%209h4.4a4.4%204.4%200%200%201%200%208.8h-4.4v-2.8h4.2a1.6%201.6%200%200%200%200-3.2h-4.2z'/%3E%3C/g%3E%3Cpolygon%20points='26.81,18.4%2026.81,22.8%2023,25%2019.19,22.8%2019.19,18.4%2023,16.2'%20fill='none'%20stroke='%2360A5FA'%20stroke-width='1.8'%20stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="assets/site.css" />
 <!-- 百度统计 -->
 <script>
@@ -44,14 +44,15 @@ var _hmt = _hmt || [];
 
 <header class="nav">
   <div class="wrap nav-in">
-    <a class="brand" href="#top" aria-label="pop-agent 首页">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2f5fe0"/><path d="M9 11l6 5-6 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 21h5" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
-      <span>pop-agent</span>
+    <a class="brand" href="#top" aria-label="PopAgent 首页">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#111827"/><g fill="#F8FAFC"><rect x="7.6" y="9" width="3.2" height="14" rx="1.6"/><path d="M10.8 9h4.4a4.4 4.4 0 0 1 0 8.8h-4.4v-2.8h4.2a1.6 1.6 0 0 0 0-3.2h-4.2z"/></g><polygon points="26.81,18.4 26.81,22.8 23,25 19.19,22.8 19.19,18.4 23,16.2" fill="none" stroke="#60A5FA" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      <span>PopAgent</span>
     </a>
     <button class="nav-toggle" aria-expanded="false" aria-controls="navlinks">菜单</button>
     <nav class="nav-links" id="navlinks">
       <a href="#rules">定位</a>
       <a href="#features">功能</a>
+      <a href="#specials">特色</a>
       <a href="#workspace">工作区</a>
       <a href="#panels">面板</a>
       <a href="#engines">引擎</a>
@@ -79,6 +80,7 @@ var _hmt = _hmt || [];
           单用户、只听回环、<b>不引数据库</b> —— 会话的事实源永远是引擎自己的落盘文件。
         </p>
         <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/duzhenxun/pop-agent/releases/latest" target="_blank" rel="noreferrer">下载 macOS App（.dmg）</a>
           <div class="install-pill">
             <code>npm -g install pop-agent</code>
             <button class="icon-btn" data-copy="npm -g install pop-agent" title="复制安装命令" aria-label="复制安装命令">⧉</button>
@@ -86,15 +88,15 @@ var _hmt = _hmt || [];
           <a class="btn" href="#tour">看看界面</a>
         </div>
         <div class="trust">
+          <span><i></i>macOS 装包即用，不用 Node</span>
           <span><i></i>pi / Codex / Claude Code / opencode / DeepSeek Harness</span>
-          <span><i></i>Windows · macOS · Linux</span>
-          <span><i></i>Node ≥ 22.19</span>
+          <span><i></i>Windows · macOS · Linux（CLI）</span>
         </div>
       </div>
       <div>
         <div class="frame">
           <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · demo-app</span></div>
-          <img src="assets/zh/hero.webp" width="1600" height="900" alt="一次真实会话：左侧项目与会话，中间过程里的思考段与工具卡，右侧同一个仓库的改动对比" data-zoom />
+          <img src="assets/zh/hero.webp" width="2400" height="1350" alt="一次真实会话：左侧项目与会话，中间过程里的思考段与工具卡，右侧同一个仓库的改动对比" data-zoom />
         </div>
         <p class="caption">一次真实会话：思考、工具、改动、用量，都在同一屏里。</p>
       </div>
@@ -149,7 +151,7 @@ var _hmt = _hmt || [];
               <div><span class="tick">✓</span><span><b>路径可点</b>：正文里的 <code>src/App.tsx</code> 直接开预览。</span></div>
             </div>
           </div>
-          <div class="shot"><img src="assets/zh/answer.webp" width="1300" height="486" alt="一条回复的尾注：markdown 表格、改动文件 chip、这一轮的 token 与花费" loading="lazy" data-zoom /></div>
+          <div class="shot"><img src="assets/zh/answer.webp" width="1950" height="1219" alt="一条回复的尾注：markdown 表格、改动文件 chip、这一轮的 token 与花费" loading="lazy" data-zoom /></div>
         </article>
 
         <article class="card reveal">
@@ -163,19 +165,79 @@ var _hmt = _hmt || [];
 <span class="c"># 又排了一条</span>
 <span class="p">›</span> 跑完补个测试              <span class="c">排队 1</span>
           </div>
-          <div class="tagrow"><span class="tag">steer</span><span class="tag">queue</span><span class="tag">stop</span><span class="tag">非 pi 引擎自动降级为排队</span></div>
+          <div class="tagrow"><span class="tag">steer</span><span class="tag">queue</span><span class="tag">stop</span><span class="tag">pi 原生插队 · 其余引擎打断续发</span></div>
         </article>
 
         <article class="card reveal">
           <h3>圈出重点再提意见</h3>
           <p>选中一段回复，浮出小工具条：加进会话、写一条标注、或丢到临时会话里单独问。正文上会留 <b>①②③</b> 编号，输入框里多出一颗「N 条注释」。</p>
-          <div class="shot"><img src="assets/zh/annotations.webp" width="1400" height="788" alt="标注之后：正文里留下编号徽标，输入框里多出「1 条注释」" loading="lazy" data-zoom /></div>
+          <div class="shot"><img src="assets/zh/annotations.webp" width="2100" height="1312" alt="标注之后：正文里留下编号徽标，输入框里多出「1 条注释」" loading="lazy" data-zoom /></div>
         </article>
 
         <article class="card reveal">
           <h3>@ 找文件，/ 发指令</h3>
-          <p>输入框里打 <b>@</b> 就在工作区里找文件，↑↓ 选中、回车插入 <code>@src/store.ts</code>；打 <b>/</b> 是本地指令（新建、改名、切模型、统计）与直接交给 agent 的指令（压缩上下文、计划模式）。</p>
-          <div class="shot"><img src="assets/zh/mention-crop.webp" width="1200" height="393" alt="输入 @ 后弹出的文件提及面板，分「添加」与「最近用过」两组" loading="lazy" data-zoom /></div>
+          <p>输入框里打 <b>@</b> 就在工作区里找文件，↑↓ 选中、回车插入 <code>@src/store.ts</code>；打 <b>/</b> 弹出四条：<code>/new</code> 由工作台执行，<code>/skill</code> <code>/compact</code> <code>/plan</code> 直接交给引擎。</p>
+          <div class="shot"><img src="assets/zh/mention-crop.webp" width="1800" height="1125" alt="输入 @ 后弹出的文件提及面板，按文件名与路径匹配" loading="lazy" data-zoom /></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 六个特色能力 -->
+  <section id="specials">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">不只是聊天</div>
+        <h2>六件大多数 agent 前端<br />根本不做的事</h2>
+        <p>语音、定时、电脑控制、画布、推送、远程 —— 都在同一个进程里，不是拼起来的几个工具：它们共享同一套会话、同一个工作区、同一套审批。</p>
+      </div>
+
+      <div class="cards">
+        <article class="card wide reveal">
+          <div class="copy">
+            <h3>① 实时语音：说一句，它边听边写；答完自己念出来</h3>
+            <p>不是"说完才出一坨字"：麦克风气泡一开，<b>文字边说边进输入框</b>。轻按一直听着，长按按住说话、松手就发。它答完会自动朗读，语速音色可调，能暂停 / 继续 / 停止。</p>
+            <div class="list">
+              <div><span class="tick">✓</span><span><b>默认全离线</b>：识别优先走 macOS 本地（<code>SFSpeechRecognizer</code>），朗读用系统语音 —— 不出机器、不花钱。</span></div>
+              <div><span class="tick">✓</span><span><b>四类事件提示音</b>：开始 / 结束 / 出错 / 等审批，各有声音，可试听可调音量。</span></div>
+              <div><span class="tick">✓</span><span>想统一音色就切 <code>edge</code>（微软）或自建 <code>kokoro</code> / <code>qwen3</code>。</span></div>
+            </div>
+          </div>
+          <div class="shot"><img src="assets/zh/voice.webp" width="1650" height="1031" alt="语音面板：四类事件提示音与本地 TTS 设置" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>② 定时任务：说一句，它每天早上自己跑</h3>
+          <p>一个任务 = 提示词 + cron + 时区。文本任务直连模型不碰仓库；Agent 任务在工作区真跑一个回合。在对话里说一句「每天早上 9 点看一下这个仓库」，agent 自己就建好了。</p>
+          <p class="mini">无人值守就按无人值守算：<b>默认拒绝写操作</b>，除非显式勾「允许改动文件」；超时中断记成失败，绝不把半截输出当成功。</p>
+          <div class="shot"><img src="assets/zh/cron.webp" width="1650" height="1031" alt="定时任务面板：任务列表、cron 表达式与下一次触发" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>③ 电脑控制：让 agent 真的替你操作这台 Mac</h3>
+          <p>不是截图猜坐标：它读 macOS <b>辅助功能（AX）元素树</b>，按编号点击。能点、能输入、能粘贴（用完恢复原剪贴板）、能发快捷键、能按菜单路径执行。</p>
+          <p class="mini">密码框一律不替你填；系统认证与被保护的 App 默认不许动。总开关就是那个技能，所以<b>任何有 bash 的引擎</b>都能用。</p>
+          <div class="shot"><img src="assets/zh/computer.webp" width="1650" height="1031" alt="电脑控制面板：helper 状态与系统权限" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>④ 画布：把「接下来做什么」画成一张图</h3>
+          <p>你说一件要多步才能完成的事，agent 把它拆成<b>节点 + 依赖边</b>画到右边。节点有类型 —— 任务 / 里程碑 / 风险 / 决策 / 资料 —— 一眼看出哪一步容易翻车、哪一步要你拍板。</p>
+          <p class="mini">能点：开始干标「进行中」，干完标「完成」，进度直接画在图上。一步里还有小事就钻子计划，主图只留汇总。</p>
+          <div class="shot"><img src="assets/zh/canvas.webp" width="1650" height="1031" alt="画布：把「加订单导出」拆成 7 个节点与 7 条依赖" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>⑤ 手机推送：跑完了手机自己响</h3>
+          <p>回合结束推一条：标题是项目、正文是会话，失败加 ❌、中断加 ⏹。Web Push（VAPID），<b>不依赖任何第三方服务</b>，密钥首次启动自己生成。多设备、测试推送、一键清空。</p>
+          <div class="shot"><img src="assets/zh/push.webp" width="1650" height="1031" alt="推送面板：订阅状态与多设备管理" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>⑥ 远程控制：在外面用手机接着干</h3>
+          <p><code>pop -H 0.0.0.0</code> 就能从手机 / 别的电脑打开。密码必须<b>先在本机设</b>（远程不许设，否则谁先扫到端口谁接管）；连续输错 3 次暂停 30 分钟，锁定期内连密码都不比对。</p>
+          <p class="mini">手机上就是真的手机布局：侧栏变抽屉、顶栏只留图标、输入框 18px 防自动放大、右栏变整屏第二页。</p>
+          <div class="shot"><img src="assets/zh/remote.webp" width="1650" height="1031" alt="设置 → 远程：访问密码、登录保护与登录活动" loading="lazy" data-zoom /></div>
         </article>
       </div>
     </div>
@@ -199,7 +261,7 @@ var _hmt = _hmt || [];
             <div><span class="tick">✓</span><span>网页端只读：改文件交给 agent 或终端，这里用 diff 复核</span></div>
           </div>
         </div>
-        <div class="shot"><img src="assets/zh/diff.webp" width="1000" height="618" alt="改动视图：与 HEAD 对比，+10 −1 概览与行级红绿" loading="lazy" data-zoom /></div>
+        <div class="shot"><img src="assets/zh/diff.webp" width="1500" height="938" alt="改动视图：与 HEAD 对比，+10 −1 概览与行级红绿" loading="lazy" data-zoom /></div>
       </div>
 
       <div class="spot rev reveal">
@@ -232,7 +294,7 @@ var _hmt = _hmt || [];
             <div><span class="tick">✓</span><span><b>与注释分开存</b>：页面标记留在本机，注释发出去就清空。</span></div>
           </div>
         </div>
-        <div class="shot"><img src="assets/zh/webmark.webp" width="1600" height="900" alt="右栏打开活动报名页，标题被标成 ①、输入框里出现「1 条注释」" loading="lazy" data-zoom /></div>
+        <div class="shot"><img src="assets/zh/webmark.webp" width="2400" height="1350" alt="右栏打开活动报名页，标题被标成 ①、输入框里出现「1 条注释」" loading="lazy" data-zoom /></div>
       </div>
     </div>
   </section>
@@ -247,27 +309,27 @@ var _hmt = _hmt || [];
       </div>
       <div class="panels">
         <article class="panel-card reveal">
-          <img src="assets/zh/models.webp" width="1400" height="788" alt="模型与供应商面板：服务商列表与端点、模型白名单" loading="lazy" data-zoom />
+          <img src="assets/zh/models.webp" width="1650" height="1031" alt="模型与供应商面板：服务商列表与端点、模型白名单" loading="lazy" data-zoom />
           <div class="body"><h4>模型与供应商</h4><p>订阅 OAuth 登录、内置填 key、自定义端点与 API 形态；逐个勾选白名单。key 不出服务端，只回尾 4 位。</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/zh/skills.webp" width="1400" height="788" alt="技能面板：已装、启用、禁用三档，右侧是 SKILL.md 摘要" loading="lazy" data-zoom />
+          <img src="assets/zh/skills.webp" width="1650" height="1031" alt="技能面板：已装、启用、禁用三档，右侧是 SKILL.md 摘要" loading="lazy" data-zoom />
           <div class="body"><h4>技能</h4><p>读 <code>~/.agents/skills</code>；启停就是改文件名，没有第二份状态文件。Skill Hub 支持分类搜索与一键安装。</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/zh/mcp.webp" width="1400" height="788" alt="MCP 面板：全局与项目两份配置、启停、暴露方式、测试连接" loading="lazy" data-zoom />
+          <img src="assets/zh/mcp.webp" width="1650" height="1031" alt="MCP 面板：全局与项目两份配置、启停、暴露方式、测试连接" loading="lazy" data-zoom />
           <div class="body"><h4>MCP</h4><p>全局与项目两份配置、项目同名覆盖；exposure 四档；「测试连接」真握手后即断，报工具数。</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/zh/agents.webp" width="1400" height="788" alt="子代理面板：模板、默认并发与启用开关" loading="lazy" data-zoom />
+          <img src="assets/zh/agents.webp" width="1650" height="1031" alt="子代理面板：模板、默认并发与启用开关" loading="lazy" data-zoom />
           <div class="body"><h4>子代理</h4><p>内置 explore / general-purpose / plan，可改可停；并发 1–12，超出的排队。每个子代理都是一个真实会话。</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/zh/plugins.webp" width="1400" height="788" alt="插件面板：pi package 的加载状态与按包停用" loading="lazy" data-zoom />
+          <img src="assets/zh/plugins.webp" width="1650" height="1031" alt="插件面板：pi package 的加载状态与按包停用" loading="lazy" data-zoom />
           <div class="body"><h4>插件</h4><p>插件就是 pi package：npm / git / 本地目录，四态 <code>loaded · installed · missing · disabled</code>，按包停用不删文件。</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/zh/push.webp" width="1100" height="579" alt="推送面板：本机推送状态、目标设备与测试推送" loading="lazy" data-zoom />
+          <img src="assets/zh/push.webp" width="1650" height="1031" alt="推送面板：本机推送状态、目标设备与测试推送" loading="lazy" data-zoom />
           <div class="body"><h4>推送与语音</h4><p>回合结束推一条（失败 ❌ / 中断 ⏹ 带前缀），点通知直达会话；四类事件提示音 + 本地 TTS，不联网。</p></div>
         </article>
       </div>
@@ -285,14 +347,14 @@ var _hmt = _hmt || [];
       <div class="tour">
         <div class="tour-tabs" role="tablist">
           <button class="tour-tab" role="tab" aria-selected="true" data-src="assets/zh/overview.webp" data-alt="界面全景：左栏项目与会话、中间对话、右栏源码、底栏状态" data-cap="左栏项目与会话 · 中间对话 · 右栏源码 · 底栏状态">全景</button>
-          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/settings.webp" data-alt="设置面板：侧栏条数、顶栏入口、底部信息块" data-cap="设置 → 界面：侧栏条数、顶栏入口、底部信息块">设置</button>
-          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/slash.webp" data-alt="斜杠指令面板：本地指令与发给 agent 的指令" data-cap="斜杠指令：本地 7 条，直接交给 agent 的 5 条">斜杠指令</button>
+          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/settings.webp" data-alt="设置面板：顶栏名称可选产品名或引擎名、侧栏条数、顶栏入口" data-cap="设置 → 界面：顶栏名称（产品名 / 引擎名）、侧栏条数、顶栏入口">设置</button>
+          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/slash.webp" data-alt="斜杠指令面板：/new 由工作台执行，/skill /compact /plan 交给引擎" data-cap="斜杠指令：/new 由工作台执行，其余三条交给引擎">斜杠指令</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/mobile.webp" data-alt="手机单栏：顶栏入口只留图标、内容满宽" data-cap="手机单栏：输入框 18px，模型菜单变底部抽屉">手机</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/mobile-drawer.webp" data-alt="手机上的项目侧栏是覆盖式抽屉" data-cap="手机上的项目侧栏是覆盖式抽屉">手机抽屉</button>
         </div>
         <div class="tour-stage frame">
           <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url" id="tourUrl">127.0.0.1:9090</span></div>
-          <img id="tourImg" src="assets/zh/overview.webp" width="1500" height="844" alt="界面全景" data-zoom />
+          <img id="tourImg" src="assets/zh/overview.webp" width="2250" height="1266" alt="界面全景" data-zoom />
         </div>
         <p class="caption" id="tourCap">左栏项目与会话 · 中间对话 · 右栏源码 · 底栏状态</p>
       </div>
@@ -321,7 +383,7 @@ var _hmt = _hmt || [];
             <tr><td>审批</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">看配置</td><td class="y">✓</td></tr>
             <tr><td>模型 / 思考档</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">模型可切 / 无档位</td></tr>
             <tr><td>恢复历史会话</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-            <tr><td>插队（steer）</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+            <tr><td>插队</td><td class="y">✓ 原生</td><td class="y">✓ 打断续发</td><td class="y">✓ 打断续发</td><td class="y">✓ 打断续发</td><td class="y">✓ 打断续发</td></tr>
             <tr><td>子代理面板</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
             <tr><td>工作台管 provider</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
             <tr><td>临时会话（内存）</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
@@ -336,12 +398,12 @@ var _hmt = _hmt || [];
     <div class="wrap">
       <div class="sec-head reveal">
         <div class="kicker">开始使用</div>
-        <h2>两条命令，打开就是工作台</h2>
-        <p>要求 Node ≥ 22.19。装完就有 <code>pop-agent</code> / <code>pop</code> / <code>pop-agent</code> 三个等价命令。Linux 上内嵌终端需要就地编译 <code>node-pty</code>（make / g++ / python3）。</p>
+        <h2>macOS 装包即用，<br />其它平台一条命令</h2>
+        <p>macOS（Apple Silicon）直接下 <code>.dmg</code> 拖进「应用程序」—— <b>不用装 Node、不用碰终端</b>，运行时已经打进 App 里。其它平台走 npm，要求 Node ≥ 22.19。Linux 上内嵌终端需要就地编译 <code>node-pty</code>（make / g++ / python3）。</p>
       </div>
       <div class="install">
         <div class="steps reveal">
-          <div class="step"><div><b>装</b><p><code>npm -g install pop-agent</code>，或一行脚本装到 <code>~/.pop-agent</code>，不碰系统全局目录。</p></div></div>
+          <div class="step"><div><b>装</b><p>macOS 下载 <code>.dmg</code> 拖进「应用程序」即可；其它平台 <code>npm -g install pop-agent</code>，或一行脚本装到 <code>~/.pop-agent</code>（不碰系统全局目录）。</p></div></div>
           <div class="step"><div><b>起</b><p>进到你的项目目录敲 <code>pop</code>：前台运行并打开浏览器，默认只监听 <code>127.0.0.1:9090</code>。</p></div></div>
           <div class="step"><div><b>用</b><p>点「新会话」发第一句。想从手机或别的电脑进，就 <code>-H 0.0.0.0</code>，并且先在本机「设置 → 远程」设好密码。</p></div></div>
         </div>
@@ -435,8 +497,8 @@ POP_AGENT_CWD=~/code/my-proj pop</pre>
     <div class="foot-grid">
       <div>
         <div class="brand" style="margin-bottom:10px">
-          <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2f5fe0"/><path d="M9 11l6 5-6 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 21h5" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
-          <span>pop-agent</span>
+          <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#111827"/><g fill="#F8FAFC"><rect x="7.6" y="9" width="3.2" height="14" rx="1.6"/><path d="M10.8 9h4.4a4.4 4.4 0 0 1 0 8.8h-4.4v-2.8h4.2a1.6 1.6 0 0 0 0-3.2h-4.2z"/></g><polygon points="26.81,18.4 26.81,22.8 23,25 19.19,22.8 19.19,18.4 23,16.2" fill="none" stroke="#60A5FA" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <span>PopAgent</span>
         </div>
         <p style="max-width:30em">给你正在跑的 agent 配一个外部操作页。单用户、只听回环、会话的事实源永远是引擎自己的落盘文件。</p>
       </div>
@@ -462,8 +524,8 @@ POP_AGENT_CWD=~/code/my-proj pop</pre>
       </div>
     </div>
     <div class="foot-bottom">
-      <span>© 2026 pop-agent · MIT</span>
-      <span>截图来自 1.1.0 的真实运行实例（演示工作区），未做拼图。</span>
+      <span>© 2026 PopAgent · MIT</span>
+      <span>截图来自 0.1.2 的真实运行实例（演示工作区），未做拼图。</span>
     </div>
   </div>
 </footer>

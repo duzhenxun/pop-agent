@@ -14,17 +14,28 @@
 > When GitHub is slow or unreachable from China, use the Gitee mirror:
 > `git clone https://gitee.com/duzhenxun/pop-agent.git`. The helper (`Agent Computer.app`) can be downloaded from Gitee too — see "Distribution".
 
+![The PopAgent window: projects and sessions on the left, the visible process in the middle, the changed file from the same repo on the right](docs/screenshots/01-chat.png)
+
 One line: **an external control surface for the agent you're already running.** The engine keeps running on your own machine; the web page is where you watch it work, manage its tools and models, cut in to correct it whenever you like, and — when the moment comes — read files, open a terminal, or highlight a passage and ask for a change.
 
 Single user, loopback only, and **the engine's own on-disk files are always the source of truth for a conversation** — no database, no account system, no second copy of the session in our own store. One `pop-agent` process is one person's workbench.
+
+Beyond "watch it work", there are six things most other agent front-ends never bother with: **it can listen and speak, run itself every morning, drive your Mac, draw the plan, push to your phone, and be reached from outside** — see [Six things most front-ends skip](#six-things-most-front-ends-skip).
 
 ---
 
 ## Install
 
-Requires **Node.js ≥ 22.19** and **npm ≥ 9**; macOS / Linux / Windows all work. You end up with an `pop-agent` command (short aliases: `pop`, `pop-agent` — all equivalent).
+### macOS: download the app (easiest — no Node required)
 
-### Install globally with npm (recommended)
+Grab `PopAgent-<version>-arm64.dmg` (Apple Silicon) from [Releases](https://github.com/duzhenxun/pop-agent/releases/latest) and drag it into `/Applications` — **no Node, no terminal**. The runtime ships inside the app; double-click and you have the whole workbench.
+
+> Intel Macs: use the npm route below for now (or run the arm64 build under Rosetta).
+> If macOS blocks the first launch (the build is not notarised), `Right-click → Open` once.
+
+### Other platforms, or you prefer the CLI: install globally with npm (recommended)
+
+Requires **Node.js ≥ 22.19** and **npm ≥ 9**; macOS / Linux / Windows all work. You end up with a `pop-agent` command (short aliases: `pop`, `pop-agent` — all equivalent).
 
 ```bash
 npm -g install pop-agent
@@ -159,11 +170,77 @@ Three hard rules:
 
 ---
 
+## Six things most front-ends skip
+
+Most agent UIs stop at "chat". These six are finished and used daily — and they are where most of the work went.
+
+### 1. Live voice: speak and it types along; it answers and reads it back
+
+![Voice panel: four event cues and local TTS](docs/screenshots/10-voice.png)
+
+- **Talk instead of typing**: the mic bubble in the composer listens as you speak and **text lands in the box word by word** — not one blob at the end. "Send automatically when I stop talking" is a setting; you can also hold the key, say one short thing, and release.
+- **One key, two behaviours**: tap to keep listening (tap again to stop), hold to talk and release to send. The bubble drags anywhere on screen.
+- **It reads its answer out loud**: TTS for the final reply with adjustable speed and voice, plus pause / resume / stop (buttons on the floating bar and shortcuts). Four event types (start / end / error / waiting for approval) each have their own cue, previewable, with its own volume.
+- **Offline by default**: speech-to-text prefers macOS local recognition (`SFSpeechRecognizer`) and text-to-speech uses the system voice — nothing leaves the machine, no network, no cost. Switch to `edge` (Microsoft) or your own `kokoro` / `qwen3` for one consistent voice.
+
+### 2. Scheduled tasks: say it once, it runs every morning
+
+![Scheduled tasks panel](docs/screenshots/19-cron.png)
+
+- **A task = a prompt + a five-field cron expression + a timezone.** Pick "every N minutes / daily / weekdays / weekly / monthly" in the panel, or type `0 9 * * *`.
+- **Two kinds**: `text tasks` go straight to the model with no tools and no repo access (cheapest); `agent tasks` run a real turn in the workspace and can read files, run commands and edit code.
+- **Create them from the chat**: on pi the agent has a `cron` tool, so "check this repo's changes every morning at 9" gets its name, workspace and timezone filled in for you.
+- **Unattended means unattended**: nobody clicks an approval dialog at 3am, so **writes are denied by default** unless you tick "allow file changes" on that task; a task that hits the watchdog limit is interrupted and recorded as **failed** — half an answer is never reported as success.
+
+### 3. Computer control: the agent actually drives your Mac
+
+![Computer control panel: helper status and system permissions](docs/screenshots/20-computer.png)
+
+Not the "screenshot and guess the coordinates" approach: it reads the **macOS accessibility (AX) element tree** and clicks by element id, so clicks land and the meaning is known.
+
+- **What it can do**: click by id (`AXPress`, falling back to coordinates only when needed), type / set values / paste (long text goes through the clipboard and the previous clipboard is restored), send shortcuts, scroll, drag in steps, run menu paths, and wait for the UI to settle between steps.
+- **What it refuses**: password fields are never filled in for you; system authentication and apps protected by System Settings stay off-limits unless you list them as exceptions.
+- **The master switch is the skill itself**: turning it on writes the `agent-computer` skill to disk, so **any engine with bash** can drive the Mac — not just pi. Turning it off disables the skill and deletes nothing.
+- It needs a local helper (*Agent Computer.app*); the panel shows where it is, whether it runs, and whether Accessibility and Screen Recording are **actually granted**.
+
+### 4. Canvas: draw "what happens next" as a graph
+
+![Canvas: the agent turns a plan into nodes and dependencies](docs/screenshots/18-canvas.png)
+
+- Describe something that takes many steps and the agent calls the `canvas` tool to lay it out as **nodes plus dependency edges** on the right. Nodes carry kinds (task / milestone / risk / decision / doc), so it is obvious which step is likely to blow up and which one needs your decision.
+- **It is interactive**: mark a step running when you start it and done when you finish — progress shows up on the canvas, not just in chat.
+- **It drills down**: when one step hides several sub-steps, use a sub-plan and keep the main graph to summaries.
+- Layout is computed by the host from the dependency graph, so the model never worries about coordinates.
+
+### 5. Push to your phone: the phone buzzes when a turn ends
+
+![Push panel: subscription state and multiple devices](docs/screenshots/11-push.png)
+
+- **One push per finished turn**: the title is the project, the body is the session; failures get ❌ and interruptions ⏹.
+- **Web Push (VAPID)**: no third-party service. Keys are generated on first start (`vapid-keys.json`, mode 0600). Multiple devices, test push, clear all.
+- Add it to your phone's home screen and it behaves like an app (PWA); tapping the notification opens that session.
+
+### 6. Remote access: keep working from your phone, elsewhere
+
+![Remote: access password and login protection](docs/screenshots/21-remote.png)
+
+- `pop-agent -H 0.0.0.0` and you can open it from a phone or another computer. **The password must be set on the machine itself** (remote clients may not set one — otherwise whoever finds the port first takes over).
+- **Login protection**: three wrong passwords from the same origin pauses it for 30 minutes (both tunable), and while paused the password is not even compared; restarting the service does not unlock it. The panel also lists recent login activity (which IP, success / which attempt failed / paused).
+- **The phone really gets a phone layout**: the sidebar becomes a drawer, the top bar keeps icons only, the composer goes to 18px so iOS does not zoom, and the right pane becomes a full-screen second page.
+
+![Single-column layout on a phone](docs/screenshots/16-mobile.png)
+
+> Voice, scheduling, computer control, canvas, push and remote all live in **one process**, not bolted-on tools — so they share the same sessions, the same workspace and the same approval rules.
+
+---
+
 ## Conversation
 
 **Streaming text + collapsible thinking blocks + tool cards.** A tool card shows arguments, the full command (copyable), output, duration and pass/fail. While the turn runs, thinking and tool calls **show only the one line of narration from the newest group** (no thinking rows, no tool cards — the command that is actually running is reported by the status line at the very bottom; the "N thinking · N tools · Xs" stopwatch sits on top), then **fold into that row when the turn ends** (everything before the final conclusion) — click it to get the full timeline back, so only the final answer stays on screen.
 
 The footer of every reply is the usage **for that turn**: input (cache miss) / output / cache read / cost, with a "Copy" that takes the whole block. The running total for the session is behind the context ring in the status bar (subagents are separate sessions billed separately and are not counted there).
+
+![A full reply footer: usage, changed-files chip, suggested actions](docs/screenshots/02-answer.png)
 
 A few things in the conversation are clickable:
 
@@ -181,9 +258,16 @@ While a turn is running, the composer does not lock up:
 | **Queue** | Wait until this turn ends; you can see what's at the head of the queue and retract anything |
 | **Stop** | Interrupt the turn and keep whatever was already produced |
 
-Steering is pi-only (its SDK has `streamingBehavior: "steer"`). Other engines have no such notion, so the host **degrades it to queueing** rather than firing a second message that would flush the active turn.
+Steering comes in two flavours, and the UI says which one you get:
+
+- **pi: a real steer.** Its SDK has `streamingBehavior: "steer"`, so the message joins **the same turn** (the model sees it on its next sampling step). The turn does not end and the transcript has no seam.
+- **codex / opencode / DeepSeek Harness / Claude Code: interrupt and continue.** Their local protocols (JSON-RPC / ACP) allow exactly one prompt per session at a time and have no notion of steering, so the host first **stops the current step** and then sends your message as **the next turn**. The button says "interrupt the current step", the transcript keeps a seam where the turn was cut, and a tool that was running is marked `interrupted`.
+
+Both paths obey one rule: **never fire a second message that would flush the engine's own active turn** (that leaves the session permanently busy). If the turn does not stop within 5 seconds, the steer degrades to queueing with a visible notice.
 
 ---
+
+![The floating toolbar after selecting part of a reply](docs/screenshots/14-selection-toolbar.png)
 
 ## Notes: highlight a passage and comment on it
 
@@ -202,11 +286,15 @@ This needs to be one sentence shorter
 
 Notes are **local anchors**: they locate themselves by "quoted text + surrounding context", so badges still find their place after the body reflows or a stream appends more text. They live in this browser's `localStorage`, isolated per session — never on the server, never in the cloud, invisible from another device.
 
+![After annotating: ① badges in the body and an "N notes" pill in the composer](docs/screenshots/15-annotations.png)
+
 **Line references in files** are the other road: select lines in the preview (`Shift+click` for a range, `Ctrl/Cmd+click` to add, right-click for the line menu) and "Add to conversation" writes a **path plus line numbers** such as `@web/src/App.tsx:120-138`, leaving the agent to read it.
 
 ---
 
 ## Side chat: ask one question and go
+
+![The side chat in the right pane: its own channel, never written to disk](docs/screenshots/13-tempchat.png)
 
 The `Temp session` button in the top bar (or the first card on the right pane's landing page) opens another conversation **in the right pane**:
 
@@ -234,6 +322,8 @@ The files area sits at the bottom of the sidebar and also works as a tab in the 
 
 ### Diff
 
+![The file preview's diff view against HEAD, line-level red and green](docs/screenshots/03-diff.png)
+
 The "diff" toggle at the top of the preview is a comparison against `HEAD`: a `+285 −78` summary, line-level red/green, and a switch between "changes only" and the full file. Coming in from a changed-files chip lands directly on the diff.
 
 ### git
@@ -247,6 +337,8 @@ The branch chip at the top of the files area lists local branches and switches t
 ---
 
 ## Terminal
+
+![The embedded terminal (a real PTY) running git status / git diff --stat](docs/screenshots/04-terminal.png)
 
 The terminal in the right pane is a **real PTY** (`node-pty` + xterm.js): vim / top / Ctrl-C / colors / line editing all behave, the cwd matches the session's project, and you can pass one initial command (the upgrade flow uses exactly that).
 
@@ -264,7 +356,7 @@ The engines are not "the same prompt in different costumes" — each is that ven
 
 | Engine | How it's wired | Notes |
 |---|---|---|
-| **pi** (default) | Native SDK | The full plugin / skill ecosystem, lazy tool loading, the approval gate, subagents, steering; models and providers are managed by this workbench |
+| **pi** (default) | Native SDK | The full plugin / skill ecosystem, lazy tool loading, the approval gate, subagents, **native steering**; models and providers are managed by this workbench |
 | **Codex** | app-server (JSON-RPC) | Its own loop and sandbox; sessions are shared with Codex Desktop / CLI; approvals are command- and file-level |
 | **DeepSeek Harness** | ACP | Model and thinking level are switchable; permissions confirmed one by one |
 | **opencode** | ACP | Its own tools / MCP / plugin ecosystem; sessions are shared with the opencode CLI / TUI; approvals follow opencode's own `permission` config |
@@ -278,7 +370,7 @@ The differences (the capability matrix in `server/engine/registry.ts`, which the
 | Approvals | ✅ | ✅ | ✅ | per config | ✅ |
 | Model / thinking level | ✅ | ✅ | ✅ | ✅ | model only / no levels |
 | Resume past sessions | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Steering | ✅ | — | — | — | — |
+| Steering | ✅ native | ✅ interrupt | ✅ interrupt | ✅ interrupt | ✅ interrupt |
 | Subagent panel | ✅ | — | — | — | — |
 | Workbench-managed providers | ✅ | — | — | — | — |
 | Side chat (in memory) | ✅ | — | — | — | — |
@@ -290,6 +382,8 @@ Engines are switched in the **bottom status bar** (not the top bar), and every s
 ---
 
 ## Models and providers
+
+![Models and providers: the services that have a key or a login](docs/screenshots/05-models.png)
 
 - **Subscriptions**: OAuth login (9 providers), usable right after signing in — no key to copy by hand.
 - **Official built-ins**: the ones pi's catalog carries models for — **paste one key and it works**; endpoints and model tables come from the catalog.
@@ -304,6 +398,8 @@ The truth is spread across `~/.pi/agent/models.json` (the provider catalog), `mo
 
 ## Skills
 
+![Skills: installed / enabled / disabled, with the summary and files of one skill](docs/screenshots/06-skills.png)
+
 Reads `~/.agents/skills/<dir>/SKILL.md`; the list parses frontmatter only (no yaml dependency). **Enabling or disabling means renaming `SKILL.md` to `.SKILL.md.disabled`** — there is no second state file, so what you see in the CLI agrees with what you see here.
 
 **Skill Hub**: search by category plus one-click install (200k+ index); it can also install a specific `skills/<name>` from a Git repo, or create one by hand.
@@ -311,6 +407,8 @@ Reads `~/.agents/skills/<dir>/SKILL.md`; the list parses frontmatter only (no ya
 ---
 
 ## MCP
+
+![MCP: global and project config, toggles and exposure tiers](docs/screenshots/07-mcp.png)
 
 Reads and writes two config files: `~/.pi/agent/mcp.json` (global) and `<workspace>/.pi/mcp.json` (project), where **a project entry with the same name overrides the global one**, and writes preserve indentation and CRLF.
 
@@ -323,6 +421,8 @@ Reads and writes two config files: `~/.pi/agent/mcp.json` (global) and `<workspa
 
 ## Plugins
 
+![Plugin (pi package) load state, disabled per package](docs/screenshots/09-plugins.png)
+
 Plugins are pi packages: the `packages` entry in `settings.json` (npm / git / local directory) plus the loose `~/.pi/agent/extensions/` and `<ws>/.pi/extensions/`.
 
 State comes from the pi SDK's `resolve()` (**querying never triggers `npm install`**), with four states `loaded / installed / missing / disabled`; disabling per package writes `autoload:false` and deletes nothing.
@@ -330,6 +430,8 @@ State comes from the pi SDK's `resolve()` (**querying never triggers `npm instal
 ---
 
 ## Subagents: run many, manage each
+
+![Subagent templates and the default concurrency](docs/screenshots/08-subagents.png)
 
 Once the main agent has the `Agent` tool it can run several subagents in parallel, and each one is **a real session** (its own context, session file and tool allowlist).
 
@@ -400,6 +502,8 @@ A task is a prompt plus a five-field cron expression and a timezone. The panel's
 
 ## Settings
 
+![Settings → Interface: the top-bar name can be the product name or the engine name](docs/screenshots/12-settings.png)
+
 The top bar is the entry point for every panel, and **each entry can be hidden in Settings → Interface**. A fresh install ticks only **models / scheduled tasks (cron) / skills**; push, voice, plugins, MCP, subagents, settings and the temp session are ticked back on when you want them (the top-bar Settings button starts hidden — the leftmost chip in the bottom status bar opens the same panel). The bottom status bar starts with **settings / engine / approval mode** only; queued, running, context, full history, system prompt, terminal and the top toggle come back from Settings → Interface → Bottom, where you can also drag to reorder. The sidebar and the right pane both drag wider and collapse, and their widths are remembered locally in `localStorage`.
 
 The "settings" button opens six pages, and the tabs themselves drag to reorder — **whichever sits first is the page that opens next time**:
@@ -408,10 +512,10 @@ The "settings" button opens six pages, and the tabs themselves drag to reorder �
 |---|---|
 | **Interface** | The frame: which top-bar entries show (text and icon ticked separately), which status-bar chunks show (queue / working / context usage), how many sessions each project lists in the sidebar, and the max width of images in the chat |
 | **Conversation** | What the chat area itself looks like: which blocks sit above the composer (templates / think / quick commands), the text of your quick phrases and the default thinking level (these two are saved server-side, identical on every device), whether cost shows in the conversation, and whether thinking blocks and tool cards start expanded. **Built-in prompt templates and the default quick phrases (Continue / Summarize) are stored twice — Chinese original plus English**: an English UI shows the English copy (and inserts / sends it, not just the card titles); templates and phrases you edited or created yourself are never auto-translated |
-| **Appearance** | Sizes only: three font sizes (chat body / sidebar project names / sidebar session names, slider 2–30px, default “Default” 14px), content width in 4 steps (720 / 900 / 1100 / full, default “Default” 900px), top-bar height (default 100% = standard), and the top-bar logo and name (both hideable, logo replaceable; custom renaming is gone — the bar shows the product name) |
+| **Appearance** | Sizes and the front door: three font sizes (chat body / sidebar project names / sidebar session names, slider 2–30px, default “Default” 14px), content width in 4 steps (720 / 900 / 1100 / full, default “Default” 900px), and the top-bar name plus logo. **The name has two modes**: the product name (`PopAgent`, which you can rename — clearing it falls back to the default) or **the engine name**, which follows the current engine (`PiAgent` / `CodexAgent` / `DshAgent` / `OcAgent` / `ClaudeAgent`) so several windows or a switched engine make it obvious who you are talking to. The logo is replaceable and both can be hidden; the top-bar height is now fixed to the standard size (no scaling) |
 | **Theme** | 6 palettes (bright white, warm paper, mist teal, Tokyo night, mocha, nord) — one click and it applies |
 | **Language** | Chinese / English, applied immediately |
-| **Shortcuts** | 12 actions, rebindable, clearable and restorable to defaults, plus a cheat sheet |
+| **Shortcuts** | 19 actions **grouped by function** (session / conversation / panels & views / voice), rebindable, clearable and restorable to defaults, plus a cheat sheet |
 
 A seventh tab, **Remote**, is where the access password, the login guard (3 tries / 30 minutes by default) and the sign-in activity list live — see the phone and security sections.
 
@@ -424,6 +528,8 @@ Appearance, theme, interface and language preferences stay on the device only (`
 On narrow screens (mobile UA or ≤400px) the layout collapses to a single column:
 
 - the sidebar becomes an overlay drawer (`clamp(260px, 76vw, 340px)`, tap the scrim to close, closes on its own after you pick a session);
+
+![The project sidebar is an overlay drawer on a phone](docs/screenshots/17-mobile-drawer.png)
 - the top bar wraps, keeps icons only, and scrolls horizontally;
 - the right-pane workspace becomes a full-screen second page that starts below the top bar using `100dvh` (dodging the iOS toolbars);
 - the composer is 18px so iOS doesn't zoom on focus; the model menu becomes a bottom sheet;
@@ -452,14 +558,31 @@ Sorting is a deliberate choice: **newest-created first inside a group** — a ne
 
 **Every shortcut** is rebindable in Settings → Shortcuts (a combo needs `Mod`/`Alt`; a single key only works for one modifier alone — right ⌘ / right ⌥ / ⌃ / Alt — or a function key F1–F12; bare letters are rejected). On macOS `Mod` is ⌘, elsewhere it's Ctrl.
 
-| Action | Default | Action | Default |
-|---|---|---|---|
-| New session | `Mod+K` | Open right panel | `Mod+Alt+O` |
-| New project | `Mod+M` | Close right panel | `Mod+Alt+W` |
-| Temp session | `Mod+Shift+K` | Toggle left sidebar | `Mod+Alt+L` |
-| Settings | `Mod+Alt+S` | Files | `Mod+Alt+F` |
-| New terminal | `Mod+Alt+T` | Search file contents | `Mod+Shift+F` |
-| Shortcut cheat sheet | `Mod+/` | | |
+The panel groups them **by function**; defaults:
+
+| Group | Action | Default |
+|---|---|---|
+| Session | New session | `Mod+Alt+N` |
+| Session | New project | `Mod+Alt+X` |
+| Session | Temp session | `Mod+Alt+H` |
+| Conversation | Send (sends when idle; steers or queues while running) | `Mod+Enter` |
+| Conversation | Queue | `Mod+Shift+Enter` |
+| Conversation | Steer | `Mod+Alt+Enter` |
+| Conversation | Stop the running turn | `Mod+Period` |
+| Panels & views | Settings | `Mod+Comma` |
+| Panels & views | Open / close right panel | `Mod+Alt+O` |
+| Panels & views | Toggle left sidebar | `Mod+Alt+L` |
+| Panels & views | Projects | `Mod+Alt+P` |
+| Panels & views | Files | `Mod+Alt+F` |
+| Panels & views | Canvas | `Mod+Alt+C` |
+| Panels & views | Terminal | `Ctrl+Backquote` |
+| Panels & views | Search file contents | `Mod+Shift+F` |
+| Panels & views | Shortcut cheat sheet | `Mod+/` |
+| Voice | Start / stop voice input | `Mod+Alt+M` |
+| Voice | Pause / resume reading | `Mod+Shift+P` |
+| Voice | Stop reading | `Mod+Alt+S` |
+
+A bare `Enter` is still "send / queue" (the composer's own convention, not one of the four above and not rebindable); only modified `Enter` goes through the shortcut system.
 
 The mic key does both, with no extra setting: **press to keep listening, press again to stop**; or **hold it, say one short thing, release to stop**.
 
@@ -468,16 +591,11 @@ The mic key does both, with no extra setting: **press to keep listening, press a
 | Command | Kind | What it does |
 |---|---|---|
 | `/new [first message]` | local | New conversation, optionally with its first message |
-| `/name <name>` | local | Rename the current session |
-| `/model <name>` | local | Switch model (fuzzy match on id or display name) |
-| `/thinking <level>` | local | Set the thinking level (off / low / … / max) |
-| `/copy` | local | Copy the last assistant message |
-| `/session` | local | Message count / tokens / cost for the session |
-| `/resume` | local | Refresh the session list (sessions another terminal just opened) |
 | `/skill <skill name>` | to the agent | Use a skill (the panel lists the installed ones) |
 | `/compact [note]` | to the agent | Compact the context |
 | `/plan [on\|off]` | to the agent | Turn plan mode on or off |
-| `/cwd <path>` | to the agent | Change the working directory |
+
+Renaming, switching model, switching thinking level, copying the last reply and session stats are not slash commands — they already have buttons in the UI (double-click the title to rename, the model dropdown, the context ring in the status bar). Keeping one entry point per action is cheaper to maintain than two.
 
 ---
 

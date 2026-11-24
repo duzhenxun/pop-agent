@@ -34,7 +34,7 @@ import {
 	type TtsProvider,
 	type VoiceOption,
 } from "../tts.ts";
-import { fetchRemoteVoices, type RemoteVoice } from "../remote-tts.ts";
+import { fetchRemoteVoices, type RemoteTtsProvider, type RemoteVoice } from "../remote-tts.ts";
 import { requestStopSpeech } from "../speech-control.ts";
 import { playVoiceClip } from "../voice-clips.ts";
 import { voiceChannelOf } from "../voice-cue-logic.ts";
@@ -71,6 +71,9 @@ type AsrStatus = {
 	state: string;
 	message?: string;
 	locale?: string;
+	/** 云端识别时：用的是哪家（deepseek 等）与服务端给的中文名 */
+	provider?: string;
+	providerLabel?: string;
 	/** 没装时服务端给的安装信息（去哪儿下、装好会在哪） */
 	install?: { downloadUrl: string; appPath: string; canAutoInstall: boolean } | null;
 };
@@ -160,9 +163,32 @@ export function VoicePanel() {
 	const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
 	const available = isSpeechAvailable(tts);
 	const isRemote = (tts.provider ?? "browser") !== "browser";
-	const remoteProvider = tts.provider === "kokoro" || tts.provider === "qwen3" ? tts.provider : "edge";
+	/**
+	 * 当前选的云端引擎。
+	 *
+	 * 不能再用「不是 kokoro/qwen3 就当 edge」那种写法了：云端引擎会越来越多
+	 * （DeepSeek 之后还有千问、豆包），漏掉一个就会静默地去请求 Edge 的音色，
+	 * 音色 ID 对不上、听着还挺像成功。
+	 */
+	const remoteProvider: RemoteTtsProvider =
+		tts.provider === "kokoro" ||
+		tts.provider === "qwen3" ||
+		tts.provider === "deepseek" ||
+		tts.provider === "qwen"
+			? tts.provider
+			: "edge";
 	const remoteVoice =
-		tts.provider === "kokoro" ? tts.kokoroVoice : tts.provider === "qwen3" ? tts.qwen3Voice : tts.edgeVoice;
+		tts.provider === "kokoro"
+			? tts.kokoroVoice
+			: tts.provider === "qwen3"
+				? tts.qwen3Voice
+				: tts.provider === "deepseek"
+					? tts.deepseekVoice
+					: tts.provider === "qwen"
+						? tts.qwenVoice
+						: tts.edgeVoice;
+	/** 云端引擎的注册状态（服务端 /api/tts/providers）：用来提示「这家还没配密钥，去哪儿配」 */
+	const [ttsProviders, setTtsProviders] = useState<{ id: string; label: string; configured: boolean; note?: string }[]>([]);
 	// 旧版本可能存过 Google 在线音色；不在当前清单里时显示回退到「自动」
 	const selectedVoice = voices.some((voice) => voice.voiceURI === tts.voiceURI) ? tts.voiceURI : "";
 	/**
@@ -188,6 +214,14 @@ export function VoicePanel() {
 		const timer = window.setTimeout(() => controller.abort(), 15_000);
 		setLoadingVoices(true);
 		setVoicesIssue(null);
+		// 引擎清单（含「哪家还没配密钥」）只取一次，跟音色一起拉
+		void fetch("/api/tts/providers")
+			.then(async (response) => {
+				if (!response.ok) return;
+				const result = (await response.json()) as { providers?: typeof ttsProviders };
+				if (!disposed && Array.isArray(result.providers)) setTtsProviders(result.providers);
+			})
+			.catch(() => undefined);
 		void fetchRemoteVoices(controller.signal, remoteProvider)
 			.then((items) => {
 				if (!disposed) setRemoteVoices(items);
@@ -461,7 +495,11 @@ export function VoicePanel() {
 						{isRemote
 							? remoteProvider === "edge"
 								? t("语音引擎（在线，文字发到微软）", "Speech engine (online, text goes to Microsoft)")
-								: t("语音引擎（本机 MLX，不联网）", "Speech engine (local MLX, offline)")
+								: remoteProvider === "deepseek"
+									? t("语音引擎（在线，文字发到 DeepSeek）", "Speech engine (online, text goes to DeepSeek)")
+									: remoteProvider === "qwen"
+										? t("语音引擎（在线，文字发到阿里千问）", "Speech engine (online, text goes to Alibaba Qwen)")
+										: t("语音引擎（本机 MLX，不联网）", "Speech engine (local MLX, offline)")
 							: t("语音引擎", "Speech engine")}
 					</span>
 					<select
@@ -471,10 +509,22 @@ export function VoicePanel() {
 					>
 						<option value="browser">{t("浏览器语音", "Browser speech")}</option>
 						<option value="edge">{t("微软 Edge TTS（在线）", "Microsoft Edge TTS (online)")}</option>
+						<option value="deepseek">{t("DeepSeek TTS（在线）", "DeepSeek TTS (online)")}</option>
+						<option value="qwen">{t("千问 Qwen-Audio-TTS（在线）", "Qwen Audio TTS (online)")}</option>
 						<option value="kokoro">{t("Kokoro（本地）", "Kokoro (local)")}</option>
 						<option value="qwen3">{t("Qwen3-TTS（本地）", "Qwen3-TTS (local)")}</option>
 					</select>
 				</label>
+
+				{/* 云端引擎没配密钥：直接说清楚改哪个文件，不要让用户去猜为什么一选就没声。 */}
+				{isRemote && ttsProviders.some((item) => item.id === remoteProvider && !item.configured) ? (
+					<div className="voice-issue voice-status" role="status">
+						<span className="voice-issue-text">
+							{ttsProviders.find((item) => item.id === remoteProvider)?.note ??
+								t("这个引擎还没配置密钥", "This engine has no API key configured yet")}
+						</span>
+					</div>
+				) : null}
 
 				{/* 「语音」（挑音色）紧跟在「语音引擎」下面（用户 2026-11-24：「这块放到语音引擎下面」）：
 				 * 顺序变成「选引擎 → 选音色 → 调语速/音量」，跟人实际的动作一致；
@@ -491,7 +541,11 @@ export function VoicePanel() {
 										? { kokoroVoice: event.target.value }
 										: remoteProvider === "qwen3"
 											? { qwen3Voice: event.target.value }
-											: { edgeVoice: event.target.value },
+											: remoteProvider === "deepseek"
+												? { deepseekVoice: event.target.value }
+												: remoteProvider === "qwen"
+													? { qwenVoice: event.target.value }
+													: { edgeVoice: event.target.value },
 								)
 							}
 							disabled={loadingVoices}
@@ -583,7 +637,12 @@ export function VoicePanel() {
 				{/* 语速与提示音音量并排一行：两块都是滑杆，竖着排白占一屏（用户 2026-11-21：「语速跟提示音可以放成一行」） */}
 				<div className="voice-row-pair">
 					<div className="voice-row voice-row-stacked">
-						<span className="voice-row-label">{t("语速", "Rate")}</span>
+						<span className="voice-row-label">{t("语速", "Rate")}
+							{/* DeepSeek 不支持调语速（官方文档写明），滑杆拖了也不会变 —— 先说在前面，别让人白试 */}
+							{remoteProvider === "deepseek" ? (
+								<span className="voice-row-hint">{t("DeepSeek 不支持调语速", "DeepSeek has no rate control")}</span>
+							) : null}
+						</span>
 						<span className="voice-slider-line">
 							<input
 								type="range"
@@ -591,6 +650,7 @@ export function VoicePanel() {
 								max={2}
 								step={0.1}
 								value={tts.rate}
+								disabled={remoteProvider === "deepseek"}
 								onChange={(event) => patchTts({ rate: Number(event.target.value) })}
 							/>
 							<span className="voice-value mono">{tts.rate.toFixed(1)}×</span>
@@ -830,12 +890,23 @@ export function VoicePanel() {
 							saveVoiceInputSettings({
 								...voiceInput,
 								engine:
-									event.target.value === "browser" || event.target.value === "local" ? event.target.value : "auto",
+									event.target.value === "browser" ||
+									event.target.value === "local" ||
+									event.target.value === "cloud"
+										? event.target.value
+										: "auto",
 							})
 						}
 					>
 						<option value="auto">{t("自动（优先本地）", "Auto (local first)")}</option>
 						<option value="local">{t("本地（macOS 离线）", "Local (macOS, offline)")}</option>
+						{/* 云端识别：服务端 `~/.pop-agent/stt.json` 配了什么就用什么（DeepSeek / 千问 / 豆包）。
+						    它不依赖本机的 Agent Computer，也不走浏览器 —— 选它就是「一定走服务端那条线」。 */}
+						<option value="cloud">
+							{asr?.providerLabel
+								? t(`云端（${asr.providerLabel}）`, `Cloud (${asr.providerLabel})`)
+								: t("云端（DeepSeek / 千问 / 豆包，服务端配置）", "Cloud (DeepSeek / Qwen / Doubao, server config)")}
+						</option>
 						{/* 桌面壳里 Web Speech 必死：Electron 用开源 Chromium，没有 Google 的语音后端与
 						    API key，网络通也一样报 network。所以这个选项只在浏览器里出现。 */}
 						{IS_DESKTOP_SHELL ? null : (
@@ -851,12 +922,17 @@ export function VoicePanel() {
 					<>
 						<div className="voice-row voice-row-status">
 							<span className="voice-row-label">
-								{t("本地识别", "Local recognition")}
+								{asr?.provider ? t("识别状态", "Recognition") : t("本地识别", "Local recognition")}
 								<span className="voice-row-hint">
 									{asr === null || asr.state === "idle"
 										? t("还没启动过", "Not started yet")
 										: asr.state === "ready"
-											? t(`就绪（${asr.locale ?? "zh-CN"}，离线）`, `Ready (${asr.locale ?? "zh-CN"}, offline)`)
+											? asr.provider
+												? t(
+														`就绪（${asr.providerLabel ?? asr.provider}，云端）`,
+														`Ready (${asr.providerLabel ?? asr.provider}, cloud)`,
+													)
+												: t(`就绪（${asr.locale ?? "zh-CN"}，离线）`, `Ready (${asr.locale ?? "zh-CN"}, offline)`)
 											: asr.state === "authorizing"
 												? t(
 														"等待系统授权：屏幕上的提示点「允许」即可",
@@ -961,10 +1037,7 @@ export function VoicePanel() {
 						{t("说完时正在跑", "While a turn is running")}
 						<span className="voice-row-hint">
 							{steerSupported
-								? t(
-										"排队 = 等这一轮结束再发；插队 = 打断它，按新指令继续",
-										"Queue = sends after this turn; Steer = interrupts it and continues with the new instruction",
-									)
+								? null
 								: t(
 										"当前引擎只能排队（插队需要 Pi 引擎）",
 										"This engine can only queue — steering requires the Pi engine",

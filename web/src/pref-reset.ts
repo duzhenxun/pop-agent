@@ -29,7 +29,7 @@ const PREFIXES = ["pop-agent.appbar.", "pop-agent.statusbar.", "pop-agent.compos
 const EXACT = [
 	// 底部状态栏顺序（`statusbar-order.ts`）
 	"pop-agent.statusbar-order.v1",
-	// 外观：内容宽度 + 三处字号 + 顶栏高度（含各自的老 key，见 chat-display / sidebar-font / appbar-scale）
+	// 外观：内容宽度 + 三处字号（含各自的老 key，见 chat-display / sidebar-font）
 	"pop-agent.chat-width",
 	"pop-agent.chat-font.v2",
 	"pop-agent.chat-font",
@@ -37,6 +37,7 @@ const EXACT = [
 	"pop-agent.sidebar-project-font",
 	"pop-agent.sidebar-session-font.v2",
 	"pop-agent.sidebar-session-font",
+	// 顶栏高度：设置已移除（2026-11-24），这里留着只为把老用户存过的值清掉
 	"pop-agent.appbar-scale.v2",
 	"pop-agent.appbar-scale",
 ];

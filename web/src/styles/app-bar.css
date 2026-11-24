@@ -124,15 +124,17 @@
  * 鼠标移到侧栏那条分割线上时，**顶栏这一段也跟着变蓝**。
  *
  * 用户 2026-11-23：「网页里鼠标放上，上面那块没有变蓝色」——分割线的悬停高亮原来画在
- * `.side-resizer::after` 上（在侧栏内部，只覆盖侧栏高度），所以那条 2px 蓝线到顶栏底下就断了。
+ * `.side-resizer::after` 上（在侧栏内部，只覆盖侧栏高度），所以那条蓝线到顶栏底下就断了。
  * 这里用 `:has()` 从共同祖先 `.app` 反查命中：hover / active / 拖拽中（`html.is-resizing`）
- * 三种状态都让顶栏那一段变 2px 主色，跟下面接成一条完整的竖线。
- */
+ * 三种状态都让顶栏那一段变主色，跟下面接成一条完整的竖线。
+ *
+ * 宽度保持 1px（2026-11-24 用户：「这根蓝线太粗了，跟上面一样细」）：
+ * 上下一律 1px，悬停只变颜色、不变粗细。*/
 .app:has(.side-resizer:hover) .appbar::after,
 .app:has(.side-resizer:active) .appbar::after,
 html.is-resizing .appbar::after {
 	left: calc(var(--side-w, 0px) - 1px);
-	width: 2px;
+	width: 1px;
 	background: var(--accent);
 }
 
@@ -1137,6 +1139,13 @@ html.is-resizing .appbar::after {
  * 点图标/文字（正常都点在中间）不受影响。窄屏手机上不需要（没有窗口可拖），
  * 且移动端根本不命中 `data-shell`。
  *
+ * ⚠️ 2026-11-24（用户：「在这个位置拖动为什么偶尔老失灵」）—— 这条带子原来从 `top: 0`
+ * 开始，而 **macOS 窗口最上面那一圈是「上边缘缩放热区」**（实测：在距上沿 ~2px 处按下拖动，
+ * 窗口高度从 621 变成 600，即被当成从顶部 resize，而不是移窗）。5px 里有 4px 归系统，
+ * 真正能拖的只剩 1px —— 抓住抓不住看运气，用户看到的就是「偶尔失灵」。
+ * 现在整条带子下移到 `top: 5px`，完全落在缩放热区**下面**，5px 全部可用。
+ * 代价：按钮最上面那 6px 是拖窗区（原来只有 1px 可用，实际手感反而更稳）。
+ *
  * z-index 要比按钮高才拿得到这一条；`.appbar` 自己已经是 z-index: 4 的定位元素，
  * 所以这里 5 就能压在栏内所有内容之上（弹窗是 60+，不受影响）。 */
 .appbar-drag {
@@ -1146,10 +1155,11 @@ html.is-resizing .appbar::after {
 :root[data-shell="electron-mac"] .appbar-drag {
 	display: block;
 	position: absolute;
-	top: 0;
+	/* 5px 起：上面的 0~4px 是 macOS 自己的上边缘缩放热区，压在那里的拖动根本不生效 */
+	top: 5px;
 	left: 0;
 	right: 0;
-	height: 5px;
+	height: 6px;
 	z-index: 5;
 	-webkit-app-region: drag;
 }

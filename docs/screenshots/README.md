@@ -1,30 +1,35 @@
 # 截图
 
-README 里用的图都在这。**都是真实运行实例的截图** —— 截自一个 `demo-app` 演示工作区（pi 引擎 + DeepSeek，
-版本 0.8.0），不是 mock，也没有拼图：目录、命令、`+6 −1` 的改动、token 与花费都是那次真实运行留下的。
+README（中英两版）里用的图都在这。**都是真实运行实例的截图** —— 截自一个 `demo-app` 演示工作区
+（pi 引擎 + DeepSeek V4.1 Flash），不是 mock，也没有拼图：目录、命令、`+14 −2` 的改动、token 与花费
+都是那次真实运行留下的。
 
 > 为什么用演示工作区而不是日常项目：README 是公开的，侧栏里那些项目名和会话标题属于私人工作内容。
 > 演示工作区只有两个项目（`demo-app` / `ledger-api`）和几条准备过的会话标题，看起来和真实使用没有区别。
 
 | 文件 | 内容 |
 |---|---|
-| `01-chat.png` | 主图：左侧项目与会话、中间过程里的 8 段思考 + 7 次工具 + 15 步、右侧同一个仓库里被改过的 `store.ts` |
-| `02-answer.png` | 一条回复的完整尾注：markdown 表格、`改动 1 个文件 store.ts` chip、这一轮的 in / out / cache / 花费 |
-| `03-diff.png` | 文件预览的「改动」视图（与 HEAD 对比，`+6 −1`，行级红绿） |
+| `01-chat.png` | 主图：左侧项目与会话、中间过程里的 8 段思考 + 13 次工具 + 24s、右侧同一个仓库里被改过的 `api.ts`（`+14 −2`） |
+| `02-answer.png` | 一条回复的完整尾注：markdown 表格、改动文件 chip、这一轮的 in / out / cache / 花费 |
+| `03-diff.png` | 文件预览的「改动」视图（与 HEAD 对比，行级红绿） |
 | `04-terminal.png` | 内嵌终端（真 PTY）跑 `git status -s` / `git diff --stat` / `ls -l src` |
-| `05-models.png` | 模型与供应商：有 key / 已登录的服务商列表 + 该 provider 的端点、API 形态、模型白名单 |
-| `06-skills.png` | 技能：已装 46 / 启用 43 / 禁用 3，右边是单个技能的摘要与目录文件 |
-| `07-mcp.png` | MCP：全局 / 项目两份配置、启停、exposure 档位、测试连接、配置所在文件 |
-| `08-subagents.png` | 子代理模板（explore / general-purpose / plan）+ 启用开关 + 默认并发 |
+| `05-models.png` | 模型与供应商：有 key / 已登录的服务商列表 |
+| `06-skills.png` | 技能：已装 59 / 启用 29 / 禁用 30，右边是单个技能的摘要与目录文件 |
+| `07-mcp.png` | MCP：全局 / 项目两份配置、启停、exposure 档位 |
+| `08-subagents.png` | 子代理模板 + 启用开关 + 默认并发 |
 | `09-plugins.png` | 插件（pi package）的加载状态与按包停用 |
-| `10-voice.png` | 语音：四类事件提示音 + 本地 TTS |
+| `10-voice.png` | 语音：四类事件提示音 + 本地 TTS + 语音输入设置 |
 | `11-push.png` | 推送：本机推送状态、目标设备、测试推送 |
-| `12-settings.png` | 设置 → 外观：三处字号、内容宽度、6 套色板 |
+| `12-settings.png` | 设置 → 界面：顶栏名称可选**产品名 / 引擎名**，以及顶栏入口勾选 |
 | `13-tempchat.png` | 右栏的临时会话：独立通道、不落盘、带「保存为正式对话」 |
 | `14-selection-toolbar.png` | 选中一段回复后浮出的工具条（添加到会话 / 标注 / 在临时会话中提问） |
 | `15-annotations.png` | 标注之后：正文留 ① 编号徽标，输入框里多出「1 条注释」 |
 | `16-mobile.png` | 手机单栏：顶栏入口只留图标、内容满宽、输入框 18px |
 | `17-mobile-drawer.png` | 手机上的项目侧栏是覆盖式抽屉 |
+| `18-canvas.png` | 画布：agent 把「给 demo-app 加订单导出」拆成 7 个节点 + 7 条依赖 |
+| `19-cron.png` | 定时任务面板：任务列表、cron 表达式、下一次触发 |
+| `20-computer.png` | 电脑控制：helper 状态、辅助功能与屏幕录制授权 |
+| `21-remote.png` | 设置 → 远程：访问密码、登录保护、登录活动 |
 
 ## 怎么重新拍
 

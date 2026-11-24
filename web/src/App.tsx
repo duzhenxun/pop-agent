@@ -1,4 +1,4 @@
-import { REPO_URL, UPGRADE_COMMAND } from "./brand.ts";
+import { engineBrandName, REPO_URL, UPGRADE_COMMAND } from "./brand.ts";
 import { basename } from "./path-utils.ts";
 import { useStickToBottom } from "./stick-to-bottom.ts";
 import { nextAnchorTarget, type AnchorSeen } from "./anchor-target.ts";
@@ -38,6 +38,7 @@ import {
 } from "./shortcuts.ts";
 import { toggleProjects } from "./projects-panel.ts";
 import { toggleShortcutSheet } from "./shortcut-sheet.ts";
+import { requestComposerAction } from "./composer-actions.ts";
 import { isSpeechPausedNow, requestStopSpeech, setSpeechPaused } from "./speech-control.ts";
 import { isVoiceListening, startVoiceInput, stopVoiceInput, toggleVoiceInput } from "./voice-input.ts";
 import { useShortcuts } from "./use-shortcuts.ts";
@@ -111,6 +112,7 @@ import { StatusBar } from "./components/StatusBar.tsx";
 import { BottomTerminal } from "./components/BottomTerminal.tsx";
 import { useT } from "./use-language.ts";
 import { useBrandName } from "./use-brand-name.ts";
+import { setDefaultBrandName } from "./brand-name.ts";
 import { isElectronShell } from "./shell.ts";
 import { syncAppearanceFromSnapshot } from "./appearance-sync.ts";
 
@@ -581,6 +583,16 @@ export function App() {
 	 */
 	const snapshot = useAppSelector((state) => state.snapshot);
 	/**
+	 * 顶栏 / 标签页的默认自称跟着**当前引擎**走（用户 2026-11-24：「我用 Pi 就显示 PiAgent」）。
+	 *
+	 * 名字用引擎选择器里那个**蓝色短标签**（badge：PI / CODEX / DSH / OC / CC）派生（OC → OcAgent），
+	 * 所以顶栏跟面板上看到的字母永远一致。只设「默认名」：用户自定义过的名字仍然优先。
+	 */
+	const engineBadge = snapshot?.engines.find((item) => item.name === snapshot.engine)?.badge ?? null;
+	useEffect(() => {
+		setDefaultBrandName(engineBrandName(snapshot?.engine, engineBadge));
+	}, [snapshot?.engine, engineBadge]);
+	/**
 	 * 外观字号（ADR-0050）：服务端那份变了就应用到浏览器。
 	 *
 	 * agent 在对话里改字号时（`appearance` 工具 → `set_settings` → 快照回推），
@@ -899,6 +911,22 @@ export function App() {
 					return;
 				case "cheatSheet":
 					toggleShortcutSheet();
+					return;
+				/*
+				 * 对话操作（发送 / 排队 / 插队 / 停止）：执行在 Composer 里（它才持有草稿、附件、
+				 * running 与引擎能力），这里只把动作派过去。见 composer-actions.ts 的说明。
+				 */
+				case "sendMessage":
+					requestComposerAction("send");
+					return;
+				case "queueMessage":
+					requestComposerAction("queue");
+					return;
+				case "steerMessage":
+					requestComposerAction("steer");
+					return;
+				case "stopTurn":
+					requestComposerAction("stop");
 					return;
 			}
 		},
@@ -1403,7 +1431,9 @@ export function App() {
 	/** 能不能从某条消息派生分支：引擎得有这能力，临时对话不行（没有会话文件可 fork） */
 	const canFork = (snapshot?.engineCapabilities.forkChat ?? false) && !ephemeralActive;
 	/**
-	 * 从某条消息派生分支。
+	 * 从某条消息派生分支。**消息气泡下面那颗**的语义是「只把这条消息作为开头开新会话」
+	 * （用户 2026-11-24）——之前的对话真的丢掉，所以这里传的是 `startMessageId`；
+	 * 「整段复制一份」走会话行右键 / 顶栏标题菜单（那边不传 startMessageId）。
 	 *
 	 * 必须 `useCallback`：这个函数会当作 prop 传给 `MessageView`，而它是 `memo` 的 ——
 	 * 每次渲染新建一个箭头函数会让 memo 全部失效，一个流式增量（甚至一次悬停）就把整屏消息
@@ -1411,7 +1441,7 @@ export function App() {
 	 */
 	const forkActiveMessage = useCallback(
 		(messageId: string) => {
-			if (activeSessionId) forkSession(activeSessionId, messageId);
+			if (activeSessionId) forkSession(activeSessionId, undefined, messageId);
 		},
 		[activeSessionId],
 	);
@@ -1649,11 +1679,28 @@ export function App() {
 		if (!main || !chat) return;
 		const measure = () => {
 			const mainBox = main.getBoundingClientRect();
-			const box = chat.getBoundingClientRect();
+			/**
+			 * 量的是**输入框**（`.composer`）而不是对话栏容器（`.workspace`）。
+			 *
+			 * 为什么（用户 2026-11-24：「上面标题跟着下面的内容宽度走，要和输入框对齐」）：
+			 * 对话栏在「限宽」档下有一对很大的左右内边距（居中留白），容器左沿离正文还有
+			 * 一两百像素 —— 标题贴在容器左沿时，在宽屏上就孤零零地飘在正文左边很远的地方。
+			 * 输入框是正文列里最直观的那条基准线，直接量它，三种宽度档位 / 分栏 / 手机都不用另算。
+			 */
+			const composer = chat.querySelector<HTMLElement>(".composer");
+			const box = (composer ?? chat).getBoundingClientRect();
 			// 顶栏被藏起来（`hidden`）/ 元素还没布局时 rect 全是 0：那一瞬不动，否则会把标题推到奇怪的地方
 			if (mainBox.width === 0 || box.width === 0) return;
-			const inset = Math.max(0, Math.round(box.left - mainBox.left));
-			const width = Math.round(box.width);
+			/**
+			 * 再往左压一点（用户 2026-11-24：「再往左点」）。
+			 *
+			 * 输入框自己有一圈边框 + 内边距，标题若严格贴着它的外沿，看起来仍比正文「缩进去一截」；
+			 * 左侧多让 `HEADING_LEAN_PX` 让视觉上跟内容齐平。宽度同步加回这一截，
+			 * 所以**右沿仍然对着输入框右边**，只是左边外扩一点。
+			 */
+			const HEADING_LEAN_PX = 12;
+			const inset = Math.max(0, Math.round(box.left - mainBox.left) - HEADING_LEAN_PX);
+			const width = Math.round(box.width) + HEADING_LEAN_PX;
 			setHeadingInset((current) => (current === inset ? current : inset));
 			setHeadingWidth((current) => (current === width ? current : width));
 		};
@@ -1661,6 +1708,10 @@ export function App() {
 		const observer = new ResizeObserver(measure);
 		observer.observe(main);
 		observer.observe(chat);
+		// 内容宽度（`--chat-max-width`）改了只影响容器内边距、不改容器本身大小 ——
+		// 不盯输入框的话 ResizeObserver 收不到这一下，标题会留在旧位置。
+		const composerEl = chat.querySelector<HTMLElement>(".composer");
+		if (composerEl) observer.observe(composerEl);
 		window.addEventListener("resize", measure);
 		return () => {
 			observer.disconnect();

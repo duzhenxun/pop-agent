@@ -165,6 +165,11 @@ if (startupPassword.source === "migrated") {
 // 内置运行时到底注进去没有：桌面模式下排查「终端里找不到 codex」的第一条线索
 if (desktopRuntime.applied) {
 	logger.info("桌面模式：内置运行时已前置进 PATH", { dirs: desktopRuntime.dirs });
+	// 用户自己的命令目录（nvm / homebrew / bun …）：Finder 启动的 App 拿不到 shell 的 PATH，
+	// 不补进来就是「终端里能跑 codex，App 里说没装」。只打段数，不刷一屏路径。
+	if (desktopRuntime.fromShell.length > 0) {
+		logger.info("桌面模式：合并了用户登录 shell 的 PATH", { dirs: desktopRuntime.fromShell.length });
+	}
 }
 /**
  * 用户点「安装」装过的引擎落在 `<dataDir>/bin`（那是个标准 npm prefix，见 engine-install.ts）。
@@ -614,6 +619,8 @@ const runAgentTask = createAgentRunner({
 
 const cron = createCronService({
 	dataDir: config.dataDir,
+	// 任务按引擎分开存（`cron/<engine>.json`）：切引擎时只看到、只调度当前引擎自己的任务
+	engine: () => runtime.state().engine,
 	// 已打开的会话也算工作区：在另一个目录里开的会话，用户可能直接让它建定时任务
 	workspaces: () => [
 		config.workspace,
@@ -662,7 +669,8 @@ const cron = createCronService({
 cronToolPort = createCronToolPort(cron);
 
 app.use(express.json()); // 终端/技能/导入要读 body
-const tts = createTtsService();
+// 云端 TTS 的密钥从 `<dataDir>/tts.json` 读（和 `<dataDir>/stt.json` 各管各的，用户 2026-11-24）
+const tts = createTtsService(undefined, { dataDir: config.dataDir });
 app.use("/api/tts", ttsJsonErrorHandler);
 app.use("/api/tts", createTtsRouter(tts));
 app.use("/api/computer", createComputerRouter());

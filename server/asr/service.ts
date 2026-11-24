@@ -21,7 +21,7 @@ import { HelperClient } from "../computer/helper-client.js";
 import { helperBinaryPath, helperTransport, socketPath } from "../computer/paths.js";
 import { startHelper } from "../computer/install-helper.js";
 import { readSttConfig } from "../stt/config.js";
-import { createSttSession } from "../stt/index.js";
+import { createSttSession, sttEndpoint, sttProviderLabel } from "../stt/index.js";
 import type { SttConfig, SttSession } from "../stt/types.js";
 
 export type AsrState = "missing" | "idle" | "starting" | "authorizing" | "ready" | "error";
@@ -32,6 +32,9 @@ export type AsrStatus = {
 	message?: string;
 	locale?: string;
 	onDevice?: boolean;
+	/** 云端识别时：用的是哪家（如 deepseek），面板直接显示出来 */
+	provider?: string;
+	providerLabel?: string;
 };
 
 type Logger = { warn: (message: string, ctx?: Record<string, unknown>) => void };
@@ -45,6 +48,15 @@ const START_TIMEOUT_MS = 90_000;
 const FEED_TIMEOUT_MS = 15_000;
 const CONTROL_TIMEOUT_MS = 5000;
 const CLIENT_NAME = "pop-agent-asr";
+
+/** 日志里能安全打印的端点（配错了 / 没写都不断日志） */
+function safeEndpoint(config: SttConfig): string {
+	try {
+		return sttEndpoint(config);
+	} catch {
+		return "(未解析)";
+	}
+}
 
 export class AsrService {
 	private readonly log: Logger;
@@ -65,17 +77,39 @@ export class AsrService {
 	constructor(options: { log: Logger; dataDir?: string }) {
 		this.log = options.log;
 		const read = readSttConfig(options.dataDir);
-		this.cloudConfig = read.config;
-		if (read.config) {
+		this.cloudConfig = read.config ? this.validateCloud(read.config, read.source) : null;
+		if (this.cloudConfig) {
 			// 不打印 apiKey
 			this.log.warn("云端语音识别已启用", {
-				provider: read.config.provider,
-				endpoint: read.config.endpoint,
-				model: read.config.model ?? "(默认)",
+				provider: this.cloudConfig.provider,
+				endpoint: safeEndpoint(this.cloudConfig),
+				model: this.cloudConfig.model ?? "(默认)",
 				source: read.source,
 			});
 		}
 		if (read.error) this.log.warn("云端 STT 配置读不懂，按未配置处理", { error: read.error });
+	}
+
+	/**
+	 * 启动时就校验一遍，而不是等用户说到一半才炸在 pushAudio 里：
+	 * 配错了（厂商名写错 / 缺密钥 / 缺端点）就当没配，回落到本地识别，并且日志写清原因。
+	 */
+	private validateCloud(config: SttConfig, source: string): SttConfig | null {
+		try {
+			sttEndpoint(config);
+		} catch (error) {
+			this.log.warn("云端 STT 配置不完整，按未配置处理", {
+				source,
+				message: error instanceof Error ? error.message : String(error),
+			});
+			return null;
+		}
+		if (!config.apiKey && !config.headers?.Authorization) {
+			// deepseek / qwen 这类只要一个 key 的：缺了就不算配好，回落到本地识别
+			this.log.warn("云端 STT 缺密钥，按未配置处理", { source, hint: `providers.${config.provider}.apiKey` });
+			return null;
+		}
+		return config;
 	}
 
 	/** helper 在不在（内嵌二进制，或用户自己装的那份 app 的 socket） */
@@ -88,7 +122,13 @@ export class AsrService {
 	current(): AsrStatus {
 		// 云端模式：不需要 helper、也不需要本地授权，直接算就绪
 		if (this.cloudConfig) {
-			return { state: "ready", locale: this.cloudConfig.language ?? "zh-CN", onDevice: false };
+			return {
+				state: "ready",
+				locale: this.cloudConfig.language ?? "zh-CN",
+				onDevice: false,
+				provider: this.cloudConfig.provider,
+				providerLabel: sttProviderLabel(this.cloudConfig.provider),
+			};
 		}
 		// missing 不是终态：用户可能刚装好、刚把 helper 打开。以前这里直接返回缓存的
 		// missing，于是「装好了，重新检测」点了毫无反应（用户实测反馈）。

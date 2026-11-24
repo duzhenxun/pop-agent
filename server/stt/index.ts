@@ -6,17 +6,38 @@
  *
  * 现有：
  *   · `openai-compatible` —— `/v1/audio/transcriptions` 形状（Whisper 及大量网关）
+ *   · `deepseek`         —— `POST /v1/tools/asr`，multipart WAV 进、`{text}` 出
+ *   · `qwen`             —— 百炼 Qwen-Audio-ASR（多模态 messages + 必填 parameters.format），整段识别
+ *   · `qwen-realtime`    —— 百炼 WebSocket 实时识别（边说边出字），贵一些
  *
- * 想加火山豆包 / 阿里千问：
- *   1. 新建 `server/stt/volcengine.ts`，实现 `SttProvider`（签名/WebSocket 都在里面自己处理）
- *   2. 在下面 `PROVIDERS` 数组里加进去
- *   3. `~/.pop-agent/stt.json` 把 `provider` 改成它的 `id`
+ * 已经留好的位置：
+ *   · 阿里千问其它模型（qwen3-asr-flash 等）如果走 OpenAI 兼容形状，`openai-compatible` 也能用
+ *   · 火山引擎 / 豆包（火山语音识别 1.0 / 2.0）
+ *       签名和鉴权是自己的（Header 里 X-Api-App-Key / X-Api-Access-Key / X-Api-Resource-Id），
+ *       返回也不一定是 `{text}`：新建 `server/stt/volcengine.ts` 实现 `SttProvider`，
+ *       配 `providers.volcengine.{apiKey, appId, accessToken, resourceId}`，在下面加一行。
+ *
  * 表单字段用 `fields` 声明，将来做 UI 直接读它，不用再改前端。
  */
+import { deepseekStt } from "./deepseek.js";
 import { openaiCompatible } from "./openai.js";
+import { qwenStt } from "./qwen.js";
+import { qwenRealtimeStt } from "./qwen-realtime.js";
 import type { SttConfig, SttLogger, SttProvider, SttSession } from "./types.js";
 
-const PROVIDERS: SttProvider[] = [openaiCompatible];
+const PROVIDERS: SttProvider[] = [openaiCompatible, deepseekStt, qwenStt, qwenRealtimeStt];
+
+/** 实际要请求的端点（配置里没写就用厂商的默认端点）；都没有则抛错 */
+export function sttEndpoint(config: SttConfig): string {
+	const provider = getSttProvider(config.provider);
+	const endpoint = config.endpoint?.trim() || provider?.defaultEndpoint;
+	if (!endpoint) throw new Error(`provider ${config.provider} 需要配 endpoint（${PROVIDERS.map((entry) => entry.id).join("、")}）`);
+	return endpoint;
+}
+
+export function sttProviderLabel(id: string): string {
+	return getSttProvider(id)?.label ?? id;
+}
 
 export function listSttProviders(): SttProvider[] {
 	return [...PROVIDERS];

@@ -129,6 +129,7 @@ export async function handleMessage(socket: ClientSink, raw: string, deps: Handl
 					request.payload.conversationId,
 					request.payload.messageId,
 					deps.clientId,
+					request.payload.startMessageId,
 				);
 				// 同上：`conversationId` 必须包在 `result` 里，客户端才能把这条新分支顶到侧栏第一位
 				deps.reply(socket, request.id, forked.ok ? { ok: true, result: forked } : forked);

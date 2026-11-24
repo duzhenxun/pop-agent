@@ -236,6 +236,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	/// 用户才知道自己点到的是个正在运行的助手，而不是双击失败。
 	func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
 		guard !stdio else { return false }
+		/*
+		 * 权限都就绪时**什么都不弹**。
+		 *
+		 * `open -a "Agent Computer"` 不是「用户双击」，而是 pop-agent 拉起 helper 的常规手段：
+		 * 面板上的「启动 helper」、语音连不上时的自动拉起、刚装完的首次启动都走它。
+		 * 于是每一次拉起都会走到这个回调 —— 以前这里无条件 `show()`，结果就是
+		 * 「权限早就给过了，引导窗却反复弹」（2026-11-24 用户：「我这个软件已好了，怎么老弹出这个」）。
+		 *
+		 * 真要看引导：菜单栏图标 →「打开引导窗口…」，那颗按钮不经过这里。
+		 */
+		let ready = Permissions.accessibilityGranted() && Permissions.screenRecordingGranted()
+		if ready {
+			Log.write("reopen：权限已就绪，不弹引导窗")
+			return false
+		}
 		Onboarding.shared.show()
 		return true
 	}

@@ -246,6 +246,12 @@
 	color: var(--red);
 }
 
+/* 被打断：中性色，不是红色（没报错，只是被停下了：插队 / 点停止） */
+.tool-status-interrupted {
+	color: var(--text-dim);
+	font-style: italic;
+}
+
 .tool-output {
 	margin: 4px 6px 6px;
 	padding: 8px 10px;

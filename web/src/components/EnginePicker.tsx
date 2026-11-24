@@ -16,28 +16,6 @@ import type { EngineOption } from "../types.ts";
 import { useT } from "../use-language.ts";
 import { EngineInstallDialog } from "./EngineInstallDialog.tsx";
 
-/** 机器人头 + 天线：和面板图标同一套描边，设置里的「引擎切换」也用它（见 SettingsPanel） */
-function EngineIcon() {
-	return (
-		<svg
-			className="engine-picker-icon"
-			viewBox="0 0 16 16"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth={1.3}
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			aria-hidden="true"
-		>
-			<rect x="2.6" y="5.2" width="10.8" height="7.6" rx="2.3" />
-			<path d="M8 5.2V3.3" />
-			<circle cx="8" cy="2.4" r="0.85" fill="currentColor" stroke="none" />
-			<circle cx="6" cy="9" r="0.8" fill="currentColor" stroke="none" />
-			<circle cx="10" cy="9" r="0.8" fill="currentColor" stroke="none" />
-		</svg>
-	);
-}
-
 function Chevron() {
 	return (
 		<svg
@@ -207,7 +185,12 @@ export function EnginePicker({ placement = "appbar" }: { placement?: "appbar" | 
 	if (engines.length === 0) return null;
 
 	const label = t(active?.label ?? activeName);
-	const badge = active?.badge ?? activeName.toUpperCase();
+	/**
+	 * 兜底：快照里没有这个引擎（老服务端 / 刚切过去一瞬）。**同样按首字母大写**拼，
+	 * 否则兜底那一刻会冒出 `OPENCODE` 这种全大写，跟其它行不一致（用户 2026-11-24）。
+	 */
+	const badge =
+		active?.badge ?? activeName.charAt(0).toUpperCase() + activeName.slice(1);
 
 	return (
 		<div className={`engine-picker${placement === "statusbar" ? " engine-picker-in-statusbar" : ""}`} ref={box}>
@@ -228,9 +211,8 @@ export function EnginePicker({ placement = "appbar" }: { placement?: "appbar" | 
 				aria-expanded={open}
 				aria-label={t(`智能体引擎：${label}`, `Agent engine: ${label}`)}
 			>
-				<span className="side-foot-icon" aria-hidden="true">
-					<EngineIcon />
-				</span>
+				{/* 短标签本身就是标识（用户 2026-11-24：「图标改掉」）——
+				    那个通用机器人头对分辨引擎没有任何帮助，五个引擎长得一模一样。 */}
 				<span className="engine-picker-badge">{badge}</span>
 				<Chevron />
 			</button>
@@ -282,10 +264,12 @@ export function EnginePicker({ placement = "appbar" }: { placement?: "appbar" | 
 									}
 								>
 									<span className="engine-option-top">
-										<span className="engine-option-icon" aria-hidden="true">
-											<EngineIcon />
-										</span>
-										<span className="engine-option-badge">{engine.badge}</span>
+										{/*
+										 * 行里**不再单独列短标签**（用户 2026-11-24：「图标改掉」）：
+										 * 去掉机器人头之后，短标签 + 名称并排会读成「Codex Codex」「Claude Claude Code」，
+										 * 同一件事说两遍。名称本身已经按首字母大写（Pi / Codex / Opencode / Claude Code），
+										 * 短标签只在底部状态栏那颗小芯片上保留（那里横向空间只够几个字母）。
+										 */}
 										<span className="engine-option-label">{t(engine.label)}</span>
 										{missing[engine.name] ? (
 											<span className="engine-option-version">{t("未安装", "not installed")}</span>

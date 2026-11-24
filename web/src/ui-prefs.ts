@@ -106,16 +106,7 @@ export const TERMINAL_FONT_MAX = 24;
  *
  * 引擎切换不在表里：它在底部状态栏（跟审批模式并排），不属于顶栏这一排。
  */
-export const APPBAR_ITEMS = [
-	"models",
-	"cron",
-	"skills",
-	"push",
-	"voice",
-	"plugins",
-	"mcp",
-	"agents",
-] as const;
+export const APPBAR_ITEMS = ["models", "cron", "skills", "push", "voice", "plugins", "mcp", "agents"] as const;
 type AppbarItem = (typeof APPBAR_ITEMS)[number];
 /** 可勾选的东西 = 那八个面板入口 + 「设置」自己 */
 export type AppbarToggle = AppbarItem | "settings";
@@ -131,11 +122,13 @@ export const APPBAR_TOGGLES: AppbarToggle[] = [...APPBAR_ITEMS, "settings"];
  * 语音 / MCP 原来默认勾上，现在也不勾了；「设置」顶上那颗同样默认不显示，
  * 因为底部状态栏最左边那颗就是同一个面板（见 `STATUSBAR_ITEM_DEFAULT_ON`）。
  * 推送 / 插件 / 子代理都是**按需**才用的入口，想用的人在 设置 → 界面 → 顶栏 里勾一下就好。
+ * 2026-11-24 再收一次：「顶部只要定时任务」—— 模型和技能也默认不显示。
+ * 这两个平时就在输入框上方（模型 / 提示词）和侧栏里，再看一遍只是重复。
  *
  * 只是**默认值**，不是「强制」：`readStoredBool` 一律先看本地存过的值，
  * 所以老用户（或已经把某个入口关掉的人）升级上来不会被这条默认改回原样。
  */
-export const APPBAR_ITEM_DEFAULT_ON: readonly AppbarToggle[] = ["models", "cron", "skills"];
+export const APPBAR_ITEM_DEFAULT_ON: readonly AppbarToggle[] = ["cron"];
 
 /** 单个顶栏入口的默认显隐（给 `usePrefFlags` 用：一次渲染整排勾选框时需要逐项取默认） */
 export const appbarItemDefault = (item: AppbarToggle): boolean => APPBAR_ITEM_DEFAULT_ON.includes(item);
@@ -230,6 +223,20 @@ export const composerItemDefault = (item: ComposerToggle): boolean => COMPOSER_I
 export type ComposerToggle = (typeof COMPOSER_TOGGLES)[number];
 
 export const COMPOSER_ITEM_KEY = (item: ComposerToggle): string => `pop-agent.composer.${item}`;
+
+/**
+ * 输入框里那颗**裸回车**是「发送」还是「换行」（设置 → 界面 → 对话窗口）。
+ *
+ * 2026-11-24 用户：「这里发消息，怎么不可以设置回车呢」—— 回车到底该发还是该换行，
+ * 是记在手里的肌肉记忆，不是产品能统一帮所有人决定的：写代码、写长 prompt 的人
+ * 需要回车换行（只有 ⌘↩ 才发）；聊天式用法的人只想一句话回车就走。
+ *
+ * 默认 **true**（回车就发送，Shift+Enter 换行）—— 跟以前完全一样，老用户不会被改手感。
+ * 关掉后：回车换行，发送改走 `Mod+Enter`（那条快捷键本来就在 `shortcuts.ts` 里，可再自己改键）。
+ * 纯本机偏好：手机 / 桌面各记各的。
+ */
+export const COMPOSER_ENTER_SEND_KEY = "pop-agent.composer.enterSend";
+export const COMPOSER_ENTER_SEND_DEFAULT = true;
 
 /** 勾选框上的名字（和输入框上方那颗按钮同一套叫法） */
 export const COMPOSER_ITEM_LABEL: Record<ComposerToggle, string> = {

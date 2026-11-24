@@ -14,17 +14,44 @@ const SKILL_FILE = "SKILL.md";
 const SKILL_FILE_DISABLED = ".SKILL.md.disabled";
 /** 写在 SKILL.md 第二行：只有带这个标记的文件才归我们管，别人手写的同名技能不覆盖 */
 const MANAGED_MARKER = "<!-- managed-by: pop-agent agent-computer -->";
+/**
+ * 前身（oh-my-agent-web）写过的同一份技能也算我们的。
+ *
+ * 这个应用就是那个项目改名过来的：老用户机器上躺着 `managed-by: oh-my-agent-web` 那份，
+ * 只认新标记的话「启用电脑控制」会报「已存在且不是本应用写入的」，只能让人先去手删文件。
+ */
+const LEGACY_MARKERS = ["<!-- managed-by: oh-my-agent-web agent-computer -->"];
+
+function isManagedByUs(text: string): boolean {
+	return text.includes(MANAGED_MARKER) || LEGACY_MARKERS.some((marker) => text.includes(marker));
+}
 
 export function skillDir(): string {
 	return join(defaultSkillsDir(), SKILL_ID);
+}
+
+/**
+ * 跑 CLI 用哪个 node：**写绝对路径**，不要只写 `node`。
+ *
+ * 2026-11-24 实测：Agent 执行 bash 时的 PATH 可能只有 `/Users/dds/.pi/agent/bin:/usr/bin:/bin:…`
+ * （nvm 那种靠 shell 初始化注入的 node 不在里面），技能里写 `node xxx/cli.js` 就是
+ * `node: command not found` —— 技能装好了却一条命令都跑不动。
+ *
+ * 用 `process.execPath`：生成这份技能时是哪颗 node 在跑服务（App 自带的运行时 / 用户的 nvm node），
+ * 写进技能的就是哪颗，不赌对方 shell 的环境。
+ */
+function nodeCommand(): string {
+	const execPath = process.execPath;
+	// 极少数情况下 cli 被 electron 主进程模块间接调用：那时的 execPath 是 Electron，不能用
+	return typeof execPath === "string" && /(^|\/)node(\.exe)?$/.test(execPath) ? shellQuote(execPath) : "node";
 }
 
 /** 生成 CLI 的命令前缀：编译后用 node 直接跑 cli.js；开发环境（.ts）用 tsx */
 export function cliCommand(): string {
 	const here = dirname(fileURLToPath(import.meta.url));
 	const compiled = join(here, "cli.js");
-	if (existsSync(compiled)) return `node ${shellQuote(compiled)}`;
-	return `node --import tsx ${shellQuote(join(here, "cli.ts"))}`;
+	if (existsSync(compiled)) return `${nodeCommand()} ${shellQuote(compiled)}`;
+	return `${nodeCommand()} --import tsx ${shellQuote(join(here, "cli.ts"))}`;
 }
 
 function shellQuote(text: string): string {
@@ -41,7 +68,7 @@ export function enableSkill(cli: string = cliCommand()): void {
 	const file = join(dir, SKILL_FILE);
 	if (existsSync(file)) {
 		const current = readFileSync(file, "utf8");
-		if (!current.includes(MANAGED_MARKER)) {
+		if (!isManagedByUs(current)) {
 			throw new Error(`${file} 已存在且不是本应用写入的，请先改名或删除它再启用`);
 		}
 	}
@@ -56,7 +83,7 @@ export function disableSkill(): void {
 	const file = join(dir, SKILL_FILE);
 	if (!existsSync(file)) return;
 	const current = readFileSync(file, "utf8");
-	if (!current.includes(MANAGED_MARKER)) return; // 不是我们的文件，不动它
+	if (!isManagedByUs(current)) return; // 不是我们的文件，不动它
 	renameSync(file, join(dir, SKILL_FILE_DISABLED));
 }
 

@@ -11,7 +11,24 @@
 
 ## 配置：`~/.pop-agent/stt.json`
 
-写这个文件即生效，**重启服务端**后开始走云端。没有这个文件（或没有 `provider`/`endpoint`）= 继续用本地。
+写这个文件即生效，**重启服务端**后开始走云端。没有这个文件（或没有 `provider`）= 继续用本地。
+
+**按厂商分块**（推荐）—— 合成那侧在 `tts.json`，两边各配各的密钥，互不影响
+（用户 2026-11-24：「这 2 块可以各配置各的」）：
+
+```json
+{
+  "provider": "deepseek",
+  "providers": {
+    "deepseek": { "apiKey": "sk-…" },
+    "qwen":     { "apiKey": "sk-…", "model": "qwen3-asr-flash" }
+  }
+}
+```
+
+`provider` 决定用哪一块；块里的字段覆盖顶层同名字段。只配了一家时 `provider` 可以省。
+
+老的**单厂商扁平**写法继续有效（不用改已有文件）：
 
 ```json
 {
@@ -29,9 +46,10 @@
 | 字段 | 说明 |
 |---|---|
 | `provider` | 用哪个实现，见下面「已支持」 |
-| `endpoint` | 完整 URL（不是 base url） |
+| `providers.<id>` | 该厂商的配置块（`apiKey` / `endpoint` / `model` …），和别的厂商隔离 |
+| `endpoint` | 完整 URL（不是 base url）。`deepseek` 可以不写，默认官方端点 |
 | `apiKey` | 默认拼成 `Authorization: Bearer <key>`；想用别的头就写在 `headers` 里 |
-| `model` / `language` | 作为表单字段一起发 |
+| `model` / `language` | 作为表单字段一起发（`deepseek` 没有这两个参数：语种自动判断，写了会被忽略并记日志） |
 | `headers` | 额外请求头。**厂商要自己算签名的场景用这个**（如 `{"X-Api-Key": "…"}`） |
 | `extraFields` | 额外表单字段。各家参数差异（`response_format`、`sample_rate`…）都塞这里，不用改代码 |
 | `timeoutMs` | 单次识别超时，默认 60 秒 |
@@ -51,19 +69,31 @@ pop-agent
 ```
 
 也可以用 `POP_AGENT_STT_CONFIG=/path/to/other.json` 指到别处的配置文件。
+按厂商分开的写法：`POP_AGENT_STT_DEEPSEEK_KEY=sk-…`（同理 `_ENDPOINT` / `_MODEL` / `_LANGUAGE`）。
 
 ## 已支持的 provider
 
 | id | 适用 | 说明 |
 |---|---|---|
-| `openai-compatible` | OpenAI Whisper、Groq、SiliconFlow、各类中转网关、自建 whisper.cpp server | 一次性上传整段 WAV 到 `/v1/audio/transcriptions` |
+| `openai-compatible` | OpenAI Whisper、Groq、SiliconFlow、**阿里千问（兼容模式）**、各类中转网关、自建 whisper.cpp server | 一次性上传整段 WAV 到 `/v1/audio/transcriptions` |
+| `deepseek` | DeepSeek 语音识别 | `POST /v1/tools/asr`，multipart WAV 进、`{text}` 出；单请求 120 秒 / 8 MiB 上限，**代码里自动切段拼接**，语种自动判断，不支持流式 |
 
-> **注意**：这是**整段识别**，说话过程中拿不到 partial —— 面板上不会「边说边出字」，
+> **注意**：两者都是**整段识别**，说话过程中拿不到 partial —— 面板上不会「边说边出字」，
 > 停下来（`/api/asr/end`）之后才拿到整句。要实时出字得接厂商的流式协议，见下面。
+
+用哪家也可以在设置面板的「识别引擎」里显式选「云端」：选了它就**一定**走服务端这条线，
+不会因为本机没有 Agent Computer 而退回 Chrome。状态行会显示当前是哪一家（如「就绪（DeepSeek 语音识别，云端）」）。
 
 ## 再加一家厂商（火山豆包、阿里千问…）
 
-三步，都不用碰 `server/asr/service.ts`：
+先看要不要写代码：
+
+| 厂商 | 怎么做 |
+|---|---|
+| 阿里千问 / 百炼（qwen3-asr-flash、paraformer） | **不用写代码** —— 兼容模式就是 OpenAI 形状，用 `openai-compatible` 填 `endpoint: https://dashscope.aliyuncs.com/compatible-mode/v1/audio/transcriptions` 即可 |
+| 火山引擎 / 豆包 | 要写一个 provider（鉴权头和 OpenAI 不同，响应用 `X-Api-*` 系列，可能要 `resourceId`） |
+
+要写代码时三步，都不用碰 `server/asr/service.ts`：
 
 1. **新建 `server/stt/<厂商>.ts`**，实现 `SttProvider`：
 
@@ -125,6 +155,7 @@ const PROVIDERS: SttProvider[] = [openaiCompatible, volcengine];
 |---|---|
 | `server/stt/types.ts` | provider / session 接口定义 |
 | `server/stt/openai.ts` | 内置的 OpenAI 兼容实现（含 PCM→WAV） |
-| `server/stt/config.ts` | 配置读取（文件 + 环境变量） |
+| `server/stt/deepseek.ts` | DeepSeek 实现（multipart + 长音频切段拼接） |
+| `server/stt/config.ts` | 配置读取（按厂商分块 + 环境变量） |
 | `server/stt/index.ts` | 注册表：`PROVIDERS` 加一行就多一家 |
 | `server/asr/service.ts` | 分流：有云端配置就走云端，否则走本地 helper |

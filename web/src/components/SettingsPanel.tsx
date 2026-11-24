@@ -6,14 +6,6 @@ import { useTheme } from "../use-theme.ts";
 import { useChatDisplay } from "../use-chat-display.ts";
 import { CHAT_WIDTHS, CHAT_WIDTH_MIN_PX, CHAT_WIDTH_STEP_PX, chatWidthCap } from "../chat-display.ts";
 import { FONT_LADDERS, FONT_MAX_PX, FONT_MIN_PX, FONT_STEP_PX, presetOfPx, type FontLayer } from "../font-scale.ts";
-import {
-	APPBAR_SCALE_MAX,
-	APPBAR_SCALE_MIN,
-	APPBAR_SCALE_PRESETS,
-	APPBAR_SCALE_STEP,
-	presetOfAppbarScale,
-} from "../appbar-scale.ts";
-import { useAppbarScale } from "../use-appbar-scale.ts";
 import { useSidebarFonts } from "../use-sidebar-font.ts";
 import {
 	PROCESS_AUTO_COLLAPSE_KEY,
@@ -30,6 +22,8 @@ import {
 	APPBAR_TEMPCHAT_DEFAULT,
 	APPBAR_TEMPCHAT_KEY,
 	APPBAR_TOGGLES,
+	COMPOSER_ENTER_SEND_DEFAULT,
+	COMPOSER_ENTER_SEND_KEY,
 	COMPOSER_ITEM_KEY,
 	COMPOSER_ITEM_LABEL,
 	COMPOSER_ITEM_LABEL_EN,
@@ -59,6 +53,8 @@ import { useStoredBool } from "../use-stored-bool.ts";
 import { useStoredNumber } from "../use-stored-number.ts";
 import { useAppbarItems } from "../use-appbar-items.ts";
 import { useBrandName } from "../use-brand-name.ts";
+import { BRAND_NAME } from "../brand.ts";
+import { BRAND_NAME_MAX } from "../brand-name.ts";
 import { readLogoFile } from "../brand-logo.ts";
 import { showToast } from "../toast.ts";
 import { moveStatusbarItem, useStatusbarOrder } from "../statusbar-order.ts";
@@ -340,140 +336,140 @@ function RemoteSettings() {
 				</div>
 			) : null}
 			<>
-					<div className="settings-row">
-						<span className="settings-field">{t("访问密码", "Password")}</span>
-						{remote && passwordSet ? (
-							<input
-								className="settings-input settings-password-input"
-								type="password"
-								value={currentDraft}
-								autoComplete="current-password"
-								placeholder={t("当前密码", "Current password")}
-								aria-label={t("当前密码", "Current password")}
-								onChange={(event) => setCurrentDraft(event.target.value)}
-							/>
-						) : null}
+				<div className="settings-row">
+					<span className="settings-field">{t("访问密码", "Password")}</span>
+					{remote && passwordSet ? (
 						<input
 							className="settings-input settings-password-input"
 							type="password"
-							value={draft}
-							autoComplete="new-password"
-							placeholder={
-								passwordSet
-									? t("输入新密码以修改（至少 4 位）", "New password to change it (min 4)")
-									: t("设置访问密码（至少 4 位）", "Set a password (min 4)")
-							}
-							onChange={(event) => setDraft(event.target.value)}
-							onKeyDown={(event) => {
-								if (event.key === "Enter" && !saving) save();
+							value={currentDraft}
+							autoComplete="current-password"
+							placeholder={t("当前密码", "Current password")}
+							aria-label={t("当前密码", "Current password")}
+							onChange={(event) => setCurrentDraft(event.target.value)}
+						/>
+					) : null}
+					<input
+						className="settings-input settings-password-input"
+						type="password"
+						value={draft}
+						autoComplete="new-password"
+						placeholder={
+							passwordSet
+								? t("输入新密码以修改（至少 4 位）", "New password to change it (min 4)")
+								: t("设置访问密码（至少 4 位）", "Set a password (min 4)")
+						}
+						onChange={(event) => setDraft(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key === "Enter" && !saving) save();
+						}}
+					/>
+					<button type="button" className="btn btn-tiny" onClick={save} disabled={saving || draft.trim() === ""}>
+						{saving ? t("保存中…", "Saving…") : t("保存", "Save")}
+					</button>
+					<span className="settings-hint">
+						{t("当前：", "Now: ")}
+						{stateText}
+					</span>
+				</div>
+				<div className="settings-hint">
+					{t(
+						"密码存在数据目录的 password 文件里（默认 ~/.pop-agent/password），保存后立即生效，不用重启。忘了就删掉这个文件再重启，或者启动时带 pop -P <新密码>（也会写进去）。",
+						"Stored in the data directory's password file (default ~/.pop-agent/password). It applies immediately — no restart. Forgot it? Delete that file and restart, or start with pop -P <new password> (that is saved too).",
+					)}
+				</div>
+				{/* 登录保护：堵在线爆破。默认 3 次 / 30 分钟，锁的时长与阀值都存服务端（重启后锁还在） */}
+				<div className="settings-row">
+					<span className="settings-field">{t("登录保护", "Login protection")}</span>
+					<label className="settings-field">
+						<span>{t("连续错", "After")}</span>
+						<input
+							className="settings-number"
+							type="number"
+							inputMode="numeric"
+							min={1}
+							max={20}
+							value={guard.maxFailures}
+							onChange={(event) => {
+								const value = Number(event.target.value);
+								if (!Number.isFinite(value)) return;
+								setGuard((current) => ({
+									...current,
+									maxFailures: Math.min(20, Math.max(1, Math.round(value))),
+								}));
 							}}
 						/>
-						<button type="button" className="btn btn-tiny" onClick={save} disabled={saving || draft.trim() === ""}>
-							{saving ? t("保存中…", "Saving…") : t("保存", "Save")}
-						</button>
-						<span className="settings-hint">
-							{t("当前：", "Now: ")}
-							{stateText}
-						</span>
-					</div>
-					<div className="settings-hint">
-						{t(
-							"密码存在数据目录的 password 文件里（默认 ~/.pop-agent/password），保存后立即生效，不用重启。忘了就删掉这个文件再重启，或者启动时带 pop -P <新密码>（也会写进去）。",
-							"Stored in the data directory's password file (default ~/.pop-agent/password). It applies immediately — no restart. Forgot it? Delete that file and restart, or start with pop -P <new password> (that is saved too).",
-						)}
-					</div>
-					{/* 登录保护：堵在线爆破。默认 3 次 / 30 分钟，锁的时长与阀值都存服务端（重启后锁还在） */}
-					<div className="settings-row">
-						<span className="settings-field">{t("登录保护", "Login protection")}</span>
-						<label className="settings-field">
-							<span>{t("连续错", "After")}</span>
-							<input
-								className="settings-number"
-								type="number"
-								inputMode="numeric"
-								min={1}
-								max={20}
-								value={guard.maxFailures}
-								onChange={(event) => {
-									const value = Number(event.target.value);
-									if (!Number.isFinite(value)) return;
-									setGuard((current) => ({
-										...current,
-										maxFailures: Math.min(20, Math.max(1, Math.round(value))),
-									}));
-								}}
-							/>
-							<span>{t("次后，暂停", "wrong tries, pause for")}</span>
-						</label>
-						<label className="settings-field">
-							<input
-								className="settings-number"
-								type="number"
-								inputMode="numeric"
-								min={1}
-								max={1440}
-								value={guard.lockMinutes}
-								onChange={(event) => {
-									const value = Number(event.target.value);
-									if (!Number.isFinite(value)) return;
-									setGuard((current) => ({
-										...current,
-										lockMinutes: Math.min(1440, Math.max(1, Math.round(value))),
-									}));
-								}}
-							/>
-							<span>{t("分钟", "minutes")}</span>
-						</label>
-						<button type="button" className="btn btn-tiny" onClick={saveGuard} disabled={guardSaving}>
-							{guardSaving ? t("保存中…", "Saving…") : t("保存", "Save")}
-						</button>
-					</div>
-					<div className="settings-hint">
-						{t(
-							"同一个来源连续输错密码到达这个次数，就暂停一段时间，不再比对密码（挡在线爆破）。默认 3 次 / 30 分钟；锁会落盘，重启服务也不会放行。填 1–20 次、1–1440 分钟。",
-							"After this many wrong passwords from the same source, sign-in is paused for a while (anti-brute-force). Default: 3 tries / 30 minutes. Locks are persisted across restarts. Range: 1–20 tries, 1–1440 minutes.",
-						)}
-					</div>
-					<div className="settings-row">
-						<span className="settings-field">{t("登录活动", "Login activity")}</span>
-						<button type="button" className="btn btn-tiny" onClick={loadActivity} disabled={activityLoading}>
-							{activityLoading ? t("刷新中…", "Refreshing…") : t("刷新", "Refresh")}
-						</button>
-						<span className="settings-hint">
-							{t("最近 200 条，最新的在最前面。", "Latest 200 events, newest first.")}
-						</span>
-					</div>
-					{activityError !== "" ? <div className="settings-hint">{activityError}</div> : null}
-					<div className="settings-activity">
-						{activity.length === 0 ? (
-							<div className="settings-hint">
-								{activityLoading ? t("读取中…", "Loading…") : t("还没有登录记录。", "No sign-in activity yet.")}
+						<span>{t("次后，暂停", "wrong tries, pause for")}</span>
+					</label>
+					<label className="settings-field">
+						<input
+							className="settings-number"
+							type="number"
+							inputMode="numeric"
+							min={1}
+							max={1440}
+							value={guard.lockMinutes}
+							onChange={(event) => {
+								const value = Number(event.target.value);
+								if (!Number.isFinite(value)) return;
+								setGuard((current) => ({
+									...current,
+									lockMinutes: Math.min(1440, Math.max(1, Math.round(value))),
+								}));
+							}}
+						/>
+						<span>{t("分钟", "minutes")}</span>
+					</label>
+					<button type="button" className="btn btn-tiny" onClick={saveGuard} disabled={guardSaving}>
+						{guardSaving ? t("保存中…", "Saving…") : t("保存", "Save")}
+					</button>
+				</div>
+				<div className="settings-hint">
+					{t(
+						"同一个来源连续输错密码到达这个次数，就暂停一段时间，不再比对密码（挡在线爆破）。默认 3 次 / 30 分钟；锁会落盘，重启服务也不会放行。填 1–20 次、1–1440 分钟。",
+						"After this many wrong passwords from the same source, sign-in is paused for a while (anti-brute-force). Default: 3 tries / 30 minutes. Locks are persisted across restarts. Range: 1–20 tries, 1–1440 minutes.",
+					)}
+				</div>
+				<div className="settings-row">
+					<span className="settings-field">{t("登录活动", "Login activity")}</span>
+					<button type="button" className="btn btn-tiny" onClick={loadActivity} disabled={activityLoading}>
+						{activityLoading ? t("刷新中…", "Refreshing…") : t("刷新", "Refresh")}
+					</button>
+					<span className="settings-hint">
+						{t("最近 200 条，最新的在最前面。", "Latest 200 events, newest first.")}
+					</span>
+				</div>
+				{activityError !== "" ? <div className="settings-hint">{activityError}</div> : null}
+				<div className="settings-activity">
+					{activity.length === 0 ? (
+						<div className="settings-hint">
+							{activityLoading ? t("读取中…", "Loading…") : t("还没有登录记录。", "No sign-in activity yet.")}
+						</div>
+					) : (
+						activity.map((entry) => (
+							<div
+								className={`settings-activity-row settings-activity-${entry.kind}`}
+								key={`${entry.at}-${entry.address}-${entry.kind}`}
+							>
+								<span className="settings-activity-time">{timeOf(entry.at)}</span>
+								<span className="settings-activity-ip">{entry.address}</span>
+								<span className="settings-activity-kind">
+									{entry.kind === "success"
+										? t("登录成功", "Signed in")
+										: entry.kind === "locked"
+											? t(
+													`连续错 ${entry.attempts ?? 0} 次，已暂停 ${entry.lockMinutes ?? 0} 分钟`,
+													`${entry.attempts ?? 0} wrong tries — paused ${entry.lockMinutes ?? 0} min`,
+												)
+											: t(
+													`密码错误（连续第 ${entry.attempts ?? 1} 次）`,
+													`Wrong password (try ${entry.attempts ?? 1})`,
+												)}
+								</span>
 							</div>
-						) : (
-							activity.map((entry) => (
-								<div
-									className={`settings-activity-row settings-activity-${entry.kind}`}
-									key={`${entry.at}-${entry.address}-${entry.kind}`}
-								>
-									<span className="settings-activity-time">{timeOf(entry.at)}</span>
-									<span className="settings-activity-ip">{entry.address}</span>
-									<span className="settings-activity-kind">
-										{entry.kind === "success"
-											? t("登录成功", "Signed in")
-											: entry.kind === "locked"
-												? t(
-														`连续错 ${entry.attempts ?? 0} 次，已暂停 ${entry.lockMinutes ?? 0} 分钟`,
-														`${entry.attempts ?? 0} wrong tries — paused ${entry.lockMinutes ?? 0} min`,
-													)
-												: t(
-														`密码错误（连续第 ${entry.attempts ?? 1} 次）`,
-														`Wrong password (try ${entry.attempts ?? 1})`,
-													)}
-									</span>
-								</div>
-							))
-						)}
-					</div>
+						))
+					)}
+				</div>
 			</>
 		</div>
 	);
@@ -729,23 +725,12 @@ function ProcessSettings() {
  * 那也是"读对话时字和图多大"的事，跟字号是一类，不该留在"壳子"里。
  */
 function UiSettings() {
-	const t = useT();
 	return (
 		<>
-			{/* 顶栏名称 / 高度：挨着顶栏，所以放在「左侧栏」上面（原在「外观」） */}
+			{/* 顶栏名称：挨着顶栏，所以放在「左侧栏」上面（原在「外观」） */}
 			<BrandSettings />
-			<div className="settings-panel">
-				<div className="settings-head">
-					<span>{t("顶栏高度", "Top bar size")}</span>
-					<span className="settings-sub">
-						{t(
-							"整条顶栏连同里面的按钮 / 图标一起缩放（100% = 标准大小，也就是默认值）",
-							"Scales the whole top bar, its buttons and icons (100% = the standard size, also the default)",
-						)}
-					</span>
-				</div>
-				<AppbarScaleControl />
-			</div>
+			{/* 「顶栏高度」设置已去掉（用户 2026-11-24：「这个设置不要了，固定不可改」）：
+			 * 顶栏现在就固定为标准大小（见 appbar-scale.ts 的 initAppbarScale） */}
 			{/* 三处字号并排：聊天正文 → 侧栏项目名 → 侧栏会话名。
 			    都是「字多大」这一类，放一起才不用在 tab 里来回找；同一套档位卡片。 */}
 			<SidebarSettings />
@@ -998,7 +983,9 @@ function StatusbarSettings() {
 							setDragOver(null);
 						}}
 					>
-						<span className="statusbar-setting-grip" aria-hidden="true">⠿</span>
+						<span className="statusbar-setting-grip" aria-hidden="true">
+							⠿
+						</span>
 						<label className="settings-toggle settings-check">
 							<input
 								type="checkbox"
@@ -1028,13 +1015,15 @@ function StatusbarSettings() {
 function ComposerSettings() {
 	const t = useT();
 	const [visible, setVisible] = usePrefFlags(COMPOSER_TOGGLES, COMPOSER_ITEM_KEY, composerItemDefault);
+	// 裸回车是发还是换行（2026-11-24 用户：「这里要可以设置一个键哎」）
+	const [enterSend, setEnterSend] = useStoredBool(COMPOSER_ENTER_SEND_KEY, COMPOSER_ENTER_SEND_DEFAULT);
 	// 2026-11-23：「模型 / 思考强度」从状态栏并进这一组（它们已经挪到输入框上方了）
 	const icons: Record<ComposerToggle, string> = {
 		model: "▣",
 		thinking: "⚡",
 		templates: "✏️",
 		think: "💡",
-		quick: "💬",  // 跟「思考强度」的 ⚡ 区分开（那个表示档位，这个表示一句快捷话）
+		quick: "💬", // 跟「思考强度」的 ⚡ 区分开（那个表示档位，这个表示一句快捷话）
 	};
 	return (
 		<div className="settings-panel">
@@ -1063,21 +1052,55 @@ function ComposerSettings() {
 					"These three are stored per device — phone, tablet and desktop can differ. The phrase text itself is edited under Quick phrases on this page (shared across devices); this only controls whether the row is shown.",
 				)}
 			</div>
+
+			{/* 回车键：发还是换行（2026-11-24 用户：「这里要可以设置一个键哎」） */}
+			<div className="settings-head" style={{ marginTop: 14 }}>
+				<span>{t("回车键", "Enter key")}</span>
+				<span className="settings-sub">{t("在输入框里按回车时做什么", "What Enter does in the input")}</span>
+			</div>
+			<div className="settings-checks">
+				<label className="settings-toggle settings-check">
+					<input type="checkbox" checked={enterSend} onChange={(event) => setEnterSend(event.target.checked)} />
+					<span className="settings-check-icon" aria-hidden="true">
+						⏎
+					</span>
+					{t("回车发送（Shift+回车 换行）", "Enter sends (Shift+Enter for a new line)")}
+				</label>
+			</div>
+			<div className="settings-hint">
+				{t(
+					"取消勾选后回车只换行，改由 ⌘↩ 发送 —— 写长 prompt、写代码的人通常更顺手。⌘↩ 这个键位本身可以在「快捷键」里改。",
+					"Unchecked: Enter only inserts a new line and ⌘↩ sends — usually nicer for long prompts or code. The ⌘↩ binding itself can be changed under Shortcuts.",
+				)}
+			</div>
 		</div>
 	);
 }
 
 /**
- * 顶栏自称：logo 与名字的**显示 / 隐藏**，以及换 logo（纯本机偏好，跟主题同一类）。
+ * 顶栏自称：logo 与名字的**显示 / 隐藏**、名字显示什么（产品名 / 引擎名），以及换 logo。
  *
- * **自定义改名已经去掉**（用户 2026-11-24：「重命名可以不要了」）：顶栏就叫产品名
- * `BRAND_NAME`，不再提供输入框和「恢复默认」——那一格常年空着、还要解释"留空会怎样"，
- * 而真正会改名字的人（换品牌 / 白标）本来也得改代码里的 `brand.ts`。
+ * **自定义改名已经去掉**（用户 2026-11-24：「重命名可以不要了」）：不再提供输入框和「恢复默认」，
+ * 而真正要改名字的人（换品牌 / 白标）本来就得改代码里的 `brand.ts`。
  * 以前存过的自定义名字**仍按原样显示**（不在这次里清数据）：想连它一起作废就说一声。
+ *
+ * 后来补了一个二选一（同日：「设置中可以设置，是显示品牌名，还是显示引擎名」）：
+ * 选「引擎名」时顶栏跟着当前 agent 变（PiAgent / CodexAgent …），多开或切引擎时
+ * 一眼能看出「现在跟我说话的是谁」。这是**本机偏好**（与主题同一类），默认仍是产品名。
  */
 function BrandSettings() {
 	const t = useT();
-	const { shown, logo, logoShown, setShown, setLogo, setLogoShown } = useBrandName();
+	const { shown, mode, custom, logo, logoShown, setShown, setMode, setName, setLogo, setLogoShown, reset } =
+		useBrandName();
+	/**
+	 * 改名输入框的本地草稿。
+	 *
+	 * 为什么不直接绑 `custom`：`setName` 会清洗（折空白 + 截断 + 去首尾空格），
+	 * 严格受控的话用户敲一个尾部空格就被自己拽回去了、光标也跳。草稿只负责显示，
+	 * 真正落盘走 setName，外部（另一个窗口 / 重置）改了再用 effect 对回来。
+	 */
+	const [draft, setDraft] = useState(custom);
+	useEffect(() => setDraft(custom), [custom]);
 	/** 「更换 logo」那个隐藏的文件选择框 */
 	const fileRef = useRef<HTMLInputElement | null>(null);
 	return (
@@ -1137,13 +1160,68 @@ function BrandSettings() {
 				<input type="checkbox" checked={shown} onChange={(event) => setShown(event.target.checked)} />
 				{t("在顶栏显示名称", "Show the name in the top bar")}
 			</label>
-			{/* 名字不再可改（见上面的注释）：这一格只留显示 / 隐藏 */}
+			{/* 显示什么（用户 2026-11-24）：产品名固定不变，引擎名跟着当前 agent 走 ——
+			 * 多开 / 换引擎时一眼能看出「现在跟我说话的是谁」。
+			 * 复用 settings-lang* 那套「选项卡」样式（它本来就是通用的 radio 卡片组，见 appearance.css）。 */}
+			<div className="settings-langs">
+				<label className={`settings-lang${mode === "brand" ? " settings-lang-on" : ""}`}>
+					<input type="radio" name="brand-mode" checked={mode === "brand"} onChange={() => setMode("brand")} />
+					<span className="settings-lang-name">{t("产品名", "Product name")}</span>
+					<span className="settings-lang-hint">{BRAND_NAME}</span>
+				</label>
+				<label className={`settings-lang${mode === "engine" ? " settings-lang-on" : ""}`}>
+					<input type="radio" name="brand-mode" checked={mode === "engine"} onChange={() => setMode("engine")} />
+					<span className="settings-lang-name">{t("引擎名", "Engine name")}</span>
+					<span className="settings-lang-hint">{t("如 PiAgent", "e.g. PiAgent")}</span>
+				</label>
+			</div>
 			<div className="settings-hint">
 				{t(
-					"顶栏显示的就是产品名，不再支持自定义改名。",
-					"The top bar shows the product name; custom renaming is no longer available.",
+					"选「引擎名」时，顶栏跟着当前引擎变：PiAgent / CodexAgent / DshAgent / OcAgent / ClaudeAgent。浏览器标签页标题也一起变。",
+					"With Engine name, the top bar follows the current engine: PiAgent / CodexAgent / DshAgent / OcAgent / ClaudeAgent. The browser tab title follows too.",
 				)}
 			</div>
+			{/*
+			 * 改名只在「产品名」模式下有意义（用户 2026-11-24：显示品牌名时可以自定义改名）。
+			 * 引擎名模式下名字由引擎决定，这里不画输入框；但**你起的名字不会被清掉** ——
+			 * 切回产品名就又能看到它（存的是同一个 key）。
+			 */}
+			{mode === "brand" ? (
+				<div className="brand-name-row">
+					<input
+						className="settings-input"
+						type="text"
+						value={draft}
+						placeholder={BRAND_NAME}
+						maxLength={BRAND_NAME_MAX}
+						aria-label={t("自定义顶栏名称", "Custom top-bar name")}
+						title={t(`留空就用默认的产品名 ${BRAND_NAME}`, `Leave empty to use the product name ${BRAND_NAME}`)}
+						onChange={(event) => {
+							setDraft(event.target.value);
+							setName(event.target.value);
+						}}
+					/>
+					{custom !== "" ? (
+						<button
+							type="button"
+							className="btn btn-tiny"
+							onClick={() => {
+								setDraft("");
+								reset();
+							}}
+						>
+							{t("恢复默认", "Reset")}
+						</button>
+					) : null}
+				</div>
+			) : (
+				<div className="settings-hint">
+					{t(
+						"引擎名模式下名字由引擎决定；你自定义过的名字不会被清掉，切回产品名就还在。",
+						"In engine mode the name comes from the engine; your custom name is kept and comes back when you switch to Product name.",
+					)}
+				</div>
+			)}
 		</div>
 	);
 }
@@ -1288,67 +1366,6 @@ function ChatWidthControl({ value, onChange }: { value: number; onChange: (px: n
 						/>
 						<span className="settings-lang-name">{t(item.label, item.labelEn)}</span>
 						<span className="settings-lang-hint">{item.px > 0 ? `${item.px}px` : t("默认", "Default")}</span>
-					</label>
-				))}
-			</div>
-		</>
-	);
-}
-
-/**
- * 顶栏高度（整条栏的缩放系数，见 `appbar-scale.ts`）。
- *
- * 和字号那几块用同一套「滑杆 + 四档快捷卡」：滑杆负责"我就要 90% 这种"，
- * 四档只是点一下就到位。改的是 `<html>` 上的 `--appbar-scale`，顶栏就在上面一排，
- * 拖的时候直接看得见高度对不对，所以没有「保存」按钮（与主题 / 字号同理）。
- */
-function AppbarScaleControl() {
-	const t = useT();
-	const { percent, setPercent } = useAppbarScale();
-	const preset = presetOfAppbarScale(percent);
-	return (
-		<>
-			<div className="settings-font-slider">
-				<span className="settings-font-label">{t("自定义", "Custom")}</span>
-				<div className="settings-font-track">
-					<input
-						id="settings-appbar-scale"
-						type="range"
-						min={APPBAR_SCALE_MIN}
-						max={APPBAR_SCALE_MAX}
-						step={APPBAR_SCALE_STEP}
-						value={percent}
-						aria-label={t(
-							`顶栏大小（${APPBAR_SCALE_MIN}%–${APPBAR_SCALE_MAX}%）`,
-							`Top bar size (${APPBAR_SCALE_MIN}%–${APPBAR_SCALE_MAX}%)`,
-						)}
-						aria-valuetext={`${percent}%`}
-						// 拖的时候立刻生效：顶栏就在上面，能直接看到高度对不对
-						onChange={(event) => setPercent(Number(event.target.value))}
-					/>
-					<div className="settings-font-bounds" aria-hidden="true">
-						<span>{APPBAR_SCALE_MIN}%</span>
-						<span>{APPBAR_SCALE_MAX}%</span>
-					</div>
-				</div>
-				<span className="settings-font-value mono">{percent}%</span>
-			</div>
-			<div className="settings-langs settings-langs-4 settings-langs-compact">
-				{APPBAR_SCALE_PRESETS.map((item) => (
-					<label
-						key={item.id}
-						className={`settings-lang${preset === item.id ? " settings-lang-on" : ""}`}
-						title={t(`一键设为 ${item.percent}%`, `Set to ${item.percent}%`)}
-					>
-						<input
-							type="radio"
-							name="settings-appbar-scale-preset"
-							value={item.id}
-							checked={preset === item.id}
-							onChange={() => setPercent(item.percent)}
-						/>
-						<span className="settings-lang-name">{t(item.label, item.labelEn)}</span>
-						<span className="settings-lang-hint">{item.percent}%</span>
 					</label>
 				))}
 			</div>

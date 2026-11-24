@@ -927,8 +927,11 @@ function MessageViewInner({
 							type="button"
 							className="msg-foot-copy msg-foot-fork"
 							onClick={() => onFork(message.id)}
-							title={t("从这里创建分支（原对话保持不变）", "Branch from here (original chat stays unchanged)")}
-							aria-label={t("从这里创建分支", "Branch from here")}
+							title={t(
+								"以这条消息为开头开一条新会话（之前的对话不会带过去，原会话不变）",
+								"Start a new chat from this message (earlier turns are dropped; original chat stays unchanged)",
+							)}
+							aria-label={t("以这条消息为开头开新会话", "Start a new chat from this message")}
 						>
 							<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
 								<path d="M4.4 3.6v6.2a2.4 2.4 0 0 0 2.4 2.4h2.4" strokeLinecap="round" />

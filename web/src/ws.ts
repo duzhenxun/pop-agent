@@ -233,8 +233,8 @@ export function watchVisibility(): void {
  * 回包再亮回来」（见 ThinkButton）。
  * 失败的提示已经在这里统一落到 `lastError`，调用方不用再 catch。
  */
-export function send(requestMessage: ClientRequest): Promise<void> {
-	return (async () => {
+export function send(requestMessage: ClientRequest): Promise<{ ok: boolean; message?: string }> {
+	return (async (): Promise<{ ok: boolean; message?: string }> => {
 		try {
 			const response = await fetch("/api/rpc", {
 				method: "POST",
@@ -242,7 +242,7 @@ export function send(requestMessage: ClientRequest): Promise<void> {
 				body: JSON.stringify(requestMessage),
 			});
 			if (!response.ok) {
-				if (reloadIfUnauthorized(response.status)) return;
+				if (reloadIfUnauthorized(response.status)) return { ok: false };
 				/**
 				 * 502 / 503 / 504 几乎都是「后端刚好不在」：开发态 `tsx --watch` 重启的那一两秒，
 				 * 或者 `pop restart` 的空窗。此时 Vite / 反向代理连不上后端，回的就是 502
@@ -263,18 +263,34 @@ export function send(requestMessage: ClientRequest): Promise<void> {
 					},
 				});
 				resyncAfterFailure();
-				return;
+				return { ok: false };
 			}
 			resyncAttempt = 0; // 通了就清零：下次再挂还是从 0.5s 起
 			const body = (await response.json()) as { frames?: string[] };
+			/**
+			 * 回包里的成败：命令类请求（改名 / 切模型 / 切思考档）要按它说真话。
+			 *
+			 * 以前这里只看 HTTP 200 就算成功，于是「当前引擎不支持改名」被回成
+			 * `{ok:false, error}` 之后照样弹「已把会话改名为 …」—— 用户以为改了，其实没变。
+			 */
+			let ok = true;
+			let message: string | undefined;
 			// 同步产生的帧（reply / notice）在这里消费；异步事件走 SSE
 			for (const frame of body.frames ?? []) {
 				try {
-					handle(JSON.parse(frame) as ServerMessage);
+					const parsed = JSON.parse(frame) as ServerMessage & {
+						result?: { ok?: boolean; error?: { message?: string } };
+					};
+					if (parsed.type === "reply" && parsed.result && parsed.result.ok === false) {
+						ok = false;
+						message = parsed.result.error?.message;
+					}
+					handle(parsed as ServerMessage);
 				} catch {
 					// 单帧坏掉不影响其它帧
 				}
 			}
+			return message === undefined ? { ok } : { ok, message };
 		} catch {
 			setAppState({
 				lastError: {
@@ -283,6 +299,7 @@ export function send(requestMessage: ClientRequest): Promise<void> {
 				},
 			});
 			resyncAfterFailure();
+			return { ok: false };
 		}
 	})();
 }
@@ -442,17 +459,21 @@ export function closeEphemeral(conversationId: string): void {
 }
 
 /**
- * 从某条消息派生一条新会话（分支），服务端建好后会自动切过去，原会话不变。
- * `messageId` 是界面消息的 id（= 会话 entry id）。
+ * 派生一条新会话（分支），服务端建好后自动切过去，原会话不变。
+ *
+ * 两种语义：
+ *   - 只传 `messageId`（会话行右键 / 标题菜单）= 到这条消息为止的整段复制；
+ *   - 传 `startMessageId`（消息气泡下面的分叉）= **从这条消息起**开一条新会话，之前的丢掉。
+ * 两个 id 都是界面消息的 id（= 会话 entry id）。
  */
-export function forkSession(conversationId: string, messageId?: string): void {
+export function forkSession(conversationId: string, messageId?: string, startMessageId?: string): void {
 	focusComposer();
 	setAppState({ creating: true });
 	setTimeout(() => setAppState({ creating: false }), 8000);
 	const id = `req-${++seq}`;
 	// 派生也是「新建」：reply 回来要把它顶到侧栏第一位（见 `pinNewSessionOnTop`）
 	forkRequestId = id;
-	send({ id, type: "fork_session", payload: { conversationId, messageId } });
+	send({ id, type: "fork_session", payload: { conversationId, messageId, startMessageId } });
 }
 
 /**
@@ -483,8 +504,11 @@ function pinNewSessionOnTop(conversationId: unknown): void {
 const SWITCH_RETRY_MS = 1200;
 
 /** 改会话显示名：交给服务端写进 pi 的会话文件（session_info），本地不再存一份 */
-export function renameSession(conversationId: string, title: string): void {
-	send({ id: `req-${++seq}`, type: "rename_session", payload: { conversationId, title } });
+export function renameSession(
+	conversationId: string,
+	title: string,
+): Promise<{ ok: boolean; message?: string }> {
+	return send({ id: `req-${++seq}`, type: "rename_session", payload: { conversationId, title } });
 }
 
 /**
@@ -626,8 +650,8 @@ function scheduleCacheWrite(conversationId: string, messages: UiMessage[]): void
 /** 改客户端设置（ADR-0020 §P1）：服务端归一化后落盘，并随快照回推 */
 /** 切换当前会话的模型（ADR-0020 §P2） */
 /** 思考强度（P4）：档位由引擎给 */
-export function setThinkingLevel(level: string): void {
-	send({ id: `req-${++seq}`, type: "set_thinking_level", payload: { level } });
+export function setThinkingLevel(level: string): Promise<{ ok: boolean; message?: string }> {
+	return send({ id: `req-${++seq}`, type: "set_thinking_level", payload: { level } });
 }
 
 /** 「想一想」：服务端用隐藏回合重新向模型要一批建议（界面上不会多出对话）
@@ -635,7 +659,7 @@ export function setThinkingLevel(level: string): void {
  * 返回的 promise 跟 `send` 一样：隐藏回合**真正结束**（回包）才 resolve。
  * 「想想」按钮靠它把置灰态撤掉 —— 不能只看点击，否则点了半天没反应。
  */
-export function refreshActions(conversationId?: string, count?: number): Promise<void> {
+export function refreshActions(conversationId?: string, count?: number): Promise<{ ok: boolean; message?: string }> {
 	return send({
 		id: `req-${++seq}`,
 		type: "refresh_actions",
@@ -764,8 +788,11 @@ export function canvasMoveNodes(
 	});
 }
 
-export function setModel(modelId: string, conversationId?: string | null): void {
-	send({
+export function setModel(
+	modelId: string,
+	conversationId?: string | null,
+): Promise<{ ok: boolean; message?: string }> {
+	return send({
 		id: `req-${++seq}`,
 		type: "set_model",
 		payload: conversationId ? { modelId, conversationId } : { modelId },

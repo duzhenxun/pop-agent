@@ -54,9 +54,12 @@ export type VoiceInputSettings = {
 	 *   - `auto`：优先本地（离线、带标点；Chrome 的识别要连 Google，这网络连不上）；
 	 *     本地不可用（没编译 / 起不来）时自动退回 Chrome；
 	 *   - `browser`：Chrome 原生 Web Speech（实时性最好，但必须能连 Google）；
-	 *   - `local`：只用 macOS 原生离线识别（首次要授权一次）。
+	 *   - `local`：只用 macOS 原生离线识别（首次要授权一次）；
+	 *   - `cloud`：只用服务端转发给厂商 API 的云端识别（DeepSeek / 千问 / 豆包，
+	 *     密钥在 `~/.pop-agent/stt.json`）。它和本地一样走 `/api/asr/*`，
+	 *     但不依赖本机的 Agent Computer —— 别的机器（Windows / Linux）也能用。
 	 */
-	engine: "auto" | "browser" | "local";
+	engine: "auto" | "browser" | "local" | "cloud";
 	/**
 	 * 静音多久算「说完了」（毫秒）。设置里按秒调（0.6–10s），这里存毫秒。
 	 * 说话快、句子长的人调大一点，就不会被句中停顿切断。
@@ -107,7 +110,17 @@ const SILENCE_TICK_MS = 200;
 const DEFAULT_SETTINGS: VoiceInputSettings = {
 	autoSend: true,
 	submitMode: "queue",
-	engine: "auto",
+	/**
+	 * 默认 **local**（本机离线识别，2026-11-24 用户：「语音 asr 默认 本地」）。
+	 *
+	 * 以前是 `auto`（先试本地、不行才退 Chrome）：结果就是「到底是哪套在识别」
+	 * 得从浮条上猜。直接钉成本地之后行为是确定的 —— 离线、带标点、音频不出本机；
+	 * 唯一代价是首次要授权一次（引导窗里就有）。
+	 *
+	 * 纯网页（非桌面壳）保留 `auto`：那边没有本机 helper，钉死成 local 就是彻底不能用，
+	 * 而且 Chrome 自己的 Web Speech 在浏览器里是能用的。
+	 */
+	engine: IS_DESKTOP_SHELL ? "local" : "auto",
 	continuous: false,
 	// 0 = 不自动关麦：用户明确要求「麦克风一直开着」
 	idleStopSec: 0,
@@ -140,9 +153,9 @@ function readSettings(): VoiceInputSettings {
 			// 桌面壳里 Web Speech 必死（Electron 没有 Google 语音后端）：
 			// 老设置里存过 browser 也静默回落 auto（→ 本地），省得用户一直卡在一条死路上
 			engine:
-				IS_DESKTOP_SHELL && parsed.engine !== "local"
+				IS_DESKTOP_SHELL && parsed.engine !== "local" && parsed.engine !== "cloud"
 					? "auto"
-					: parsed.engine === "browser" || parsed.engine === "local"
+					: parsed.engine === "browser" || parsed.engine === "local" || parsed.engine === "cloud"
 						? parsed.engine
 						: "auto",
 			nearTalkDb: clampNearTalkDb(parsed.nearTalkDb),
@@ -186,11 +199,13 @@ export function forgetLocalUnavailable(): void {
  *
  * - `browser`：用户明确要 Chrome；
  * - `local`：用户明确要本地 —— 就算是坏的也按本地跑，报错让他看见（不悄悄换）；
+ * - `cloud`：用户明确要云端（服务端用厂商 API）—— 同样走「本地那条」HTTP 链路
+ *   （`/api/asr/*` 由服务端转发），**绝不回退到 Chrome**：那样会静默换供应商、还要连 Google；
  * - `auto`：本地能用就本地（离线、带标点），**确认用不了就直接 Chrome**，不先试一遍。
  */
 export function engineToStart(engine: VoiceInputSettings["engine"], localMissing: boolean): "local" | "browser" {
 	if (engine === "browser") return "browser";
-	if (engine === "local") return "local";
+	if (engine === "local" || engine === "cloud") return "local";
 	return localMissing ? "browser" : "local";
 }
 
@@ -259,7 +274,7 @@ export function saveVoiceInputSettings(next: VoiceInputSettings): void {
 		continuous: next.continuous === true,
 		idleStopSec: clampIdleStopSec(next.idleStopSec),
 		submitMode: next.submitMode === "steer" ? "steer" : "queue",
-		engine: next.engine === "browser" || next.engine === "local" ? next.engine : "auto",
+		engine: next.engine === "browser" || next.engine === "local" || next.engine === "cloud" ? next.engine : "auto",
 		nearTalkDb: clampNearTalkDb(next.nearTalkDb),
 		silenceMs: clampSilenceMs(next.silenceMs / 1000, VOICE_SILENCE_MS),
 		readingResumeMs: clampSilenceMs(next.readingResumeMs / 1000, 4000),

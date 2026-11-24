@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS 签名权限（hardened runtime）。
+
+  为什么必须有这个文件（2026-11-24 实测）：开了 `hardenedRuntime: true` 之后，如果签名里没有
+  `com.apple.security.device.audio-input`，macOS 的 TCC **连授权弹窗都不给**，直接判拒绝 ——
+
+    kTCCServiceMicrophone requires entitlement com.apple.security.device.audio-input but it is missing
+    Policy disallows prompt for Sub:{com.popagent.app} ... access to kTCCServiceMicrophone denied
+
+  表现就是「浏览器里语音输入正常、桌面 App 里点了麦克风一个字都不出」，而且系统设置里
+  连 PopAgent 这一项都不会出现（没法手动勾）。Info.plist 里的 NSMicrophoneUsageDescription
+  只是「用途说明」，不等于「有这个权限」，两件事都要做。
+
+  前三条是 Electron 自己跑起来的硬要求（JIT / 可写可执行内存 / 不校验签名库），
+  不要因为「看起来危险」删掉：删了壳直接起不来。
+
+  `entitlementsInherit` 也用这一份：真正去开麦的是 `PopAgent Helper`（Chromium 的音频服务）
+  这个子进程，权限不继承下去，主 App 有了也没用。
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<!-- 语音输入（本地 / 浏览器引擎都靠它采音）；缺了这条 TCC 直接拒绝且不弹框 -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

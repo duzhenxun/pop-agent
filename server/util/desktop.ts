@@ -16,8 +16,10 @@
  * 网页访问、密码、局域网、`server.lock` 单实例复用全都照旧 —— 别人用 `pop` 起、App 起的
  * 是同一种进程，谁先起谁占锁。
  */
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -164,19 +166,144 @@ export function withRuntimeEnv(
  * （引擎传输层、终端 pty、MCP、cron…），还有 pty 会继承整份环境。漏一处就是
  * 「终端里敲 codex 找不到」，而大家并不走同一个入口。统一改当前进程环境最省心。
  *
+ * 除了内置运行时，还会把**用户登录 shell 的 PATH** 合进来（见 `loginShellPathDirs`）。
  * 返回值给启动日志用（打印「运行时来自哪」比让人猜要值钱）。
  */
 export function applyDesktopEnv(
 	env: NodeJS.ProcessEnv = process.env,
-	options: { platform?: NodeJS.Platform; exists?: (path: string) => boolean } = {},
-): { applied: boolean; dirs: string[] } {
-	if (!isDesktopMode(env)) return { applied: false, dirs: [] };
-	const dirs = runtimeBinDirs(env, options);
-	if (dirs.length === 0) return { applied: false, dirs: [] };
-	const next = withRuntimeEnv(env, options);
-	const key = next.PATH !== undefined && env.PATH !== undefined ? "PATH" : env.Path !== undefined ? "Path" : "PATH";
-	env[key] = next[key];
-	return { applied: true, dirs };
+	options: {
+		platform?: NodeJS.Platform;
+		exists?: (path: string) => boolean;
+		/** 测的时候注入：不真的去起登录 shell */
+		shellPath?: string[] | null;
+	} = {},
+): { applied: boolean; dirs: string[]; fromShell: string[] } {
+	if (!isDesktopMode(env)) return { applied: false, dirs: [], fromShell: [] };
+	const platform = options.platform ?? process.platform;
+	const runtime = runtimeBinDirs(env, options);
+	// 用户自己的命令（codex / claude / nvm 装的东西）也要能找到：App 从 Finder 起时 PATH 很窄
+	const fromShell =
+		options.shellPath !== undefined
+			? options.shellPath
+			: loginShellPathDirs(env, { ...options, platform });
+	const shellDirs = fromShell ?? [];
+	const dirs = [...runtime, ...shellDirs];
+	if (dirs.length === 0) return { applied: false, dirs: [], fromShell: shellDirs };
+	const key = env.PATH !== undefined ? "PATH" : env.Path !== undefined ? "Path" : "PATH";
+	// 运行时在前的顺序是故意的：`node` 必须是包里那颗；用户命令靠后面的 shell 目录补上
+	const merged: string[] = [];
+	const push = (dir: string) => {
+		const trimmed = dir.trim();
+		if (trimmed === "") return;
+		if (merged.some((existing) => sameDir(existing, trimmed, platform))) return;
+		merged.push(trimmed);
+	};
+	for (const dir of runtime) push(dir);
+	for (const dir of shellDirs) push(dir);
+	for (const dir of (env.PATH ?? env.Path ?? "").split(pathSeparator(platform))) push(dir);
+	env[key] = merged.join(pathSeparator(platform));
+	return { applied: true, dirs: runtime, fromShell: shellDirs };
+}
+
+/** 写在输出里的标记：登录 shell 可能先吐一堆 banner / 提示，只认标记之后那段 */
+const SHELL_PATH_MARKER = "__POP_PATH__";
+/** 登录 shell 的上限：用户 .zshrc 里可能有 nvm 那种慢初始化，但不能让它把启动拖死 */
+const SHELL_TIMEOUT_MS = 4000;
+
+/**
+ * 用户登录 shell 的 PATH（目录列表）。
+ *
+ * 为什么要这么干（用户 2026-11-24：「我本机安装过 codex 了」，但切引擎时提示「还没装」）：
+ * App 从 Finder / Dock 启动时，进程拿到的 PATH 只有 `/usr/bin:/bin:/usr/sbin:/sbin` ——
+ * nvm、homebrew、bun、volta 这些**靠 shell 初始化注入**的目录全都不在里面，
+ * 于是「用户终端里能跑的 codex」在 App 里就是「没装」。
+ *
+ * 做法与 VS Code 一致：起一个登录 shell，让它自己把 PATH 算出来。
+ * 拿不到（shell 不存在 / 超时 / .zshrc 报错）就回退到 `fallbackBinDirs()`，不吞错也不阻塞。
+ *
+ * `run` 可注入：单测不该真去跑用户的 shell。
+ */
+export function loginShellPathDirs(
+	env: EnvLike,
+	options: {
+		platform?: NodeJS.Platform;
+		home?: string;
+		shell?: string;
+		timeoutMs?: number;
+		run?: (shell: string, timeoutMs: number) => string | null;
+	} = {},
+): string[] {
+	const platform = options.platform ?? process.platform;
+	if (platform === "win32") return []; // Windows 的 PATH 不从登录 shell 来
+	const home = options.home ?? env.HOME ?? homedir();
+	const shell = options.shell ?? env.SHELL ?? "/bin/zsh";
+	const timeoutMs = options.timeoutMs ?? SHELL_TIMEOUT_MS;
+	const run = options.run ?? readLoginShellPath;
+	const raw = run(shell, timeoutMs);
+	const fromShell = (raw ?? "")
+		.split(pathSeparator(platform))
+		.map((dir) => dir.trim())
+		.filter((dir) => dir !== "");
+	const dirs: string[] = [];
+	const push = (dir: string) => {
+		if (dir === "") return;
+		if (dirs.some((existing) => sameDir(existing, dir, platform))) return;
+		dirs.push(dir);
+	};
+	// shell 给的那串优先（里面已经含 nvm / brew 等），再用兜底目录补齐漏网的
+	for (const dir of fromShell) push(dir);
+	for (const dir of fallbackBinDirs(home, platform)) push(dir);
+	return dirs;
+}
+
+/** 真去跑一次登录 shell，把 PATH 取回来（失败一律 null，调用方回退） */
+function readLoginShellPath(shell: string, timeoutMs: number): string | null {
+	try {
+		const result = spawnSync(shell, ["-lic", `printf '%s' "${SHELL_PATH_MARKER}$PATH"`], {
+			encoding: "utf8",
+			timeout: timeoutMs,
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		const stdout = typeof result.stdout === "string" ? result.stdout : "";
+		const at = stdout.lastIndexOf(SHELL_PATH_MARKER);
+		if (at < 0) return null;
+		return stdout.slice(at + SHELL_PATH_MARKER.length).trim();
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * 兜底目录：登录 shell 读不到时（shell 坏了 / 超时 / 非交互环境）还能找到常见安装位置。
+ * 顺序按「用户自己装的」优先排：nvm 各版本 → homebrew → 通用本地目录。
+ *
+ * nvm 要扫目录而不是写死版本号：用户升级 node 之后路径就变了。
+ */
+function fallbackBinDirs(home: string, platform: NodeJS.Platform): string[] {
+	const dirs: string[] = [];
+	const nvmRoot = join(home, ".nvm", "versions", "node");
+	try {
+		if (existsSync(nvmRoot)) {
+			// 版本目录按名字倒序：v22 > v20，新版本排前面
+			const versions = readdirSync(nvmRoot).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+			for (const version of versions) dirs.push(join(nvmRoot, version, "bin"));
+		}
+	} catch {
+		// 读不到就当没有 nvm
+	}
+	for (const dir of [
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+		join(home, ".local", "bin"),
+		join(home, "bin"),
+		join(home, ".bun", "bin"),
+		join(home, ".volta", "bin"),
+		join(home, ".asdf", "shims"),
+		join(home, ".local", "share", "mise", "shims"),
+	]) {
+		if (existsSync(dir)) dirs.push(dir);
+	}
+	return dirs;
 }
 
 /**

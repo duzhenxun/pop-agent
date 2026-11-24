@@ -50,6 +50,13 @@ export type Runtime = {
 		targetConversationId?: string,
 		/** 发起请求的客户端：懒建会话时要把它的视图指到新会话（ADR-0033） */
 		clientId?: string,
+		/**
+		 * 细节选项：
+		 *   - `hidden`：隐藏回合（「想一想」），不落消息；
+		 *   - `steer`：这条是插队插进来的（ADR-0054）。interrupt 档的插队项是从队列排空发出的，
+		 *     不带这个标记的话它在对话记录里跟普通排队长得一模一样。
+		 */
+		options?: { hidden?: boolean; steer?: boolean },
 	): Promise<Result>;
 	/** 中断某个会话的回合；不给就挑「当前会话 / 第一个在跑的」 */
 	interrupt(conversationId?: string): Promise<Result>;
@@ -73,12 +80,14 @@ export type Runtime = {
 	closeEphemeral(conversationId: string): Result;
 	/**
 	 * 从某条消息派生新会话（分支）；原会话不动，自动切到新的那条。
-	 * 成功时带回新会话 id 与工作区（界面要拿它把这条分支顶到侧栏第一位）。
+	 *
+	 * `startMessageId` 给了就是「从这条消息开始新会话」（之前的丢掉），不给就是整段复制。
 	 */
 	forkSession(
 		conversationId: string,
 		messageId?: string,
 		clientId?: string,
+		startMessageId?: string,
 	): Promise<{ ok: true; conversationId: string; workspace: string } | { ok: false; error: ProtocolError }>;
 	/** 改会话显示名（写进 pi 的会话文件；成功后重扫列表把新名字带回来） */
 	renameSession(conversationId: string, title: string): Promise<Result>;

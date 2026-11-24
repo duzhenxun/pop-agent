@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>pop-agent · An external control surface for the agent you already run</title>
-<meta name="description" content="pop-agent is a multi-agent web workbench: the engine runs on your machine, while the browser lets you watch it work, manage its models and tools, cut in mid-turn, read files, open a shell, and mark spots on a web page." />
+<title>PopAgent · An external control surface for the agent you already run</title>
+<meta name="description" content="PopAgent is a multi-agent web workbench: the engine runs on your machine, while the browser lets you watch it work, manage its models and tools, cut in mid-turn, read files, open a shell, and mark spots on a web page." />
 <meta name="color-scheme" content="light dark" />
 <meta name="theme-color" content="#0a0e18" />
 
@@ -14,22 +14,22 @@
      og:image must be absolute (crawlers do not resolve relative paths); update it
      together with the domain. -->
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="pop-agent" />
-<meta property="og:title" content="pop-agent · An external control surface for the agent you already run" />
+<meta property="og:site_name" content="PopAgent" />
+<meta property="og:title" content="PopAgent · An external control surface for the agent you already run" />
 <meta property="og:description" content="The engine runs on your machine; the session stays the engine's own on-disk file. Watch the process, cut in mid-turn, manage models and tools. Works with pi / Codex / Claude Code / opencode. No database, no accounts." />
 <meta property="og:url" content="https://duzhenxun.github.io/pop-agent/" />
 <meta property="og:image" content="https://duzhenxun.github.io/pop-agent/assets/og.png" />
 <meta property="og:image:width" content="1280" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="pop-agent: an external control surface for the agent you already run" />
+<meta property="og:image:alt" content="PopAgent: an external control surface for the agent you already run" />
 <meta property="og:locale" content="en_US" />
 <meta property="og:locale:alternate" content="zh_CN" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="pop-agent" />
+<meta name="twitter:title" content="PopAgent" />
 <meta name="twitter:description" content="An external control surface for the agent you already run. Engine stays local, the session stays the engine's own file, no database." />
 <meta name="twitter:image" content="https://duzhenxun.github.io/pop-agent/assets/og.png" />
 
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f5fe0'/%3E%3Cpath d='M9 11l6 5-6 5' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M18 21h5' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23111827'/%3E%3Cg%20fill='%23F8FAFC'%3E%3Crect%20x='7.6'%20y='9'%20width='3.2'%20height='14'%20rx='1.6'/%3E%3Cpath%20d='M10.8%209h4.4a4.4%204.4%200%200%201%200%208.8h-4.4v-2.8h4.2a1.6%201.6%200%200%200%200-3.2h-4.2z'/%3E%3C/g%3E%3Cpolygon%20points='26.81,18.4%2026.81,22.8%2023,25%2019.19,22.8%2019.19,18.4%2023,16.2'%20fill='none'%20stroke='%2360A5FA'%20stroke-width='1.8'%20stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="alternate" hreflang="zh-CN" href="zh.html" />
 <link rel="stylesheet" href="assets/site.css" />
 <!-- 百度统计 -->
@@ -47,14 +47,15 @@ var _hmt = _hmt || [];
 
 <header class="nav">
   <div class="wrap nav-in">
-    <a class="brand" href="#top" aria-label="pop-agent home">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2f5fe0"/><path d="M9 11l6 5-6 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 21h5" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
-      <span>pop-agent</span>
+    <a class="brand" href="#top" aria-label="PopAgent home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#111827"/><g fill="#F8FAFC"><rect x="7.6" y="9" width="3.2" height="14" rx="1.6"/><path d="M10.8 9h4.4a4.4 4.4 0 0 1 0 8.8h-4.4v-2.8h4.2a1.6 1.6 0 0 0 0-3.2h-4.2z"/></g><polygon points="26.81,18.4 26.81,22.8 23,25 19.19,22.8 19.19,18.4 23,16.2" fill="none" stroke="#60A5FA" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      <span>PopAgent</span>
     </a>
     <button class="nav-toggle" aria-expanded="false" aria-controls="navlinks">Menu</button>
     <nav class="nav-links" id="navlinks">
       <a href="#rules">Why</a>
       <a href="#features">Conversation</a>
+      <a href="#specials">Beyond chat</a>
       <a href="#workspace">Workspace</a>
       <a href="#panels">Panels</a>
       <a href="#engines">Engines</a>
@@ -83,6 +84,7 @@ var _hmt = _hmt || [];
           Single user, loopback only, <b>no database</b>: the source of truth stays the engine's own session files.
         </p>
         <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/duzhenxun/pop-agent/releases/latest" target="_blank" rel="noreferrer">Download the macOS app (.dmg)</a>
           <div class="install-pill">
             <code>npm -g install pop-agent</code>
             <button class="icon-btn" data-copy="npm -g install pop-agent" title="Copy install command" aria-label="Copy install command">⧉</button>
@@ -90,15 +92,15 @@ var _hmt = _hmt || [];
           <a class="btn" href="#tour">See the UI</a>
         </div>
         <div class="trust">
+          <span><i></i>macOS: install and go, no Node</span>
           <span><i></i>pi / Codex / Claude Code / opencode / DeepSeek Harness</span>
-          <span><i></i>Windows · macOS · Linux</span>
-          <span><i></i>Node ≥ 22.19</span>
+          <span><i></i>Windows · macOS · Linux (CLI)</span>
         </div>
       </div>
       <div>
         <div class="frame">
           <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · demo-app</span></div>
-          <img src="assets/en/hero.webp" width="1600" height="900" alt="A real session: projects and sessions on the left, thinking blocks and tool cards in the middle, the diff of the same repo on the right" data-zoom />
+          <img src="assets/en/hero.webp" width="2400" height="1350" alt="A real session: projects and sessions on the left, thinking blocks and tool cards in the middle, the diff of the same repo on the right" data-zoom />
         </div>
         <p class="caption">A real session: thinking, tool calls, the diff and usage in one screen.</p>
       </div>
@@ -153,7 +155,7 @@ var _hmt = _hmt || [];
               <div><span class="tick">✓</span><span><b>Clickable paths</b>: <code>src/App.tsx</code> in prose opens the preview.</span></div>
             </div>
           </div>
-          <div class="shot"><img src="assets/en/answer.webp" width="1300" height="576" alt="The footer of an answer: a markdown table, changed-file chips, and this turn's tokens and cost" loading="lazy" data-zoom /></div>
+          <div class="shot"><img src="assets/en/answer.webp" width="1950" height="1219" alt="The footer of an answer: a markdown table, changed-file chips, and this turn's tokens and cost" loading="lazy" data-zoom /></div>
         </article>
 
         <article class="card reveal">
@@ -173,19 +175,79 @@ var _hmt = _hmt || [];
         <article class="card reveal">
           <h3>Mark the passage, leave a note</h3>
           <p>Select any passage and a small toolbar appears: add it to the session, annotate it, or ask about it in a temp chat. The passage keeps a <b>①②③</b> badge and the composer grows an “N notes” capsule.</p>
-          <div class="shot"><img src="assets/en/annotations.webp" width="1400" height="788" alt="After annotating: a numbered badge in the text and an “N notes” capsule in the composer" loading="lazy" data-zoom /></div>
+          <div class="shot"><img src="assets/en/annotations.webp" width="2100" height="1312" alt="After annotating: a numbered badge in the text and an “N notes” capsule in the composer" loading="lazy" data-zoom /></div>
         </article>
 
         <article class="card reveal">
           <h3><span class="mono">@</span> for files, <span class="mono">/</span> for commands</h3>
           <p>Type <b>@</b> to search the workspace, ↑↓ to pick, Enter to insert <code>@src/store.ts</code>. Type <b>/</b> for local commands (new, rename, model, session stats) or ones handed straight to the agent (compact, plan mode).</p>
-          <div class="shot"><img src="assets/en/mention-crop.webp" width="1200" height="393" alt="The @ mention panel, grouped into “Add” and “Recent”" loading="lazy" data-zoom /></div>
+          <div class="shot"><img src="assets/en/mention-crop.webp" width="1800" height="1125" alt="The @ mention panel, grouped into “Add” and “Recent”" loading="lazy" data-zoom /></div>
         </article>
       </div>
     </div>
   </section>
 
   <!-- WORKSPACE -->
+  <!-- Beyond chat -->
+  <section id="specials">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">Beyond chat</div>
+        <h2>Six things most agent front-ends<br />never bother with</h2>
+        <p>Voice, scheduling, computer control, canvas, push and remote access all live in the same process — not six bolted-on tools. They share the same sessions, the same workspace and the same approval rules.</p>
+      </div>
+
+      <div class="cards">
+        <article class="card wide reveal">
+          <div class="copy">
+            <h3>① Live voice: speak and it types along; it reads its answer back</h3>
+            <p>Not "wait for the whole blob": open the mic bubble and <b>text lands in the box word by word</b>. Tap to keep listening; hold to talk and release to send. When it answers it reads the reply out loud — adjustable speed and voice, pause / resume / stop.</p>
+            <div class="list">
+              <div><span class="tick">✓</span><span><b>Offline by default</b>: speech-to-text prefers macOS local recognition (<code>SFSpeechRecognizer</code>), speech uses the system voice — nothing leaves the machine, no cost.</span></div>
+              <div><span class="tick">✓</span><span><b>Four event cues</b> — start / end / error / waiting for approval — each previewable, each with its own volume.</span></div>
+              <div><span class="tick">✓</span><span>Want one consistent voice? Switch to <code>edge</code> (Microsoft) or your own <code>kokoro</code> / <code>qwen3</code>.</span></div>
+            </div>
+          </div>
+          <div class="shot"><img src="assets/en/voice.webp" width="1650" height="1031" alt="Voice panel: four event cues and local TTS settings" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>② Scheduled tasks: say it once, it runs every morning</h3>
+          <p>A task = a prompt + a cron expression + a timezone. Text tasks go straight to the model with no repo access; agent tasks run a real turn in the workspace. Say "check this repo every morning at 9" in chat and the agent creates it for you.</p>
+          <p class="mini">Unattended means unattended: <b>writes are denied by default</b> unless you tick "allow file changes"; a turn that times out is recorded as failed — a half answer is never reported as success.</p>
+          <div class="shot"><img src="assets/en/cron.webp" width="1650" height="1031" alt="Scheduled tasks panel: task list, cron expression and next run" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>③ Computer control: the agent actually drives your Mac</h3>
+          <p>Not screenshot-and-guess: it reads the macOS <b>accessibility (AX) element tree</b> and clicks by element id. It can click, type, paste (restoring your previous clipboard afterwards), send shortcuts and run menu paths.</p>
+          <p class="mini">Password fields are never filled in for you; system authentication and protected apps stay off-limits. The master switch is the skill itself, so <b>any engine with bash</b> can use it.</p>
+          <div class="shot"><img src="assets/en/computer.webp" width="1650" height="1031" alt="Computer control panel: helper status and system permissions" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>④ Canvas: draw "what happens next" as a graph</h3>
+          <p>Describe something that takes many steps and the agent lays it out as <b>nodes plus dependency edges</b> on the right. Nodes carry kinds — task / milestone / risk / decision / doc — so it is obvious which step may blow up and which one needs your call.</p>
+          <p class="mini">It is interactive: mark a step running when you start it and done when you finish. Sub-plans absorb the detail so the main graph stays readable.</p>
+          <div class="shot"><img src="assets/en/canvas.webp" width="1650" height="1031" alt="Canvas: a CSV-export plan split into 7 nodes and 7 dependencies" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>⑤ Push to your phone: it buzzes when a turn ends</h3>
+          <p>One push per finished turn: the title is the project, the body is the session, failures get ❌ and interruptions ⏹. Web Push (VAPID) with <b>no third-party service</b>; keys are generated on first start. Multiple devices, test push, clear all.</p>
+          <div class="shot"><img src="assets/en/push.webp" width="1650" height="1031" alt="Push panel: subscription state and multiple devices" loading="lazy" data-zoom /></div>
+        </article>
+
+        <article class="card reveal">
+          <h3>⑥ Remote access: keep working from your phone, elsewhere</h3>
+          <p><code>pop -H 0.0.0.0</code> and you can open it from a phone or another computer. The password must be <b>set on the machine itself</b> (remote clients may not create one — otherwise whoever finds the port first takes over); three wrong passwords pause login for 30 minutes.</p>
+          <p class="mini">The phone gets a real phone layout: sidebar becomes a drawer, icons only up top, an 18px composer so iOS does not zoom, the right pane becomes a full-screen second page.</p>
+          <div class="shot"><img src="assets/en/remote.webp" width="1650" height="1031" alt="Settings → Remote: access password, login protection and login activity" loading="lazy" data-zoom /></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <section id="workspace">
     <div class="wrap">
       <div class="sec-head reveal">
@@ -203,7 +265,7 @@ var _hmt = _hmt || [];
             <div><span class="tick">✓</span><span>Read-only by design: agents or the terminal edit files, this pane verifies</span></div>
           </div>
         </div>
-        <div class="shot"><img src="assets/en/diff.webp" width="1000" height="595" alt="The diff view: +10 −1 against HEAD, with line-level red and green" loading="lazy" data-zoom /></div>
+        <div class="shot"><img src="assets/en/diff.webp" width="1500" height="938" alt="The diff view: +10 −1 against HEAD, with line-level red and green" loading="lazy" data-zoom /></div>
       </div>
 
       <div class="spot rev reveal">
@@ -236,7 +298,7 @@ var _hmt = _hmt || [];
             <div><span class="tick">✓</span><span><b>Separate from notes</b>: page marks stay on this machine; sent notes clear.</span></div>
           </div>
         </div>
-        <div class="shot"><img src="assets/en/webmark.webp" width="1600" height="900" alt="A campaign page opened on the right, its title marked ①, and “1 note” in the composer" loading="lazy" data-zoom /></div>
+        <div class="shot"><img src="assets/en/webmark.webp" width="2400" height="1350" alt="A campaign page opened on the right, its title marked ①, and “1 note” in the composer" loading="lazy" data-zoom /></div>
       </div>
     </div>
   </section>
@@ -251,27 +313,27 @@ var _hmt = _hmt || [];
       </div>
       <div class="panels">
         <article class="panel-card reveal">
-          <img src="assets/en/models.webp" width="1100" height="779" alt="Models panel: providers with endpoints and a model allow-list" loading="lazy" data-zoom />
+          <img src="assets/en/models.webp" width="1650" height="1031" alt="Models panel: providers with endpoints and a model allow-list" loading="lazy" data-zoom />
           <div class="body"><h4>Models &amp; providers</h4><p>OAuth subscription logins, built-in providers, custom endpoints and API shapes; tick the models you want. Keys never leave the server — only the last 4 characters come back.</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/en/skills.webp" width="1100" height="862" alt="Skills panel: installed, enabled and disabled skills, with the SKILL.md summary" loading="lazy" data-zoom />
+          <img src="assets/en/skills.webp" width="1650" height="1031" alt="Skills panel: installed, enabled and disabled skills, with the SKILL.md summary" loading="lazy" data-zoom />
           <div class="body"><h4>Skills</h4><p>Reads <code>~/.agents/skills</code>; enabling or disabling renames the file, with no second state file. Skill Hub adds search and one-click install.</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/en/mcp.webp" width="1100" height="499" alt="MCP panel: global and project configs, exposure, connection test" loading="lazy" data-zoom />
+          <img src="assets/en/mcp.webp" width="1650" height="1031" alt="MCP panel: global and project configs, exposure, connection test" loading="lazy" data-zoom />
           <div class="body"><h4>MCP</h4><p>Global and project configs, project entries override; four exposure modes; “Test connection” does a real handshake and reports the tool count.</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/en/agents.webp" width="1100" height="379" alt="Subagents panel: templates, default concurrency and an enable switch" loading="lazy" data-zoom />
+          <img src="assets/en/agents.webp" width="1650" height="1031" alt="Subagents panel: templates, default concurrency and an enable switch" loading="lazy" data-zoom />
           <div class="body"><h4>Subagents</h4><p>Built-in explore / general-purpose / plan, editable and disableable; concurrency 1–12 with the rest queued. Every subagent is a real session.</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/en/plugins.webp" width="1100" height="300" alt="Plugins panel: pi package states and per-package disable" loading="lazy" data-zoom />
+          <img src="assets/en/plugins.webp" width="1650" height="1031" alt="Plugins panel: pi package states and per-package disable" loading="lazy" data-zoom />
           <div class="body"><h4>Plugins</h4><p>Plugins are pi packages: npm, git or local directories, in four states <code>loaded · installed · missing · disabled</code>. Disabling doesn't delete files.</p></div>
         </article>
         <article class="panel-card reveal">
-          <img src="assets/en/push.webp" width="1100" height="579" alt="Push panel: local push state, target devices and a test push" loading="lazy" data-zoom />
+          <img src="assets/en/push.webp" width="1650" height="1031" alt="Push panel: local push state, target devices and a test push" loading="lazy" data-zoom />
           <div class="body"><h4>Push &amp; voice</h4><p>One push when a turn ends (prefixed ❌ on failure, ⏹ on interrupt) that opens the session; four event sounds plus offline local TTS.</p></div>
         </article>
       </div>
@@ -290,13 +352,13 @@ var _hmt = _hmt || [];
         <div class="tour-tabs" role="tablist">
           <button class="tour-tab" role="tab" aria-selected="true" data-src="assets/en/overview.webp" data-alt="Full UI: projects and sessions, transcript, source view, status bar" data-cap="Projects and sessions · transcript · source view · status bar">Overview</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/settings.webp" data-alt="Settings: sessions per project, top-bar entries, status-bar blocks" data-cap="Settings → Interface: sessions per project, top-bar entries, status blocks">Settings</button>
-          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/slash.webp" data-alt="Slash commands: local commands and ones handed to the agent" data-cap="Slash commands: 7 local, 5 handed straight to the agent">Slash commands</button>
+          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/slash.webp" data-alt="Slash palette: /new runs in the workbench, /skill /compact /plan go to the engine" data-cap="Slash commands: /new runs here, the other three go to the engine">Slash commands</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/mobile.webp" data-alt="Mobile single column: icon-only entries, full-width content" data-cap="Mobile: single column, 18px composer, model menu as a bottom sheet">Mobile</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/mobile-drawer.webp" data-alt="The project drawer on mobile is an overlay" data-cap="On mobile the project sidebar is an overlay drawer">Mobile drawer</button>
         </div>
         <div class="tour-stage frame">
           <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090</span></div>
-          <img id="tourImg" src="assets/en/overview.webp" width="1500" height="844" alt="Full UI" data-zoom />
+          <img id="tourImg" src="assets/en/overview.webp" width="2250" height="1266" alt="Full UI" data-zoom />
         </div>
         <p class="caption" id="tourCap">Projects and sessions · transcript · source view · status bar</p>
       </div>
@@ -325,7 +387,7 @@ var _hmt = _hmt || [];
             <tr><td>Approvals</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">per config</td><td class="y">✓</td></tr>
             <tr><td>Model / thinking level</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="n">model only</td></tr>
             <tr><td>Resume history</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-            <tr><td>Steer</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+            <tr><td>Steer</td><td class="y">✓ native</td><td class="y">✓ interrupt</td><td class="y">✓ interrupt</td><td class="y">✓ interrupt</td><td class="y">✓ interrupt</td></tr>
             <tr><td>Subagent panel</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
             <tr><td>Workbench manages providers</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
             <tr><td>Temp chat (in memory)</td><td class="y">✓</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
@@ -340,8 +402,8 @@ var _hmt = _hmt || [];
     <div class="wrap">
       <div class="sec-head reveal">
         <div class="kicker">Get started</div>
-        <h2>Two commands, and you have a workbench</h2>
-        <p>Requires Node ≥ 22.19. It installs three equivalent commands: <code>pop-agent</code>, <code>pop</code> and <code>pop-agent</code>. On Linux the embedded terminal needs <code>node-pty</code> built locally (make / g++ / python3).</p>
+        <h2>Install the app on macOS,<br />or one command anywhere else</h2>
+        <p>On macOS (Apple Silicon) grab the <code>.dmg</code> and drag it into Applications — <b>no Node, no terminal</b>, the runtime ships inside. Everything else goes through npm and needs Node ≥ 22.19. On Linux the embedded terminal needs <code>node-pty</code> built locally (make / g++ / python3).</p>
       </div>
       <div class="install">
         <div class="steps reveal">
@@ -439,8 +501,8 @@ POP_AGENT_CWD=~/code/my-proj pop</pre>
     <div class="foot-grid">
       <div>
         <div class="brand" style="margin-bottom:10px">
-          <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#2f5fe0"/><path d="M9 11l6 5-6 5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 21h5" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
-          <span>pop-agent</span>
+          <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#111827"/><g fill="#F8FAFC"><rect x="7.6" y="9" width="3.2" height="14" rx="1.6"/><path d="M10.8 9h4.4a4.4 4.4 0 0 1 0 8.8h-4.4v-2.8h4.2a1.6 1.6 0 0 0 0-3.2h-4.2z"/></g><polygon points="26.81,18.4 26.81,22.8 23,25 19.19,22.8 19.19,18.4 23,16.2" fill="none" stroke="#60A5FA" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <span>PopAgent</span>
         </div>
         <p style="max-width:30em">An external control surface for the agent you already run. Single user, loopback only, and the session files stay the engine's.</p>
       </div>
@@ -466,8 +528,8 @@ POP_AGENT_CWD=~/code/my-proj pop</pre>
       </div>
     </div>
     <div class="foot-bottom">
-      <span>© 2026 pop-agent · MIT</span>
-      <span>Screenshots come from a real 1.1.0 instance (demo workspace) — no composites.</span>
+      <span>© 2026 PopAgent · MIT</span>
+      <span>Screenshots come from a real 0.1.2 instance (demo workspace) — no composites.</span>
     </div>
   </div>
 </footer>
