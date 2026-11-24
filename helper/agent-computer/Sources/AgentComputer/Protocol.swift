@@ -6,7 +6,7 @@ import Foundation
 /// 一次 observe 得到的编号只在「最近一次快照」里有效；每个动作都先确认编号还在，
 /// 避免拿着旧编号点到完全不同的东西。
 enum Protocol {
-	static let apiVersion = "agent-computer-1"
+	static let apiVersion = "turbo-1"
 	/// 版本号只认 `Info.plist` 的 `CFBundleShortVersionString`。
 	///
 	/// 以前这里写死了一个字符串，改 plist 不改这儿的话，面板显示的版本就永远停在旧值

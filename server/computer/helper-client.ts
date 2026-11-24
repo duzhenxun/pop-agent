@@ -13,8 +13,9 @@ import { connect, type Socket } from "node:net";
 import { FrameDecoder, encodeFrame } from "./framing.js";
 import type { HelperTransport } from "./paths.js";
 
-/** 客户端说的 API 版本（hello.clientApiVersion）；与 helper 不一致时拒绝继续 */
-export const CLIENT_API_VERSION = "agent-computer-1";
+/** 客户端说的 API 版本（hello.clientApiVersion）；与 helper 不一致时拒绝继续。
+ *  与原版 `agent-computer-turbo` 对齐（见 helper/agent-computer/README.md）。 */
+export const CLIENT_API_VERSION = "turbo-1";
 export const DEFAULT_DEADLINE_MS = 120_000;
 const HELLO_TIMEOUT_MS = 5_000;
 /** 需要经过 helper 安全与审批检查的请求：helper 可能弹确认框，本地超时要多等一段 */
