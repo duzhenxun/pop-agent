@@ -935,7 +935,7 @@ export function App() {
 		press.timer = setTimeout(() => {
 			if (micPressRef.current !== press) return;
 			if (micPressResult(MIC_HOLD_DELAY_MS, isVoiceListening()) !== "startHold") return;
-			startVoiceInput();
+			void startVoiceInput();
 		}, MIC_HOLD_DELAY_MS);
 	}, []);
 	/** 松手：小于阈值 = 轻按开关，大于阈值（已经开了）= 停 */

@@ -835,7 +835,7 @@ export function VoicePanel() {
 					>
 						<option value="auto">{t("自动（优先本地）", "Auto (local first)")}</option>
 						<option value="local">{t("本地（macOS 离线）", "Local (macOS, offline)")}</option>
-						<option value="browser">{t("Chrome 原生（需连 Google）", "Chrome (needs Google)")}</option>
+						<option value="browser">{t("Chrome 原生（需能连 Google，国内常不可用）", "Chrome (needs Google; often blocked in China)")}</option>
 					</select>
 				</label>
 

@@ -191,17 +191,21 @@ export function engineToStart(engine: VoiceInputSettings["engine"], localMissing
  * 不会拉起进程、不会弹系统授权）。回答 `missing` 就把 `localUnusable` 记上，
  * 这样连**第一次**点麦克风都已经走 Chrome —— 开箱即用，不用先撞一次墙。
  */
-function probeLocalAvailability(): void {
+async function probeLocalAvailability(): Promise<void> {
 	if (typeof window === "undefined" || typeof fetch !== "function") return;
-	void fetch("/api/asr/status")
-		.then(async (response) => (response.ok ? ((await response.json()) as { state?: string }) : null))
-		.catch(() => null)
-		.then((status) => {
-			if (status?.state === "missing") localUnusable = true;
-		})
-		.catch(() => undefined);
+	try {
+		const response = await fetch("/api/asr/status");
+		if (!response.ok) return;
+		const status = (await response.json()) as { state?: string };
+		// **双向**：只有明确的 missing 才算「这条路不存在」；idle / starting / ready / error
+		// 都说明本地这层是活的（error 会在 onError 里退回 Chrome）。以前只往 true 写，
+		// 于是用户后来装好、打开了 helper，这个页面还是永远走 Chrome。
+		localUnusable = status?.state === "missing";
+	} catch {
+		// 服务端一时答不上来：保持原判断，别把「问不到」当成「不可用」
+	}
 }
-probeLocalAvailability();
+void probeLocalAvailability();
 
 /**
  * 本地保存的序号。用于解决一个真实存在的竞态：
@@ -701,7 +705,7 @@ function scheduleContinuousResume(): void {
 			return;
 		}
 		voiceLog("continuous:resume", { engine: settings.engine });
-		startVoiceInput();
+		void startVoiceInput();
 	}, CONTINUOUS_RESUME_MS);
 }
 
@@ -909,11 +913,14 @@ function startBrowserInput(): void {
 	beginListening();
 }
 
-export function startVoiceInput(): void {
+export async function startVoiceInput(): Promise<void> {
 	if (status !== "idle") return;
 	// 用户自己点的：解除「暂停」，并清掉之前的错误计数
 	manualPause = false;
 	errorStreak = 0;
+	// 本地可用性会变（用户可能刚装好 helper、刚打开它、刚授权）：判过不可用就再问一次。
+	// /api/asr/status 走本地服务端，几毫秒就回来。
+	if (localUnusable) await probeLocalAvailability();
 	voiceLog("start", {
 		engineSetting: settings.engine,
 		autoSend: settings.autoSend,
@@ -960,7 +967,7 @@ export function stopVoiceInput(): void {
 }
 
 export function toggleVoiceInput(): void {
-	if (status === "idle") startVoiceInput();
+	if (status === "idle") void startVoiceInput();
 	else stopVoiceInput();
 }
 
