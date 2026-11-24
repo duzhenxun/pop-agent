@@ -1,6 +1,6 @@
 # PopAgent
 
-[![version](https://img.shields.io/badge/version-0.1.0-4f7cff?style=flat-square)](https://github.com/duzhenxun/pop-agent/releases)
+[![version](https://img.shields.io/github/v/release/duzhenxun/pop-agent?style=flat-square&color=4f7cff&label=version)](https://github.com/duzhenxun/pop-agent/releases)
 [![npm downloads](https://img.shields.io/npm/dm/pop-agent?style=flat-square&label=downloads%2Fmonth&color=2f5fe0)](https://www.npmjs.com/package/pop-agent)
 [![GitHub stars](https://img.shields.io/github/stars/duzhenxun/pop-agent?style=flat-square&color=f5c542&label=stars)](https://github.com/duzhenxun/pop-agent/stargazers)
 [![node](https://img.shields.io/badge/node-%E2%89%A522.19-3c873a?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
@@ -9,7 +9,10 @@
 
 > This project is a fork of [oh-my-agent-web](https://github.com/duzhenxun/oh-my-agent-web). Versioning restarts at **0.1.0** (upstream was on 1.5.x at fork time); version numbers mentioned in the README and ADRs refer to that upstream history.
 
-[中文](README.zh.md) · **English** · [Website](https://duzhenxun.github.io/pop-agent/)
+[中文](README.zh.md) · **English** · [Website](https://duzhenxun.github.io/pop-agent/) · [Gitee mirror](https://gitee.com/duzhenxun/pop-agent)
+
+> When GitHub is slow or unreachable from China, use the Gitee mirror:
+> `git clone https://gitee.com/duzhenxun/pop-agent.git`. The helper (`Agent Computer.app`) can be downloaded from Gitee too — see "Distribution".
 
 One line: **an external control surface for the agent you're already running.** The engine keeps running on your own machine; the web page is where you watch it work, manage its tools and models, cut in to correct it whenever you like, and — when the moment comes — read files, open a terminal, or highlight a passage and ask for a change.
 

@@ -1,6 +1,6 @@
 # PopAgent
 
-[![version](https://img.shields.io/badge/version-0.1.0-4f7cff?style=flat-square)](https://github.com/duzhenxun/pop-agent/releases)
+[![version](https://img.shields.io/github/v/release/duzhenxun/pop-agent?style=flat-square&color=4f7cff&label=version)](https://github.com/duzhenxun/pop-agent/releases)
 [![npm downloads](https://img.shields.io/npm/dm/pop-agent?style=flat-square&label=downloads%2Fmonth&color=2f5fe0)](https://www.npmjs.com/package/pop-agent)
 [![GitHub stars](https://img.shields.io/github/stars/duzhenxun/pop-agent?style=flat-square&color=f5c542&label=stars)](https://github.com/duzhenxun/pop-agent/stargazers)
 [![node](https://img.shields.io/badge/node-%E2%89%A522.19-3c873a?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
@@ -9,7 +9,10 @@
 
 > 本项目分叉自 [oh-my-agent-web](https://github.com/duzhenxun/oh-my-agent-web)，版本号从 **0.1.0** 重新起（上游当时是 1.5.x）；README 与 ADR 里提到的旧版本号指的是上游历史。
 
-**中文** · [English](README.md) · [官网](https://duzhenxun.github.io/pop-agent/zh.html)
+**中文** · [English](README.md) · [官网](https://duzhenxun.github.io/pop-agent/zh.html) · [Gitee 镜像](https://gitee.com/duzhenxun/pop-agent)
+
+> 国内访问 GitHub 不稳时用 Gitee：`git clone https://gitee.com/duzhenxun/pop-agent.git`。
+> helper（`Agent Computer.app`）也可以直接从 Gitee 下载，见「分发」一节。
 
 一句话：**给你正在跑的那个 agent 配一个外部操作页。** 引擎照旧跑在自己电脑上，你在网页里看着它干活、管它的工具和模型、随时插话纠正，需要时直接翻文件、开终端、圈出一段话让它改。
 
