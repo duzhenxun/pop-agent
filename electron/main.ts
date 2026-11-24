@@ -298,6 +298,24 @@ function createWindow(url: string): BrowserWindow {
 		// 没有 preload、没有 node 集成：页面只是访问本机服务的一个普通网页
 		webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
 	});
+
+	/**
+	 * 语音输入要麦克风。**Electron 不像浏览器那样自动弹授权框** —— 不在壳里明确放行，
+	 * getUserMedia 会被直接拒绝，表现就是「点了麦克风、红点在闪，但一个字都不出」。
+	 * 只放行音频：摄像头、地理位置、通知这些页面根本用不到，一律拒绝。
+	 */
+	const session = window.webContents.session;
+	session.setPermissionRequestHandler((_contents, permission, callback, details) => {
+		if (permission !== "media") return callback(false);
+		const mediaTypes = (details as { mediaTypes?: string[] }).mediaTypes ?? [];
+		callback(!mediaTypes.includes("video"));
+	});
+	// Chromium 有时先走 check 而不是 request，两个都要答，否则仍会被拒
+	session.setPermissionCheckHandler((_contents, permission, _origin, details) => {
+		if (permission !== "media") return false;
+		const mediaType = (details as { mediaType?: string }).mediaType;
+		return mediaType !== "video";
+	});
 	window.once("ready-to-show", () => {
 		// `center: true` 在这条 `show: false` 的路径上偶尔不生效（实测窗口落在 (1, 30)），
 		// 所以在真正显示之前再居中一次：只居中、不改尺寸，用户看不到跳。

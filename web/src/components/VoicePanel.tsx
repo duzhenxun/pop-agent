@@ -8,6 +8,7 @@
  * 设置全部存本机（localStorage）：音量/音色/语速都是「这台机器」的属性，不该多端同步。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IS_DESKTOP_SHELL } from "../brand.ts";
 import {
 	SOUND_LABEL,
 	loadSoundSettings,
@@ -835,7 +836,13 @@ export function VoicePanel() {
 					>
 						<option value="auto">{t("自动（优先本地）", "Auto (local first)")}</option>
 						<option value="local">{t("本地（macOS 离线）", "Local (macOS, offline)")}</option>
-						<option value="browser">{t("Chrome 原生（需能连 Google，国内常不可用）", "Chrome (needs Google; often blocked in China)")}</option>
+						{/* 桌面壳里 Web Speech 必死：Electron 用开源 Chromium，没有 Google 的语音后端与
+						    API key，网络通也一样报 network。所以这个选项只在浏览器里出现。 */}
+						{IS_DESKTOP_SHELL ? null : (
+							<option value="browser">
+								{t("Chrome 原生（需能连 Google，国内常不可用）", "Chrome (needs Google; often blocked in China)")}
+							</option>
+						)}
 					</select>
 				</label>
 

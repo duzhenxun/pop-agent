@@ -16,6 +16,7 @@
  * 关掉「说完自动发送」（设置 → 声音与语音）就永远停在 listening，等用户按回车。
  */
 import { useSyncExternalStore } from "react";
+import { IS_DESKTOP_SHELL } from "./brand.ts";
 import { readLanguage } from "./language.ts";
 import { isReading, isSpeechPausedNow, setSpeechPaused } from "./speech-control.ts";
 import { currentSpokenText } from "./tts.ts";
@@ -136,7 +137,14 @@ function readSettings(): VoiceInputSettings {
 			idleStopSec: clampIdleStopSec(parsed.idleStopSec),
 			// 只认这几个值；存坏了就回落默认，别让一个手改的字符串把「发送」弄成无动作
 			submitMode: parsed.submitMode === "steer" ? "steer" : "queue",
-			engine: parsed.engine === "browser" || parsed.engine === "local" ? parsed.engine : "auto",
+			// 桌面壳里 Web Speech 必死（Electron 没有 Google 语音后端）：
+			// 老设置里存过 browser 也静默回落 auto（→ 本地），省得用户一直卡在一条死路上
+			engine:
+				IS_DESKTOP_SHELL && parsed.engine !== "local"
+					? "auto"
+					: parsed.engine === "browser" || parsed.engine === "local"
+						? parsed.engine
+						: "auto",
 			nearTalkDb: clampNearTalkDb(parsed.nearTalkDb),
 			silenceMs: clampSilenceMs(parsed.silenceMs === undefined ? undefined : parsed.silenceMs / 1000, VOICE_SILENCE_MS),
 			readingResumeMs: clampSilenceMs(

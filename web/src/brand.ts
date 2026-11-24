@@ -23,3 +23,14 @@ export const REPO_URL = "https://github.com/duzhenxun/pop-agent";
  * 这边写成全名是为了让用户在终端里看得懂自己在跑什么。改包名时两处一起改。
  */
 export const UPGRADE_COMMAND = "npm -g install pop-agent@latest";
+
+/**
+ * 跑在桌面壳（Electron）里。
+ *
+ * 用途：Web Speech（`webkitSpeechRecognition`）在 Chrome 官方版能用，是因为 Google
+ * 在 Chrome 里内置了**私有 API key 与服务端点**；Electron 用的是开源 Chromium 构建，
+ * 不带那套东西 —— 哪怕网络能直连 Google，App 里调它也是必死（network 错误）。
+ * 所以桌面壳里直接不给这个选项，默认走本地识别。
+ */
+export const IS_DESKTOP_SHELL =
+	typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent);
