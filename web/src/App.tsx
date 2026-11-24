@@ -1,4 +1,4 @@
-import { UPGRADE_COMMAND } from "./brand.ts";
+import { REPO_URL, UPGRADE_COMMAND } from "./brand.ts";
 import { basename } from "./path-utils.ts";
 import { useStickToBottom } from "./stick-to-bottom.ts";
 import { nextAnchorTarget, type AnchorSeen } from "./anchor-target.ts";
@@ -2110,7 +2110,13 @@ export function App() {
 												webVersion={snapshot.versions.web}
 												latestVersion={snapshot.versions.latest}
 												outdated={snapshot.versions.outdated}
-												onUpgrade={() => upgradeInTerminal(UPGRADE_COMMAND)}
+												desktop={snapshot.desktop}
+												onUpgrade={() =>
+													// 壳里没有 npm 全局包可升级：去发布页下新安装包才是真路径
+													snapshot.desktop
+														? window.open(`${REPO_URL}/releases`, "_blank", "noopener,noreferrer")
+														: upgradeInTerminal(UPGRADE_COMMAND)
+												}
 											/>
 											<NewChatTemplates
 												templates={snapshot.settings.templates ?? []}

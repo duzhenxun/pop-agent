@@ -559,6 +559,12 @@ export type Snapshot = {
 	 * outdated = 上游比本机新，抬头那行标红提醒「有新版」。都由服务端算好，界面不自己比版本号。
 	 */
 	versions: { web: string; engine: string | null; latest: string | null; outdated: boolean };
+	/**
+	 * 是否跑在桌面 App 壳（Electron）里。界面据此决定「有新版」那颗提示该干什么：
+	 * 壳里没有 npm 全局包可升级，点它应该去打开发布页下载新安装包；
+	 * 浏览器 / 命令行装的才有 `npm -g install` 这条路。
+	 */
+	desktop: boolean;
 	/** 客户端设置（快捷短语等） */
 	settings: SettingsView;
 	/**

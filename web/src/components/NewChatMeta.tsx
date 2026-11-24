@@ -19,6 +19,7 @@ export function NewChatMeta({
 	latestVersion,
 	outdated,
 	onUpgrade,
+	desktop = false,
 }: {
 	webVersion: string;
 	/** 上游（GitHub）最新版本；查不到为 null */
@@ -30,6 +31,8 @@ export function NewChatMeta({
 	 * 不传就退化成纯展示（角度仍可见，但不是按钮）。
 	 */
 	onUpgrade?: () => void;
+	/** 跑在桌面 App 壳里：点「↑ 有新版」应该是去打开发布页，而不是跑 npm 升级命令 */
+	desktop?: boolean;
 }) {
 	// 文案全部走 `t()`：这一块是「还没开聊时的门面」，英文界面下不能只剩中文
 	const t = useT();
@@ -72,10 +75,15 @@ export function NewChatMeta({
 								onClick={onUpgrade}
 								title={
 									onUpgrade
-										? t(
-												`在终端里执行 ${UPGRADE_COMMAND}（回车自动敲）`,
-												`Runs ${UPGRADE_COMMAND} in a terminal (auto-submitted)`,
-											)
+										? desktop
+											? t(
+													`打开发布页下载 v${latestVersion ?? "新版本"} 安装包（当前 v${webVersion}）`,
+													`Open the releases page to download v${latestVersion ?? "the new build"} (you are on v${webVersion})`,
+												)
+											: t(
+													`在终端里执行 ${UPGRADE_COMMAND}（回车自动敲）`,
+													`Runs ${UPGRADE_COMMAND} in a terminal (auto-submitted)`,
+												)
 										: t(
 												`上游已发布 v${latestVersion ?? ""}，本机 v${webVersion}`,
 												`Upstream released v${latestVersion ?? ""}, you are on v${webVersion}`,

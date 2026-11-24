@@ -32,6 +32,7 @@ import {
 	type UiMessage,
 } from "../protocol.js";
 import { isOutdated } from "../util/upstream-version.js";
+import { isDesktopMode } from "../util/desktop.js";
 
 export type ServerState = {
 	workspace: string;
@@ -411,6 +412,8 @@ export function buildSnapshot(
 			latest: state.versions.latest,
 			outdated: isOutdated(state.versions.latest, state.versions.web),
 		},
+		// 界面据此给「有新版」分流：壳里去发布页下安装包，命令行/浏览器里才是 npm 升级
+		desktop: isDesktopMode(process.env),
 		terminal: state.terminal ? { ...state.terminal } : null,
 		files: (() => {
 			const root = activeId ? state.filesRootByConversation[activeId] : undefined;
