@@ -90,6 +90,11 @@ export class AsrService {
 		if (this.cloudConfig) {
 			return { state: "ready", locale: this.cloudConfig.language ?? "zh-CN", onDevice: false };
 		}
+		// missing 不是终态：用户可能刚装好、刚把 helper 打开。以前这里直接返回缓存的
+		// missing，于是「装好了，重新检测」点了毫无反应（用户实测反馈）。
+		if (this.status.state === "missing" && this.helperAvailable()) {
+			this.status = { state: "idle" };
+		}
 		if (this.status.state !== "idle") return this.status;
 		// 一次都没启动过、helper 也不在：如实说「没装」，别让面板显示「就绪」
 		if (this.helperAvailable()) return this.status;

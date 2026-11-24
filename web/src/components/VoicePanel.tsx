@@ -865,10 +865,11 @@ export function VoicePanel() {
 												: asr.state === "starting"
 													? t("正在启动…", "Starting…")
 													: asr.state === "missing"
-														? t(
+														? (asr.message ??
+															t(
 																"还没装：本地识别在 Agent Computer 里（和电脑控制同一个程序）",
 																"Not installed — local recognition lives in Agent Computer (same helper as computer control)",
-															)
+															))
 														: (asr.message ?? asr.state)}
 								</span>
 							</span>
@@ -908,8 +909,8 @@ export function VoicePanel() {
 								<ol className="voice-install-steps">
 									<li>
 										{t(
-											"点「下载 Agent Computer.app」，解压后右键打开（首次打开若被系统拦，右键 →「打开」）",
-											"Click “Download Agent Computer.app”, unzip, then right-click → Open (macOS blocks the first launch otherwise)",
+											"在「电脑控制」面板点「一键安装」（或手动下载 zip 解压）。第一次打开若被系统拦下，去「系统设置 → 隐私与安全性」底部点「仍要打开」",
+											"Use “Install for me” in the Computer control panel (or download the zip yourself). If macOS blocks the first launch, allow it in System Settings → Privacy & Security",
 										)}
 									</li>
 									<li>
@@ -931,7 +932,7 @@ export function VoicePanel() {
 											{t("手动下载 zip", "Download the zip")}
 										</a>
 									) : null}
-									<button type="button" className="btn btn-tiny" onClick={() => refreshAsr()}>
+									<button type="button" className="btn btn-tiny" onClick={() => refreshAsr(true)}>
 										{t("装好了，重新检测", "Installed — check again")}
 									</button>
 								</div>
