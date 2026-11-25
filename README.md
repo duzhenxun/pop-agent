@@ -36,7 +36,7 @@ Voice, scheduling, computer control, canvas, push and remote access all live in 
 
 ### ① Live voice: speak and it types along; it reads its answer back
 
-![Voice panel: four event cues and local TTS settings](docs/screenshots/10-voice.png)
+![Voice panel: four event cues and local TTS settings](docs/screenshots/en/10-voice.png)
 
 - **Talk instead of typing**: the mic in the composer starts listening on the first tap and **text lands in the box word by word** — not one blob at the end. Tap = keep listening (tap again to stop); hold = push-to-talk, release to send.
 - **It reads the answer back**: TTS plays the final reply with adjustable speed and voice, plus pause / resume / stop; start / end / error / waiting-for-approval each have their own cue, previewable, with their own volume.
@@ -44,7 +44,7 @@ Voice, scheduling, computer control, canvas, push and remote access all live in 
 
 ### ② Scheduled tasks: say it once, it runs every morning
 
-![Scheduled tasks panel: task list, cron expression and next run](docs/screenshots/19-cron.png)
+![Scheduled tasks panel: task list, cron expression and next run](docs/screenshots/en/19-cron.png)
 
 - **A task = a prompt + a five-field cron expression + a timezone.** A `text task` goes straight to the model and never touches the repo; an `agent task` runs a real turn in the workspace (reads files, runs commands, edits code).
 - **You can create one in chat**: say "check this repo every morning at 9" and the agent fills in the name, workspace and timezone itself.
@@ -52,7 +52,7 @@ Voice, scheduling, computer control, canvas, push and remote access all live in 
 
 ### ③ Computer control: the agent actually drives your Mac
 
-![Computer control panel: helper status and system permissions](docs/screenshots/20-computer.png)
+![Computer control panel: helper status and system permissions](docs/screenshots/en/20-computer.png)
 
 - Not screenshot-and-guess: it reads the macOS **accessibility (AX) element tree** and clicks by element id, so clicks land and the meaning is known.
 - Click, type / set values / paste (long text goes through the clipboard and your previous clipboard is restored), send shortcuts, scroll, drag in steps, run menu paths — waiting for the UI to settle between steps.
@@ -60,7 +60,7 @@ Voice, scheduling, computer control, canvas, push and remote access all live in 
 
 ### ④ Canvas: draw "what happens next" as a graph
 
-![Canvas: a CSV-export plan split into nodes and dependencies](docs/screenshots/18-canvas.png)
+![Canvas: a CSV-export plan split into nodes and dependencies](docs/screenshots/en/18-canvas.png)
 
 - Describe something that takes many steps and the agent lays it out as **nodes plus dependency edges** on the right; nodes carry kinds (task / milestone / risk / decision / doc), so it is obvious which step may blow up and which one needs your call.
 - **It is interactive**: mark a step running when you start it, done when you finish — progress is drawn on the graph, not just in chat.
@@ -68,7 +68,7 @@ Voice, scheduling, computer control, canvas, push and remote access all live in 
 
 ### ⑤ Push to your phone: it buzzes when a turn ends
 
-![Push panel: subscription state and multiple devices](docs/screenshots/11-push.png)
+![Push panel: subscription state and multiple devices](docs/screenshots/en/11-push.png)
 
 - One push per finished turn: the title is the project, the body is the session, failures get ❌ and interruptions ⏹.
 - **Web Push (VAPID)** with no third-party service; keys are generated on first start. Multiple devices, test push, clear all.
@@ -76,13 +76,13 @@ Voice, scheduling, computer control, canvas, push and remote access all live in 
 
 ### ⑥ Remote access: keep working from your phone, elsewhere
 
-![Settings → Remote: access password, login protection and login activity](docs/screenshots/21-remote.png)
+![Settings → Remote: access password, login protection and login activity](docs/screenshots/en/21-remote.png)
 
 - `pop-agent -H 0.0.0.0` and you can open it from a phone or another computer; the password must be **set on the machine itself** (remote clients may not create one — otherwise whoever finds the port first takes over).
 - **Login protection**: three wrong passwords from the same origin pause logins for 30 minutes (count and window are tunable); while paused the password is not even compared, and restarting the service does not unlock it.
 - The phone really gets a phone layout: the sidebar becomes a drawer, the top bar keeps icons only, the composer goes to 18px so iOS does not zoom, the right pane becomes a full-screen second page.
 
-![Single-column layout on a phone](docs/screenshots/16-mobile.png)
+![Single-column layout on a phone](docs/screenshots/en/16-mobile.png)
 
 ---
 

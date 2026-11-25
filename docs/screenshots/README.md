@@ -93,3 +93,31 @@ README（中英两版）里用的图都在这。**都是真实运行实例的截
 - **别用拖选**：正文里的路径是自动识别的链接，按住拖会变成链接拖拽；三击选整段才能稳定浮出工具条。
 - **`git` 要关掉分页器**：`export GIT_PAGER=cat PAGER=cat`，否则截图里是一个 `[END]`。
 - **改图必须重拍**：图里的版本号、面板文案、状态栏字段都会随版本变，别只改剪裁。
+
+## 英文版（`en/`）
+
+`README.md` 里那 7 张图在 `en/` 子目录，编号和中文版一一对应，内容也是同一次运行 ——
+**只有界面语言不同**：
+
+| 文件 | 用在 |
+|---|---|
+| `en/10-voice.png` · `en/19-cron.png` · `en/20-computer.png` · `en/11-push.png` · `en/21-remote.png` | 六件能力的语音 / 定时 / 电脑控制 / 推送 / 远程 |
+| `en/18-canvas.png` | 画布（同一版计划，节点文案是模型用英文写的） |
+| `en/16-mobile.png` | 手机单栏 |
+
+拍法同上，只多两步：
+
+1. **界面语言切成英文**：`localStorage["pop-agent.language"] = "en"`（等价于 设置 → 语言 → English），
+   顺手设 `pop-agent.onboarded = "1"` 跳过首启向导 —— 两个都在 `addInitScript` 里做，别指望点 UI。
+2. **面板入口**：面板都是**设置弹窗里的 tab**（Voice / Cron / Computer / Push …），
+   从底部状态栏最左边那颗「Settings」进去，再点 tab；tab 的英文名见 `SidebarMenu.tsx` 的 `PANEL_LABEL_EN`
+   （注意「电脑控制」的 tab 叫 `Computer`，不是 `Computer control`）。
+
+压图没有 PIL 时用 ImageMagick，效果一样：
+
+```bash
+magick "$f" -colors 256 -type Palette -define png:compression-level=9 "$f"
+```
+
+> 中文版那套 `docs/site/assets/{zh,en}/*.webp` 里，`en/` 曾经是 `zh/` 的逐字节拷贝（英文官网其实一直在用中文截图）。
+> 要更新官网英文图，从这里的 `en/*.png` 重新裁切压缩，别再直接 copy 中文那份。
