@@ -18,6 +18,7 @@
  * 也就是 1 小时音频≈45,000 Token≈¥0.27 + 输出。连续听写（麦克风常亮）时静音音频也计费。
  */
 import type { SttConfig, SttLogger, SttProvider, SttSession } from "./types.js";
+import { coerce, socketCtor, type SocketLike } from "./ws.js";
 
 export const QWEN_REALTIME_ENDPOINT = "wss://dashscope.aliyuncs.com/api-ws/v1/inference";
 export const QWEN_REALTIME_DEFAULT_MODEL = "qwen-audio-3.1-asr-flash-message";
@@ -27,39 +28,14 @@ const MAX_BACKLOG_BYTES = SAMPLE_RATE * 2 * 5;
 /** finish-task 之后等最终结果的兜底时长 */
 const FINISH_TIMEOUT_MS = 8000;
 
-/** 只用到这几个方法：避免依赖 Node 的 WebSocket 类型声明（各版本位置不一样） */
-type SocketLike = {
-	send(data: string | Uint8Array): void;
-	close(): void;
-	addEventListener(type: string, handler: (event: { data?: unknown; message?: string }) => void): void;
-};
-type SocketCtor = new (url: string, options?: { headers?: Record<string, string> }) => SocketLike;
-
-/**
- * 拿 WebSocket 构造器。
- *
- * 刻意**每次现取** `globalThis.WebSocket`：Node 22 自带（实测我们打包的那份 node-runtime
- * 22.22 也支持构造时传 `headers`，鉴权头就能直接带上），而单测里替换掉这个全局就能
- * 不开真连接地验证协议 —— 不用为测试引依赖，也不用给生产代码加注入参数。
- */
-function socketCtor(): SocketCtor {
-	const ctor = (globalThis as { WebSocket?: SocketCtor }).WebSocket;
-	if (!ctor) throw new Error("当前 Node 没有内置 WebSocket（需要 Node 22+）");
-	return ctor;
-}
-
-/** 把 `extraFields` 里的字符串收敛成上游要的类型（true/false → boolean，数字 → number） */
-function coerce(value: string): string | number | boolean {
-	if (value === "true") return true;
-	if (value === "false") return false;
-	const num = Number(value);
-	return value.trim() !== "" && Number.isFinite(num) ? num : value;
-}
-
 export const qwenRealtimeStt: SttProvider = {
 	id: "qwen-realtime",
-	label: "千问 实时识别（边说边出字）",
+	// 旧版 message 协议（run-task / result-generated）。要 omni 那条 Realtime 协议的话
+	// 用 `qwen-omni-realtime`（模型 qwen3.8-omni-flash-realtime）—— 两者模型与端点都不通用。
+	label: "千问 实时识别（旧版 ASR message 协议）",
 	defaultEndpoint: QWEN_REALTIME_ENDPOINT,
+	// 百炼的实时识别模型：走 WebSocket 的就是 `…-flash-message`
+	models: ["qwen-audio-3.1-asr-flash-message"],
 	fields: [
 		{ key: "apiKey", label: "API Key（百炼）", required: true, secret: true, placeholder: "sk-…" },
 		{ key: "model", label: "模型", placeholder: QWEN_REALTIME_DEFAULT_MODEL },

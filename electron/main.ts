@@ -43,6 +43,78 @@ let serverUrl: string | null = null;
 /** 主动退出（托盘「退出」/ Cmd+Q）：用来区分「关窗」和「真的要走」 */
 let quitting = false;
 
+/**
+ * 加载失败 / 服务掉了时给的「说人话」页面 —— 不要留一片黑。
+ *
+ * 为什么要有（用户 2026-11-25：「这个项目 app 老黑屏是怎么回事」）：
+ * 壳里窗口的底色是 #141414，页面没加载出来时就是一块深灰，既没报错也没提示；
+ * 而最常见的触发条件是 **服务进程不在了** —— 桌面模式会复用已在跑的实例（POP_AGENT_APP=1），
+ * 那个实例往往是用户在终端里敲的 `pop`，一按 Ctrl-C 服务就没了，窗口还开着。
+ *
+ * 这里不弹对话框（弹了也没法自己恢复），直接换成一个会自动重试的提示页。
+ */
+function offlinePage(reason: string): string {
+	const safe = reason.replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[char] ?? char);
+	const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<title>${BRAND_NAME}</title>
+<style>
+  :root { color-scheme: dark }
+  body { margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #141414; color: #e8e8e8; font: 14px/1.7 -apple-system, "PingFang SC", system-ui, sans-serif }
+  .box { max-width: 560px; padding: 0 28px }
+  h1 { font-size: 17px; margin: 0 0 10px; font-weight: 600 }
+  p { margin: 0 0 8px; color: #b9b9b9 }
+  code { background: #ffffff14; padding: 1px 6px; border-radius: 5px; font-size: 12.5px }
+  .reason { color: #ff9f7a; word-break: break-all }
+  .tip { margin-top: 14px; font-size: 13px; color: #8d8d8d }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #4f7cff;
+         margin-right: 6px; animation: blink 1.2s ease-in-out infinite }
+  @keyframes blink { 50% { opacity: .2 } }
+</style>
+<div class="box">
+  <h1>工作台没连上后端服务</h1>
+  <p class="reason">${safe}</p>
+  <p class="tip"><span class="dot"></span>正在自动重试，服务回来后会自动打开…</p>
+  <p class="tip">常见原因：在终端里跑着的 <code>pop</code> 被 Ctrl-C 关掉了；或者服务启动失败（看 <code>~/.pop-agent/logs/pop-agent.log</code>）。</p>
+</div></html>`;
+	return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
+
+/** 重试定时器：一个窗口一个 */
+const retries = new WeakMap<BrowserWindow, NodeJS.Timeout>();
+
+/** 把窗口换到「没连上」页，并开始每 1.5 秒重试一次（成功就停） */
+function showOffline(window: BrowserWindow, reason: string): void {
+	if (quitting || window.isDestroyed()) return;
+	void window.loadURL(offlinePage(reason));
+	if (retries.has(window)) return;
+	const timer = setInterval(() => {
+		if (quitting || window.isDestroyed()) {
+			clearInterval(timer);
+			retries.delete(window);
+			return;
+		}
+		const target = serverUrl;
+		if (!target) return;
+		window.webContents
+			.executeJavaScript(
+				`fetch(${JSON.stringify(target)}, { method: "GET" }).then((r) => r.ok).catch(() => false)`,
+				true,
+			)
+			.then(
+				(ok: unknown) => {
+					if (ok === true) {
+						clearInterval(timer);
+						retries.delete(window);
+						void window.loadURL(target);
+					}
+				},
+				() => undefined,
+			);
+	}, 1500);
+	retries.set(window, timer);
+}
+
 function dataDir(): string {
 	const fromEnv = process.env.POP_AGENT_DATA_DIR;
 	return fromEnv && fromEnv !== "" ? resolve(fromEnv) : join(homedir(), DEFAULT_DATA_DIR_NAME);
@@ -213,6 +285,17 @@ function startServer(): Promise<ReadyInfo> {
 	});
 
 	serverChild = child;
+	/**
+	 * 服务挂了而窗口还开着：以前就是一片黑（用户反复碰到的就是这个）。
+	 * 把「还在跑的那个孩子」退出了告诉窗口，换成带自动重试的提示页。
+	 */
+	child.on("exit", (code) => {
+		if (quitting || serverChild !== child) return;
+		serverChild = null;
+		for (const window of windows) {
+			showOffline(window, `后端服务已退出（退出码 ${code ?? "未知"}）`);
+		}
+	});
 	const tail: string[] = [];
 	const remember = (chunk: Buffer) => {
 		for (const line of chunk.toString().split("\n")) {
@@ -327,6 +410,14 @@ function createWindow(url: string): BrowserWindow {
 		window.show();
 	});
 	void window.loadURL(url);
+	/**
+	 * 页面没加载出来（服务挂了 / 端口不对）时，Electron 只会留一块底色 —— 就是用户说的「黑屏」。
+	 * 换成能读懂的提示页 + 自动重试。「-3」是 ERR_ABORTED（下一次导航把它打断），不算错。
+	 */
+	window.webContents.on("did-fail-load", (_event, code, description, _validatedUrl, isMainFrame) => {
+		if (!isMainFrame || code === -3) return;
+		showOffline(window, `加载失败：${description}（${code}）`);
+	});
 	// 用**系统**那三颗红绿灯（用户 2026-11-23：「这个不好，不要自己写，用系统的」）。
 	// 位置随顶栏高度自动居中：见下面 `watchTrafficLights`。
 	if (isMac) window.setWindowButtonVisibility(true);

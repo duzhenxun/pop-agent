@@ -35,14 +35,38 @@ import {
 } from "../ws.ts";
 import { useT } from "../use-language.ts";
 
-const MIN_K = 0.2;
+/**
+ * 缩放上下限（手动：滚轮 / 捏合 / ± 按钮）。
+ * 下限从 0.2 抬到 0.35（用户 2026-11-25：「全局缩小时不要太小」）：
+ * 0.2 的时候一张卡只有 48px 宽、字号不到 3px，除了色块什么也看不出来。
+ */
+const MIN_K = 0.35;
 const MAX_K = 2.5;
+/**
+ * 「看全局」的缩放下限：**比手动下限还高一档**。
+ *
+ * 以前它一路缩到 MIN_K，节点多了就是一堆看不清的小方块；现在宁可只装下大部分、
+ * 靠平移看剩下的，也不再往下缩 —— 真要更小可以自己用 − 或滚轮（能到 MIN_K）。
+ */
+const FIT_MIN_K = 0.5;
 /** 与 `panel-tab-dnd.ts` 一致：5px 内算点击，不算拖 */
 const DRAG_THRESHOLD = 5;
 /** 吸附距离（**屏幕**像素）：缩得越小越难对齐，所以按屏幕算、用的时候再除以缩放 */
 const SNAP_PX = 6;
 /** 节点的世界宽度：和 CSS 里的 `.canvas-node` 保持一致（算连线端点要用） */
 const NODE_WIDTH = 240;
+/** 同一列卡片之间至少留的空隙（世界坐标） */
+const COLUMN_GAP = 20;
+
+/**
+ * 还没量到真实高度时的估算：标题 + 说明按字数折行，再加状态行。
+ * 只是第一帧的兜底 —— 渲染完 `useLayoutEffect` 会拿实测高度重排一次。
+ */
+function estimateNodeHeight(node: CanvasNode): number {
+	const titleLines = Math.max(1, Math.ceil(node.title.length / 15));
+	const detailLines = node.detail ? Math.ceil(node.detail.length / 17) : 0;
+	return 46 + titleLines * 19 + detailLines * 19;
+}
 
 /** 布局风格（本机偏好，按会话存）：卡片 = 自由摆放；另外两种是客户端按依赖重排 */
 type LayoutStyle = "card" | "timeline" | "checklist" | "mindmap" | "swimlane";
@@ -576,6 +600,46 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 	const laneBands = layoutResult.bands;
 
 	/**
+	 * 卡片样式下的**防叠**。
+	 *
+	 * 服务端排坐标时只有一套固定行列间距（`ROW_HEIGHT`），它不知道卡片实际有多高；
+	 * 说明写长一点，同一列的两张就摞在一起（用户 2026-11-25：「互相压到」）。
+	 * 这里按**实测高度**把被压住的节点往下推：只推不改顺序、也不写回服务端，
+	 * 而且推完再算一遍不会继续动（幂等），所以拖完一轮也不会跳。
+	 *
+	 * 一开始只认「x 完全一样」那一列，卡片被拖歪几十像素就不再避让，于是又叠上了
+	 * （用户 2026-11-25 第二次：「有时还会叠加在一块」）。现在按**两张卡片的矩形真的相交**
+	 * 来判：同一列互压、错开半格、上下行错位都算在内，只搬「被压在下面」的那张，
+	 * 所以不会无缘无故拉出一片空白。
+	 */
+	const cardRelief = useMemo(() => {
+		if (style !== "card" || level.nodes.length === 0) return null;
+		/** 从左上往右下放：先在上面的先占位，后面的给它让路 */
+		const nodes = [...level.nodes].sort((a, b) => a.y - b.y || a.x - b.x);
+		const placed: { x: number; y: number; w: number; h: number }[] = [];
+		const map = new Map<string, Pos>();
+		for (const node of nodes) {
+			const height = heights[node.id] ?? estimateNodeHeight(node);
+			let y = node.y;
+			// 每轮至少跨过一张卡，最多跑「节点数 + 余量」轮就一定能停
+			for (let guard = 0; guard <= nodes.length; guard += 1) {
+				const clash = placed.find(
+					(other) =>
+						node.x < other.x + other.w &&
+						node.x + NODE_WIDTH > other.x &&
+						y < other.y + other.h + COLUMN_GAP &&
+						y + height + COLUMN_GAP > other.y,
+				);
+				if (clash === undefined) break;
+				y = clash.y + clash.h + COLUMN_GAP;
+			}
+			map.set(node.id, { x: node.x, y });
+			placed.push({ x: node.x, y, w: NODE_WIDTH, h: height });
+		}
+		return map;
+	}, [heights, level.nodes, style]);
+
+	/**
 	 * 非卡片样式下**手摆的位置**（本机，按 会话+样式 分别记）。
 	 *
 	 * 为什么只存本机：服务端的 x/y 只有一份，而"时间线里我想把这张挪开"是某个样式的个人偏好，
@@ -584,11 +648,14 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 	const [moves, setMoves] = useState<Record<string, Record<string, Record<string, Pos>>>>(loadMoves);
 	const styleMoves = style === "card" ? undefined : moves[conversationId ?? ""]?.[style];
 
-	/** 节点坐标：手摆（非卡片样式） > 派生布局 > 刚松手的乐观值 > 服务端坐标 */
+	/** 节点坐标：手摆（非卡片样式） > 派生布局 > 刚松手的乐观值 > 卡片防叠 > 服务端坐标 */
 	const posOf = useCallback(
 		(node: CanvasNode): Pos =>
-			styleMoves?.[node.id] ?? derived?.get(node.id) ?? pending[node.id] ?? { x: node.x, y: node.y },
-		[derived, pending, styleMoves],
+			styleMoves?.[node.id] ??
+			derived?.get(node.id) ??
+			pending[node.id] ??
+			cardRelief?.get(node.id) ?? { x: node.x, y: node.y },
+		[cardRelief, derived, pending, styleMoves],
 	);
 	/** 现在所有样式都能拖（以前只有卡片能拖，用户 2026-11-23 要求其他样式也能） */
 	const canDrag = true;
@@ -612,18 +679,19 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 			}
 			if ((event.metaKey || event.ctrlKey) && (event.key === "a" || event.key === "A")) {
 				event.preventDefault();
-				setSelected((doc?.nodes ?? []).map((node) => node.id));
+				// 只选**当前这一层**：钻进子计划时全选不能把主图的节点 id 也塞进来
+				setSelected(level.nodes.map((node) => node.id));
 				return;
 			}
 			if ((event.key === "Delete" || event.key === "Backspace") && selected.length > 0 && conversationId !== null) {
 				event.preventDefault();
-				canvasDeleteNodes(conversationId, selected);
+				canvasDeleteNodes(conversationId, selected, parentId ?? undefined);
 				setSelected([]);
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [closeMenu, conversationId, doc, selected]);
+	}, [closeMenu, conversationId, level.nodes, parentId, selected]);
 
 	/**
 	 * 快照里节点变了（agent 重画 / 加节点）之后重新量高度。
@@ -657,6 +725,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 		/**
 		 * 远距离（缩到 0.5 以下）切「缩略」：节点里只留一个编号 + 状态色块。
 		 * 这个尺寸下任何文字都是 4–5px，留着只是噪声；要看内容靠悬停预览。
+		 * 「看全局」的下限正好压在 0.5（`FIT_MIN_K`），所以它落不到缩略态。
 		 */
 		rootRef.current?.classList.toggle("is-far", view.k < 0.5);
 		if (readoutRef.current) {
@@ -765,9 +834,14 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 			ids = [id];
 		}
 
+		/**
+		 * 起点坐标必须从**当前这一层**取（`level.nodes`）。
+		 * 以前这里写的是 `doc.nodes`（主图）：钻进子计划后子节点的 id 在主图里根本找不到，
+		 * `origins` 是空的 → 拖动一动不动（用户 2026-11-25 报的「画布拖动不了」）。
+		 */
 		const origins = new Map<string, Pos>();
 		for (const each of ids) {
-			const node = doc?.nodes.find((entry) => entry.id === each);
+			const node = level.nodes.find((entry) => entry.id === each);
 			if (node) origins.set(each, posOf(node));
 		}
 		dragRef.current = { pointerId: event.pointerId, ids: [...origins.keys()], sx: event.clientX, sy: event.clientY, origins, moved: false };
@@ -797,7 +871,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 
 			const targetXs: number[] = [];
 			const targetYs: number[] = [];
-			for (const node of doc?.nodes ?? []) {
+			for (const node of level.nodes) {
 				if (drag.origins.has(node.id)) continue;
 				const pos = posOf(node);
 				const height = nodeElsRef.current.get(node.id)?.offsetHeight ?? heights[node.id] ?? 84;
@@ -818,7 +892,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 			}
 			showGuides(snapX?.at ?? null, snapY?.at ?? null);
 		},
-		[doc?.nodes, heights, posOf, showGuides],
+		[heights, level.nodes, posOf, showGuides],
 	);
 
 	/** 框选放大：按住 Z 拖（或点工具条按钮切成常开） */
@@ -943,7 +1017,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 			const worldBottom = (top + height - view.y) / view.k;
 
 			const hits: string[] = [];
-			for (const node of doc?.nodes ?? []) {
+			for (const node of level.nodes) {
 				const pos = posOf(node);
 				const nodeHeight = nodeElsRef.current.get(node.id)?.offsetHeight ?? heights[node.id] ?? 84;
 				const overlaps =
@@ -955,7 +1029,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 			}
 			setSelected((current) => (additive ? [...new Set([...current, ...hits])] : hits));
 		},
-		[doc?.nodes, heights, posOf],
+		[heights, level.nodes, posOf],
 	);
 
 	/** 把框选出来的那块屏幕矩形放大到铺满视口（框选放大） */
@@ -1180,15 +1254,21 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 		}
 		const pad = 40;
 		/**
-		 * 上限 1（只有两个节点时不要按比例"放大填满"）、下限到 MIN_K（真的装下全部）。
-		 * 用户要的是「看到全局所有的」—— 宁可小，也要全都看得见。
+		 * 上限 1（只有两个节点时不要按比例"放大填满"）、下限到 `FIT_MIN_K`。
+		 *
+		 * 以前这里一路缩到 MIN_K（0.2），节点一多就沦为一堆读不出字的小方块
+		 * （用户 2026-11-25：「全局缩小时不要太小」）。现在宁可装不下、靠平移补，
+		 * 也不把字缩到看不见 —— 装下的部分居中，装不下的靠左上。
 		 */
 		const k = Math.min(
 			1,
-			clampK(
-				Math.min(
-					(viewport.clientWidth - pad * 2) / Math.max(1, maxX - minX),
-					(viewport.clientHeight - pad * 2) / Math.max(1, maxY - minY),
+			Math.max(
+				FIT_MIN_K,
+				clampK(
+					Math.min(
+						(viewport.clientWidth - pad * 2) / Math.max(1, maxX - minX),
+						(viewport.clientHeight - pad * 2) / Math.max(1, maxY - minY),
+					),
 				),
 			),
 		);
@@ -1199,7 +1279,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 		viewRef.current.x = Math.max(centeredX, pad - minX * k);
 		viewRef.current.y = Math.max(centeredY, pad - minY * k);
 		paint();
-	}, [doc?.nodes, heights, paint, posOf]);
+	}, [heights, level.nodes, paint, posOf]);
 
 	const reset = useCallback(() => {
 		viewRef.current = { x: 0, y: 0, k: 1 };
@@ -1211,7 +1291,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 		const draft = editingRef.current;
 		setEditing(null);
 		if (draft === null || conversationId === null) return;
-		const node = doc?.nodes.find((each) => each.id === draft.id);
+		const node = level.nodes.find((each) => each.id === draft.id);
 		if (node === undefined) return;
 		const title = draft.title.trim();
 		const detail = draft.detail.trim();
@@ -1220,7 +1300,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 		if (detail !== (node.detail ?? "")) patch.detail = detail;
 		if (patch.title !== undefined || patch.detail !== undefined)
 			canvasUpdateNode(conversationId, draft.id, patch, parentId ?? undefined);
-	}, [conversationId, doc]);
+	}, [conversationId, level.nodes, parentId]);
 
 	/** 右边菜单 / 内联编辑要用的"当前编辑值"，提交时不想因为闭包拿不到最新值 */
 	const editingRef = useRef<{ id: string; title: string; detail: string } | null>(null);
@@ -1254,7 +1334,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 	const sendAsk = useCallback(() => {
 		if (ask === null || conversationId === null) return;
 		const picked = ask.nodeIds
-			.map((id) => doc?.nodes.find((node) => node.id === id))
+			.map((id) => level.nodes.find((node) => node.id === id))
 			.filter((node): node is CanvasNode => node !== undefined);
 		const requirement = ask.text.trim();
 		if (picked.length === 0 || requirement === "") return;
@@ -1272,7 +1352,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 		requestInterruptSpeech();
 		sendMessage(lines.join("\n"));
 		setAsk(null);
-	}, [ask, conversationId, doc]);
+	}, [ask, conversationId, level.nodes]);
 
 	/** 手改节点状态（服务端落盘 + 推快照，这里不做乐观更新：一次往返很快） */
 	const setNodeStatus = useCallback(
@@ -1962,7 +2042,7 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 					type="button"
 					className="canvas-icon-btn"
 					onClick={fit}
-					title={t("看全局（缩到能看见全部）", "Fit all")}
+					title={t("看全局（尽量都装下；装不下就平移看）", "Fit all (as much as stays readable; pan for the rest)")}
 					aria-label={t("看全局", "Fit all")}
 				>
 					<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">

@@ -96,3 +96,70 @@ GitHub → Actions → `release` → **Run workflow**：发布默认分支 `pack
   随时可以加进 `release.yml` 当门禁；目前只是还没接上。
 - **`format:check` 也没门禁**：仓库里有 8 个文件没过 Prettier，`npm run lint`（oxlint）是干净的，先只卡它。
 - 工作流里不跑 `prettier`，也不自动改文件 —— 发布流程只读。
+
+## 六、GitHub Packages 镜像（可选，与 npm 发布线互不影响）
+
+把**已经发到 npm** 的版本，原样再发一份到 GitHub Packages，于是
+<https://github.com/duzhenxun/pop-agent/packages> 上会有东西（不配也完全不影响发版）。
+
+**为什么必须另起一份而不是改 `package.json`**：GitHub Packages 要求包名是 `@OWNER/name`
+（这里是 `@duzhenxun/pop-agent`），而 npm 上叫 `pop-agent`。直接在仓库里改名，等于把 npm
+那条线一起改成破坏性改名。所以走的是：下载 npm 上的 tarball → 临时目录里改名字 → 发 →
+临时目录删掉，**仓库里的 `package.json` 一个字不动**。
+
+| 我做了什么 | 文件 |
+|---|---|
+| 本地/CI 通用的镜像脚本（支持 `--dry-run`） | `scripts/publish-gh-packages.sh` |
+| 标签触发的独立流水线 | `.github/workflows/packages-mirror.yml` |
+
+### 三种跑法
+
+```bash
+scripts/publish-gh-packages.sh --dry-run     # 只准备，打印将要发什么（不需要凭证）
+scripts/publish-gh-packages.sh               # 真发 package.json 里的版本
+scripts/publish-gh-packages.sh 0.1.4         # 真发指定版本
+```
+
+CI 那边**不用做任何事**：推 `v*` 标签后 `packages-mirror` 自己会跑。它先轮询 npm 等版本出现
+（最多 15 分钟），再镜像过去 —— 因为 `release.yml` 要跑完 typecheck / lint / build 才 publish，
+两个 job 是并行的。也可以 Actions → `packages-mirror` → Run workflow 手动补发。
+
+本地真发需要凭证（`gh auth login` 的默认 scope **不含** packages，必须 refresh 一次）：
+
+```bash
+export GITHUB_PACKAGES_TOKEN=<classic PAT，勾 write:packages>
+# 或者：gh auth refresh -h github.com -s write:packages
+```
+
+### 为什么不影响现有的 npm 发布
+
+1. **不动 `package.json`**：npm 那边仍然发 `pop-agent`，`files` / `bin` / `prepack` 全都没变。
+2. **不碰 OIDC 那条线**：Trusted Publisher 白名单绑的是 `release.yml` **这个文件名**，新增
+   `packages-mirror.yml` 不改变那条信任关系；镜像 job 里也**没有** `NODE_AUTH_TOKEN` /
+   `NPM_TOKEN`（变量名是 `GITHUB_PACKAGES_TOKEN`，避开 npm 的隐式读取），token 只写进临时
+   目录的 `.npmrc` 里，用完即删。
+3. **不重新构建**：直接发 npm 上那份 tarball，内容逐字节一致（实测两边都是 381 个文件）。
+   所以必须带 `--ignore-scripts` —— tarball 里的 `prepack` 是 `npm run build`，临时目录里
+   没有源码和 `node_modules`，不忽略脚本就一定失败。
+
+### 发完要手动做两件事
+
+1. **首次发出来的包默认是 private**，去改成 public：
+   <https://github.com/users/duzhenxun/packages/npm/pop-agent/settings>
+2. 装的时候必须带 scope 并指 registry（GitHub 的文档明确写了：**连公开包也要 token**）：
+
+   ```bash
+   npm install -g @duzhenxun/pop-agent --registry=https://npm.pkg.github.com
+   ```
+
+> 所以它适合当「有个页面 / 留个存档」，**不适合当面向普通用户的安装渠道** —— 那还是 npm。
+
+### 坑
+
+| 现象 | 原因 |
+|---|---|
+| `403 Forbidden` / `ENEEDAUTH` | token 没有 `write:packages`；或用了 `gh auth login` 的默认 token（不含 packages），要 `gh auth refresh -s write:packages`。CI 里则是 job 上缺 `permissions: packages: write` |
+| `npm pack` 报 404 | 版本还没发到 npm。等 `release` 工作流跑完再发（脚本里已经先查了一遍是否已存在） |
+| 发布时报 `prepack` 相关错误 / 想跑 tsc | 少了 `--ignore-scripts`：tarball 里带 `prepack: npm run build` |
+| 包发出去了但页面还是空的 | 看的是仓库的 `/packages` 顶层页，包挂在 `github.com/users/duzhenxun/packages` 下；首次还要手动改 public |
+| 用户装了之后 `pop-agent` 命令没变 | 正常：`bin` 名字没改。但**不要和 npm 那份同时全局装**，两个包的 `pop` / `pop-agent` 同名会互相覆盖 |

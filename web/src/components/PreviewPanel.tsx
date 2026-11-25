@@ -74,7 +74,11 @@ const MAX_WIDTH = 1200;
 
 /* ---- 「文件列表」那根侧栏的宽度（可拖那条竖线，偏好记本机） ---- */
 const RAIL_WIDTH_KEY = "pop-agent.preview.files-rail-w";
-const RAIL_MIN_WIDTH = 140;
+/**
+ * 下限从 140 抬到 176（用户 2026-11-25）：这根侧栏头顶现在挂的是**和左树同一排工具**
+ * （7 颗 20px 图标 + 项目下拉 + 分支），再窄就会挤成一团 —— 140 那档只够放一棵光秃秃的树。
+ */
+const RAIL_MIN_WIDTH = 176;
 const RAIL_MAX_WIDTH = 520;
 const RAIL_DEFAULT_WIDTH = 224;
 /** 代码区至少留这么宽：面板不宽的时候，文件列表不能把内容挤成一条缝 */
@@ -876,6 +880,8 @@ export function PreviewPanel({
 							revealSeq={revealSeq}
 							onOpenFile={onOpenFile}
 							width={railWidth}
+							/* 顶上那片功能跟左树共用一套（工具条 / 项目下拉 / 分支 / 搜索 / 终端…） */
+							files={files}
 						/>
 					</>
 				) : null}

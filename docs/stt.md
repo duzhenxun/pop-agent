@@ -21,7 +21,7 @@
   "provider": "deepseek",
   "providers": {
     "deepseek": { "apiKey": "sk-…" },
-    "qwen":     { "apiKey": "sk-…", "model": "qwen3-asr-flash" }
+    "qwen":     { "apiKey": "sk-…", "model": "qwen-audio-3.1-asr-flash" }
   }
 }
 ```
@@ -73,16 +73,21 @@ pop-agent
 
 ## 已支持的 provider
 
-| id | 适用 | 说明 |
-|---|---|---|
-| `openai-compatible` | OpenAI Whisper、Groq、SiliconFlow、**阿里千问（兼容模式）**、各类中转网关、自建 whisper.cpp server | 一次性上传整段 WAV 到 `/v1/audio/transcriptions` |
-| `deepseek` | DeepSeek 语音识别 | `POST /v1/tools/asr`，multipart WAV 进、`{text}` 出；单请求 120 秒 / 8 MiB 上限，**代码里自动切段拼接**，语种自动判断，不支持流式 |
+| id | 适用 | 出字方式 | 说明 |
+|---|---|---|---|
+| `openai-compatible` | OpenAI Whisper、Groq、SiliconFlow、**阿里千问（兼容模式）**、各类中转网关、自建 whisper.cpp server | 整段 | 一次性上传整段 WAV 到 `/v1/audio/transcriptions` |
+| `deepseek` | DeepSeek 语音识别 | 整段 | `POST /v1/tools/asr`，multipart WAV 进、`{text}` 出；单请求 120 秒 / 8 MiB 上限，**代码里自动切段拼接**，语种自动判断 |
+| `qwen` | 阿里百炼 · 千问 ASR（默认 `qwen-audio-3.1-asr-flash`） | 整段 | 百炼自己的转写接口；模型可以在面板下拉里选 |
+| `qwen-realtime` | 千问实时识别 · **旧版 ASR message 协议**（默认 `qwen-audio-3.1-asr-flash-message`） | 边说边出字 | WebSocket 推 PCM，服务端 `vad_model` 断句 |
+| `qwen-omni-realtime` | 千问 Omni 实时（默认 `qwen3.8-omni-flash-realtime`） | 边说边出字 | `wss://…/api-ws/v1/realtime?model=…`，Bearer 鉴权；`session.update` 要文本 + pcm16 + `server_vad`，之后 `input_audio_buffer.append` 送 base64 音频 |
 
-> **注意**：两者都是**整段识别**，说话过程中拿不到 partial —— 面板上不会「边说边出字」，
-> 停下来（`/api/asr/end`）之后才拿到整句。要实时出字得接厂商的流式协议，见下面。
+> **注意**：前三个是**整段识别**，说话过程中拿不到 partial —— 停下来（`/api/asr/end`）之后才拿到整句。
+> 后两个是**边说边出字**，但**协议不同、模型不通用**：换模型不能只改 `model`，得一起换 `provider`。
 
-用哪家也可以在设置面板的「识别引擎」里显式选「云端」：选了它就**一定**走服务端这条线，
+用哪家也可以在设置面板的「识别引擎」里显式选（`GET /api/asr/engines` 列出可选项，
+`POST /api/asr/engine` 选中后写回 `stt.json`）：选了它就**一定**走服务端这条线，
 不会因为本机没有 Agent Computer 而退回 Chrome。状态行会显示当前是哪一家（如「就绪（DeepSeek 语音识别，云端）」）。
+同一家厂商的兄弟 provider 可以**借用同一把 key**，不用重复填。
 
 ## 再加一家厂商（火山豆包、阿里千问…）
 
@@ -90,7 +95,7 @@ pop-agent
 
 | 厂商 | 怎么做 |
 |---|---|
-| 阿里千问 / 百炼（qwen3-asr-flash、paraformer） | **不用写代码** —— 兼容模式就是 OpenAI 形状，用 `openai-compatible` 填 `endpoint: https://dashscope.aliyuncs.com/compatible-mode/v1/audio/transcriptions` 即可 |
+| 阿里千问 / 百炼（qwen-audio-3.1-asr-flash、paraformer） | **不用写代码** —— 已经有 `qwen`（整段）、`qwen-realtime` 与 `qwen-omni-realtime`（边说边出字）三个原生 provider；只想走兼容模式也可以，用 `openai-compatible` 填 `endpoint: https://dashscope.aliyuncs.com/compatible-mode/v1/audio/transcriptions` |
 | 火山引擎 / 豆包 | 要写一个 provider（鉴权头和 OpenAI 不同，响应用 `X-Api-*` 系列，可能要 `resourceId`） |
 
 要写代码时三步，都不用碰 `server/asr/service.ts`：

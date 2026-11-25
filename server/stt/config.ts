@@ -24,7 +24,7 @@
  *
  * 没配（缺 provider）= 继续用本地识别，不报错 —— 这是默认状态。
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { SttConfig } from "./types.js";
@@ -145,23 +145,110 @@ export type SttConfigRead = {
 	error?: string;
 };
 
-export function readSttConfig(dataDir?: string): SttConfigRead {
+/** 文件里每一家厂商自己的配置块（不含 env 合并，内部用） */
+function readFileParts(dataDir?: string): {
+	flat: Partial<SttConfig>;
+	providers: Record<string, Partial<SttConfig>>;
+	source: string;
+	error?: string;
+} {
 	const source = sttConfigPath(dataDir);
-	let fromFile: Partial<SttConfig> = {};
-	let fileProviders: Record<string, Partial<SttConfig>> = {};
+	let flat: Partial<SttConfig> = {};
+	let providers: Record<string, Partial<SttConfig>> = {};
 	let error: string | undefined;
 
 	if (existsSync(source)) {
 		try {
 			const parsed = JSON.parse(readFileSync(source, "utf8")) as unknown;
 			const read = parseFile(parsed, source);
-			fromFile = read.flat;
-			fileProviders = read.providers;
+			flat = read.flat;
+			providers = read.providers;
 			error = read.error;
 		} catch (cause) {
 			error = `${source} 不是合法 JSON：${cause instanceof Error ? cause.message : String(cause)}`;
 		}
 	}
+	return { flat, providers, source, error };
+}
+
+/**
+ * 各家厂商的配置块（含 env 覆盖）。面板列「能选哪些云端引擎」时用它 ——
+ * 只有 `readSttConfig()` 的话只能看见**当前选中的那一家**，选不到别家。
+ */
+export function readSttProviders(dataDir?: string): {
+	blocks: Record<string, Partial<SttConfig>>;
+	source: string;
+	error?: string;
+} {
+	const file = readFileParts(dataDir);
+	const env = envOverrides();
+	const blocks: Record<string, Partial<SttConfig>> = {};
+	for (const id of new Set([...Object.keys(file.providers), ...Object.keys(env.providers)])) {
+		blocks[id] = { ...file.providers[id], ...env.providers[id] };
+	}
+	return { blocks, source: file.source, error: file.error };
+}
+
+/**
+ * 面板上切换云端引擎：只改顶层的 `provider`，以及该厂商块里的 `model` / `apiKey`，
+ * **别家的密钥、端点、额外字段一律原样保留**。
+ *
+ * 为什么 apiKey 也要能写：千问的「整段识别」和「实时识别」是两个 provider，百炼那边
+ * 却是同一把 key。不代抄的话，用户切到实时就被判「没配密钥」、莫名其妙掉回本地识别。
+ *
+ * 文件读不懂时**抛错而不是覆盖** —— 那里面是密钥，宁可让用户手工修，也不替他清空。
+ */
+export function saveSttSelection(
+	selection: { provider: string; model?: string | null; apiKey?: string },
+	dataDir?: string,
+): string {
+	const file = sttConfigPath(dataDir);
+	let root: Record<string, unknown> = {};
+
+	if (existsSync(file)) {
+		try {
+			const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("内容不是 JSON 对象");
+			root = { ...(parsed as Record<string, unknown>) };
+		} catch (cause) {
+			throw new Error(
+				`${file} 读不出来（${cause instanceof Error ? cause.message : String(cause)}），为免覆盖掉里面的密钥，请先手工修好这个文件`,
+			);
+		}
+	}
+
+	root.provider = selection.provider;
+
+	const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+		!!value && typeof value === "object" && !Array.isArray(value);
+	const providers = isPlainObject(root.providers) ? { ...root.providers } : {};
+	const current = isPlainObject(providers[selection.provider]) ? { ...(providers[selection.provider] as Record<string, unknown>) } : {};
+
+	if (selection.model !== undefined) {
+		const model = selection.model?.trim();
+		if (model) current.model = model;
+		else delete current.model; // 空 = 回到 provider 自己的默认模型
+	}
+	const apiKey = selection.apiKey?.trim();
+	if (apiKey) current.apiKey = apiKey;
+
+	// 一次都没配过就别凭写个空块出来（文件里原本没有这一家）
+	if (Object.keys(current).length > 0) providers[selection.provider] = current;
+	if (Object.keys(providers).length > 0) root.providers = providers;
+
+	// 密钥在里面：0600 + 原子写（先写临时文件再 rename，半截文件比没写更糟）
+	const tmp = `${file}.${process.pid}.tmp`;
+	writeFileSync(tmp, `${JSON.stringify(root, null, 2)}\n`, { mode: 0o600 });
+	renameSync(tmp, file);
+	return file;
+}
+
+export function readSttConfig(dataDir?: string): SttConfigRead {
+	const file = readFileParts(dataDir);
+	const fromFile = file.flat;
+	const fileProviders = file.providers;
+	const source = file.source;
+	const error = file.error;
 
 	const env = envOverrides();
 	// provider 决定取哪个厂商块：环境变量 > 文件顶层 > 只有一家时的那个块

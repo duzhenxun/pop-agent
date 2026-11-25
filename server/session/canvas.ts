@@ -19,9 +19,15 @@ export const CANVAS_MAX_EDGES = 80;
 const TITLE_MAX = 80;
 const DETAIL_MAX = 200;
 const GOAL_MAX = 120;
-/** 节点在世界坐标里的排布间距 */
-const COLUMN_WIDTH = 300;
-const ROW_HEIGHT = 132;
+/**
+ * 节点在世界坐标里的排布间距。
+ * 行列间距（世界坐标）。
+ *
+ * `ROW_HEIGHT` 给的是「一张普通卡片 + 一点余量」：卡片高度是自适应的，服务端不知道它到底多高，
+ * 所以这里只能给个偏宽松的值，剩下的由前端按实测高度做防叠（见 `CanvasView.tsx` 的 `cardRelief`）。
+ */
+const COLUMN_WIDTH = 320;
+const ROW_HEIGHT = 156;
 const ORIGIN_X = 40;
 const ORIGIN_Y = 64;
 

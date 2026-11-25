@@ -78,6 +78,22 @@ type AsrStatus = {
 	install?: { downloadUrl: string; appPath: string; canAutoInstall: boolean } | null;
 };
 
+/** 服务端 `/api/asr/engines` 的返回（见 `server/asr/service.ts` 的 CloudEngines） */
+type CloudEngines = {
+	provider: string | null;
+	model: string | null;
+	source: string;
+	error: string | null;
+	engines: {
+		id: string;
+		label: string;
+		configured: boolean;
+		hasModel: boolean;
+		defaultModel?: string;
+		models: string[];
+	}[];
+};
+
 export function VoicePanel() {
 	const t = useT();
 	/** 朗读小宠物：开不开 + 选哪只（本机偏好，见 speech-pet-prefs.ts） */
@@ -116,6 +132,58 @@ export function VoicePanel() {
 	 * 现在按住了就一直轮询（见下面的 effect），中途出什么都在那一行显示。
 	 */
 	const asrStarting = asr?.state === "starting" || asr?.state === "authorizing";
+
+	/**
+	 * 云端引擎列表：`/api/asr/engines`。
+	 *
+	 * 服务端只给「当前选中的那一家」，而这里要让人在「千问整段识别」和
+	 * 「千问实时识别（边说边出字）」之间选 —— 两者模型、延迟、价格都不一样，
+	 * 以前只能改 `~/.pop-agent/stt.json` 才能切，面板上根本看不到另一家。
+	 */
+	const [cloudEngines, setCloudEngines] = useState<CloudEngines | null>(null);
+	const [cloudError, setCloudError] = useState<string | null>(null);
+	const [cloudBusy, setCloudBusy] = useState(false);
+	// 无论当前选的是哪一档都要拉：云端引擎是直接列在「识别引擎」那一栏里的
+	useEffect(() => {
+		let cancelled = false;
+		void fetch("/api/asr/engines")
+			.then(async (response) => {
+				if (cancelled || !response.ok) return;
+				setCloudEngines((await response.json()) as CloudEngines);
+			})
+			.catch(() => undefined);
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	/** 切换云端引擎 / 模型：服务端写回 stt.json，下一句生效 */
+	const applyCloudEngine = async (patch: { provider?: string; model?: string }) => {
+		setCloudBusy(true);
+		setCloudError(null);
+		try {
+			const body: { provider: string; model?: string } = {
+				provider: patch.provider ?? cloudEngines?.provider ?? "",
+			};
+			if (patch.model !== undefined) body.model = patch.model;
+			const response = await fetch("/api/asr/engine", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+			const data = (await response.json()) as CloudEngines & { error?: string };
+			if (!response.ok) {
+				setCloudError(data.error ?? t("切换失败", "Could not switch"));
+				return;
+			}
+			setCloudEngines(data);
+			refreshAsr();
+		} catch (error) {
+			setCloudError(error instanceof Error ? error.message : String(error));
+		} finally {
+			setCloudBusy(false);
+		}
+	};
 	useEffect(() => {
 		if (!asrStarting) return;
 		const timer = window.setInterval(() => refreshAsr(), 1200);
@@ -882,31 +950,40 @@ export function VoicePanel() {
 				<label className="voice-row voice-row-select">
 					<span className="voice-row-label">
 						{t("识别引擎（自动 = 先本地，带标点）", "Recognition engine (auto = local first)")}
+						{cloudError ? <span className="voice-row-hint">{cloudError}</span> : null}
 					</span>
+					{/* 云端引擎直接列在这一栏里：一项一家，模型跟着引擎走（千问整段 / 千问实时 / Omni 实时），
+					    不再单独摆「云端引擎」+「模型」两行 —— 用户只想选一个能用的。 */}
 					<select
 						className="voice-select"
-						value={voiceInput.engine}
-						onChange={(event) =>
+						value={voiceInput.engine === "cloud" ? `cloud:${cloudEngines?.provider ?? ""}` : voiceInput.engine}
+						disabled={cloudBusy}
+						onChange={(event) => {
+							const value = event.target.value;
+							if (value.startsWith("cloud:")) {
+								const provider = value.slice("cloud:".length);
+								saveVoiceInputSettings({ ...voiceInput, engine: "cloud" });
+								if (provider && provider !== cloudEngines?.provider) void applyCloudEngine({ provider });
+								return;
+							}
 							saveVoiceInputSettings({
 								...voiceInput,
-								engine:
-									event.target.value === "browser" ||
-									event.target.value === "local" ||
-									event.target.value === "cloud"
-										? event.target.value
-										: "auto",
-							})
-						}
+								engine: value === "browser" || value === "local" ? value : "auto",
+							});
+						}}
 					>
 						<option value="auto">{t("自动（优先本地）", "Auto (local first)")}</option>
 						<option value="local">{t("本地（macOS 离线）", "Local (macOS, offline)")}</option>
-						{/* 云端识别：服务端 `~/.pop-agent/stt.json` 配了什么就用什么（DeepSeek / 千问 / 豆包）。
-						    它不依赖本机的 Agent Computer，也不走浏览器 —— 选它就是「一定走服务端那条线」。 */}
-						<option value="cloud">
-							{asr?.providerLabel
-								? t(`云端（${asr.providerLabel}）`, `Cloud (${asr.providerLabel})`)
-								: t("云端（DeepSeek / 千问 / 豆包，服务端配置）", "Cloud (DeepSeek / Qwen / Doubao, server config)")}
-						</option>
+						{cloudEngines?.provider ? null : (
+							<option value="cloud:">{t("云端（未选引擎）", "Cloud (no engine)")}</option>
+						)}
+						{(cloudEngines?.engines ?? []).map((engine) => (
+							<option key={engine.id} value={`cloud:${engine.id}`} disabled={!engine.configured}>
+								{engine.configured
+									? t(`云端 · ${engine.label}`, `Cloud · ${engine.label}`)
+									: t(`云端 · ${engine.label}（未配密钥）`, `Cloud · ${engine.label} (no key)`)}
+							</option>
+						))}
 						{/* 桌面壳里 Web Speech 必死：Electron 用开源 Chromium，没有 Google 的语音后端与
 						    API key，网络通也一样报 network。所以这个选项只在浏览器里出现。 */}
 						{IS_DESKTOP_SHELL ? null : (

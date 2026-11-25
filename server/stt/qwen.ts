@@ -146,6 +146,9 @@ export const qwenStt: SttProvider = {
 	id: "qwen",
 	label: "千问 Qwen-Audio-ASR",
 	defaultEndpoint: QWEN_ASR_ENDPOINT,
+	// 面板里的模型下拉。只列文档/实测确认过的，其余靠手填。
+	// 注意 `…-flash-message` 是下面那个实时 provider（qwen-realtime）的，别选错。
+	models: ["qwen-audio-3.1-asr-flash"],
 	fields: [
 		{ key: "apiKey", label: "API Key（百炼）", required: true, secret: true, placeholder: "sk-…" },
 		{ key: "model", label: "模型", placeholder: QWEN_ASR_DEFAULT_MODEL },

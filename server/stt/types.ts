@@ -70,6 +70,11 @@ export type SttProvider = {
 	label: string;
 	/** 不写 endpoint 时用它（厂商官方端点）；不提供 = endpoint 必填 */
 	defaultEndpoint?: string;
+	/**
+	 * 这家有哪些可选模型（面板做成下拉，不用让用户手敲模型名）。
+	 * 只能列官方确认过的；不列也不影响手填，只是面板里少几个候选项。
+	 */
+	models?: readonly string[];
 	fields: SttField[];
 	create(config: SttConfig, log: Logger): SttSession;
 };

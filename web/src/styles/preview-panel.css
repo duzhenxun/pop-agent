@@ -401,7 +401,10 @@
 
 /* ---- 文件列表侧栏（看文件时常驻在内容右边）----
  * 面板本来就贴在窗口右边，所以文件树放最右、代码在它左边（跟你给的截图一致）。
- * 宽度由**左边那条可拖的竖线**控制（默认 224px，范围 140~520，并保证内容区至少 260px）。
+ * 宽度由**左边那条可拖的竖线**控制（默认 224px，范围 176~520，并保证内容区至少 260px）。
+ *
+ * 里面那一整套（工具条 / 项目下拉 / 分支 / 搜索 / 树）直接复用左侧文件树用的 `FilesTool`，
+ * 所以这里只管**宽度与位置**，别再给内部行写样式（写了就是两套）。
  */
 .preview-files {
 	flex: none;
@@ -411,8 +414,19 @@
 	min-height: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
 	padding-left: 8px;
+}
+
+/* 复用进来的那块要吃掉整根侧栏的高度（它自己是 `flex: 1` 的一整页） */
+.preview-files > .side-files {
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+/* 「文件」工具页那边为了贴标签条抬了 4px（`.side-files-panel` 的负 margin），
+   这里是侧栏：没有标签条，再抬就会把第一排工具顶出去 —— 归零。 */
+.preview-files > .side-files-panel {
+	margin-top: 0;
 }
 
 /* 内容与文件列表之间那条竖线：它**就是把手**（拖动改文件列表宽度，双击复位）。
@@ -430,46 +444,6 @@
 .preview-files-resizer:hover,
 .preview-files-resizer:active {
 	background: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.preview-files-head {
-	flex: none;
-	display: flex;
-	align-items: center;
-	gap: 4px;
-}
-
-.preview-files-title {
-	flex: 1 1 auto;
-	min-width: 0;
-	display: flex;
-	align-items: baseline;
-	gap: 2px;
-	font-size: 12px;
-	color: var(--text-faint);
-}
-
-.preview-files-label {
-	flex: none;
-}
-
-/* 项目名跟在「文件列表」后面：面板可能挂着好几个工作区，确认一下看的是哪个。
-   只让它自己省略（否则窄面板上「文件列表」几个字会先被截掉） */
-.preview-files-root {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	color: var(--text-dim);
-}
-
-/* 内容区：树 / 搜索结果各自在里面滚（两者都已经自带 overflow） */
-.preview-files-body {
-	flex: 1 1 auto;
-	min-height: 0;
-	display: flex;
-	flex-direction: column;
-	overflow: hidden;
 }
 
 /* 铺开按钮激活时的强调（和普通 btn-tiny 区分） */

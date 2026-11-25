@@ -20,8 +20,8 @@ import { existsSync } from "node:fs";
 import { HelperClient } from "../computer/helper-client.js";
 import { helperBinaryPath, helperTransport, socketPath } from "../computer/paths.js";
 import { startHelper } from "../computer/install-helper.js";
-import { readSttConfig } from "../stt/config.js";
-import { createSttSession, sttEndpoint, sttProviderLabel } from "../stt/index.js";
+import { readSttConfig, readSttProviders, saveSttSelection } from "../stt/config.js";
+import { createSttSession, getSttProvider, listSttProviders, sttEndpoint, sttProviderLabel } from "../stt/index.js";
 import type { SttConfig, SttSession } from "../stt/types.js";
 
 export type AsrState = "missing" | "idle" | "starting" | "authorizing" | "ready" | "error";
@@ -35,6 +35,30 @@ export type AsrStatus = {
 	/** 云端识别时：用的是哪家（如 deepseek），面板直接显示出来 */
 	provider?: string;
 	providerLabel?: string;
+};
+
+/** 面板「云端引擎」下拉需要的东西：能选哪些、现在是谁、哪家配好了密钥 */
+export type CloudEngine = {
+	id: string;
+	label: string;
+	/** 配了密钥才算能用（千问整段 / 千问实时是两个 provider，密钥可以互借） */
+	configured: boolean;
+	/** 这家支不支持指定模型；支持的话默认模型写在 defaultModel */
+	hasModel: boolean;
+	defaultModel?: string;
+	/** 已知可选的模型（面板下拉直接列；空数组 = 只能手填） */
+	models: string[];
+};
+
+export type CloudEngines = {
+	/** 当前生效的 provider（null = 没启用云端，走本地识别） */
+	provider: string | null;
+	/** 当前生效的模型（null = 用 provider 自己的默认值） */
+	model: string | null;
+	/** 配置读的是哪个文件 */
+	source: string;
+	error: string | null;
+	engines: CloudEngine[];
 };
 
 type Logger = { warn: (message: string, ctx?: Record<string, unknown>) => void };
@@ -71,23 +95,126 @@ export class AsrService {
 	 */
 	private chain: Promise<unknown> = Promise.resolve();
 	/** 云端 STT 配置：配了就不碰本地 helper，直接转发厂商 API（见 server/stt/） */
-	private readonly cloudConfig: SttConfig | null;
+	private cloudConfig: SttConfig | null = null;
 	private cloudSession: SttSession | null = null;
+	/** 面板切换引擎时要写回 stt.json，所以得记住数据目录 */
+	private readonly dataDir: string | undefined;
 
 	constructor(options: { log: Logger; dataDir?: string }) {
 		this.log = options.log;
-		const read = readSttConfig(options.dataDir);
-		this.cloudConfig = read.config ? this.validateCloud(read.config, read.source) : null;
-		if (this.cloudConfig) {
+		this.dataDir = options.dataDir;
+		this.cloudConfig = this.readCloud();
+	}
+
+	/**
+	 * 读一次 `stt.json` 并校验。启动时用，面板切换引擎后也用它重新读。
+	 */
+	private readCloud(): SttConfig | null {
+		const read = readSttConfig(this.dataDir);
+		if (read.error) this.log.warn("云端 STT 配置读不懂，按未配置处理", { error: read.error });
+		const config = read.config ? this.validateCloud(read.config, read.source) : null;
+		if (config) {
 			// 不打印 apiKey
 			this.log.warn("云端语音识别已启用", {
-				provider: this.cloudConfig.provider,
-				endpoint: safeEndpoint(this.cloudConfig),
-				model: this.cloudConfig.model ?? "(默认)",
+				provider: config.provider,
+				endpoint: safeEndpoint(config),
+				model: config.model ?? "(默认)",
 				source: read.source,
 			});
 		}
-		if (read.error) this.log.warn("云端 STT 配置读不懂，按未配置处理", { error: read.error });
+		return config;
+	}
+
+	/**
+	 * 面板「云端引擎」下拉的数据源。
+	 *
+	 * 需要它是因为 `readSttConfig()` 只给**当前选中的那一家**，而面板要让人在
+	 * 「千问整段识别 / 千问实时识别（边说边出字）」之间选 —— 两家的模型和价格都不一样。
+	 */
+	cloudEngines(): CloudEngines {
+		const read = readSttConfig(this.dataDir);
+		const { blocks } = readSttProviders(this.dataDir);
+		return {
+			provider: this.cloudConfig?.provider ?? null,
+			model: this.cloudConfig?.model ?? null,
+			source: read.source,
+			error: read.error ?? null,
+			engines: listSttProviders().map((provider) => {
+				const block = blocks[provider.id] ?? {};
+				const modelField = provider.fields.find((field) => field.key === "model");
+				// 同厂商兄弟 provider 的密钥可以互借（selectorID 见 selectCloud）：
+				// 只配过 `qwen` 的人也应该能直接选 `qwen-omni-realtime`，
+				// 否则面板里那一项是灰的，而灰的永远点不到 —— 互借逻辑就没机会生效。
+				const vendor = provider.id.split("-")[0];
+				const siblingHasKey = Object.entries(blocks).some(
+					([id, other]) =>
+						id !== provider.id &&
+						id.split("-")[0] === vendor &&
+						Boolean(other.apiKey || other.headers?.Authorization),
+				);
+				return {
+					id: provider.id,
+					label: provider.label,
+					configured: Boolean(block.apiKey || block.headers?.Authorization) || siblingHasKey,
+					hasModel: modelField != null,
+					// 字段声明里的 placeholder 就是官方默认模型（各 provider 里是这么写的）
+					defaultModel: modelField?.placeholder,
+					models: [...(provider.models ?? [])],
+				};
+			}),
+		};
+	}
+
+	/**
+	 * 面板上切换云端引擎：写回 `stt.json` → 丢掉缓存的会话 → 下一句就用新引擎。
+	 *
+	 * 同名厂商的兄弟 provider 钥匙可以互借：千问的「整段」和「实时」在百炼那边是同一把 key，
+	 * 不代抄的话用户一切到实时就被判「没配密钥」，莫名其妙掉回本地识别。
+	 */
+	selectCloud(selection: { provider: string; model?: string | null }): CloudEngines {
+		const provider = getSttProvider(selection.provider);
+		if (!provider) throw new Error(`未知的识别引擎：${selection.provider}`);
+
+		const { blocks, source } = readSttProviders(this.dataDir);
+		const target = blocks[provider.id] ?? {};
+		const hasKey = Boolean(target.apiKey || target.headers?.Authorization);
+
+		// 防手滑：把别的引擎的模型填到这家身上（典型：`…-flash-message` 是实时模型的，
+		// 却挂在整段识别上）。不拦的话要等厂商 API 回一个看不懂的 400/连不上。
+		const model = selection.model?.trim();
+		if (model) {
+			const owner = listSttProviders().find(
+				(candidate) => candidate.id !== provider.id && candidate.models?.includes(model),
+			);
+			if (owner) {
+				throw new Error(
+					`${model} 是「${owner.label}」的模型，先把引擎切到它（provider：${owner.id}）`,
+				);
+			}
+		}
+		const vendor = provider.id.split("-")[0];
+		const siblingKey = Object.entries(blocks).find(
+			([id, block]) => id !== provider.id && id.split("-")[0] === vendor && block.apiKey,
+		)?.[1].apiKey;
+		if (!hasKey && !siblingKey) {
+			throw new Error(`${provider.label} 还没配密钥：先在 ${source} 里加 providers.${provider.id}.apiKey`);
+		}
+
+		saveSttSelection(
+			{ provider: provider.id, model: selection.model, apiKey: hasKey ? undefined : siblingKey },
+			this.dataDir,
+		);
+
+		// 换引擎 = 换协议：旧会话的 socket / 缓冲都不能再用
+		try {
+			this.cloudSession?.cancel();
+		} catch {
+			// 旧会话作废就够了
+		}
+		this.cloudSession = null;
+		this.cloudConfig = this.readCloud();
+		if (!this.cloudConfig) throw new Error(`${provider.label} 的配置不完整（缺端点或密钥），没有切换`);
+		return this.cloudEngines();
 	}
 
 	/**

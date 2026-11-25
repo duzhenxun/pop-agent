@@ -55,6 +55,29 @@ export function registerAsrRoutes(app: Express, bridge: AsrService, _log?: Logge
 		response.json({ ...status, install: status.state === "missing" ? asrInstallHint() : null });
 	});
 
+	// 云端识别：能选哪些引擎、现在是谁、哪家配好了密钥。
+	// 为什么不直接把选项写死在前端：引擎是服务端 stt.json 决定的，而且「千问整段」和
+	// 「千问实时（边说边出字）」是两个 provider、两个模型、两种价格 —— 选错了体验完全不一样。
+	app.get("/api/asr/engines", (_request, response) => {
+		response.json(bridge.cloudEngines());
+	});
+
+	// 切引擎：写回 stt.json（保留别家的密钥），下一句生效
+	app.post("/api/asr/engine", (request, response) => {
+		const body = (request.body ?? {}) as { provider?: unknown; model?: unknown };
+		const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+		if (!provider) {
+			response.status(400).json({ error: "缺 provider" });
+			return;
+		}
+		const model = typeof body.model === "string" ? body.model : undefined;
+		try {
+			response.json(bridge.selectCloud({ provider, model }));
+		} catch (error) {
+			response.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+		}
+	});
+
 	app.post("/api/asr/install", (_request, response) => {
 		// 保留这个路由只是为了老前端不撞 404：本地识别已经没有独立安装包了
 		response.status(410).json({
