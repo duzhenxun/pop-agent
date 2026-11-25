@@ -58,6 +58,7 @@ import { BRAND_NAME_MAX } from "../brand-name.ts";
 import { readLogoFile } from "../brand-logo.ts";
 import { showToast } from "../toast.ts";
 import { moveStatusbarItem, useStatusbarOrder } from "../statusbar-order.ts";
+import { requestOpenPanel } from "../open-panel.ts";
 
 /** 产品自带那张图标（public/favicon.svg）：没换过 logo 时预览里显示它 */
 const DEFAULT_LOGO = "/favicon.svg?v=9";
@@ -633,7 +634,41 @@ function GeneralSettings() {
 			 * 「标注」排在它们前面：它管的是「选字之后那一小下」，比过程卡片更靠近正文。 */}
 			<AnnotationSettings />
 			<ProcessSettings />
+			<FeedbackSettings />
 		</>
+	);
+}
+
+/**
+ * 反馈：「提 Bug」的备用入口。
+ *
+ * 为什么还要这一块：真正报 bug 的人往往**不知道那个面板存在**（顶栏默认只放定时任务）。
+ * 设置里永远是能到达的地方，所以在这里放一行「提 Bug」——点一下直接开那个面板（带现场），
+ * 而不是只给一个 GitHub 链接（那样用户还得自己描述版本 / 引擎）。
+ */
+function FeedbackSettings() {
+	const t = useT();
+	const snapshot = useAppSelector((state) => state.snapshot);
+	return (
+		<div className="settings-panel">
+			<div className="settings-head">
+				<span>{t("反馈", "Feedback")}</span>
+				<span className="settings-sub">
+					{t(`v${snapshot?.versions.web ?? "?"}`, `v${snapshot?.versions.web ?? "?"}`)}
+				</span>
+			</div>
+			<div className="settings-row">
+				<button type="button" className="btn btn-tiny" onClick={() => requestOpenPanel("bug")}>
+					{t("提 Bug", "Report a bug")}
+				</button>
+				<span className="settings-hint">
+					{t(
+						"遇到问题就在这儿报：会打开 GitHub 新建 issue，版本 / 引擎 / 模型自动带上。",
+						"Report problems here: opens a prefilled GitHub issue with your version, engine and model attached.",
+					)}
+				</span>
+			</div>
+		</div>
 	);
 }
 

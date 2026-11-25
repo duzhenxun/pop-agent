@@ -106,7 +106,19 @@ export const TERMINAL_FONT_MAX = 24;
  *
  * 引擎切换不在表里：它在底部状态栏（跟审批模式并排），不属于顶栏这一排。
  */
-export const APPBAR_ITEMS = ["models", "cron", "skills", "push", "voice", "plugins", "mcp", "agents"] as const;
+export const APPBAR_ITEMS = [
+	"models",
+	"cron",
+	"skills",
+	"push",
+	"voice",
+	"plugins",
+	"mcp",
+	"agents",
+	/* 「提 Bug」也是面板（见 components/BugPanel.tsx）：默认不在顶栏，但可以在设置里勾出来；
+	   不勾的时候还能从 设置 → 对话 → 反馈 进去，不会因为没勾就找不到 */
+	"bug",
+] as const;
 type AppbarItem = (typeof APPBAR_ITEMS)[number];
 /** 可勾选的东西 = 那八个面板入口 + 「设置」自己 */
 export type AppbarToggle = AppbarItem | "settings";
@@ -171,6 +183,7 @@ export const APPBAR_ITEM_LABEL: Record<AppbarToggle, string> = {
 	mcp: "MCP",
 	agents: "子代理",
 	cron: "定时任务",
+	bug: "提 Bug",
 	settings: "设置",
 };
 
@@ -184,6 +197,7 @@ export const APPBAR_ITEM_LABEL_EN: Record<AppbarToggle, string> = {
 	mcp: "MCP",
 	agents: "Subagents",
 	cron: "Cron",
+	bug: "Report a bug",
 	settings: "Settings",
 };
 

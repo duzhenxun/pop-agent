@@ -8,7 +8,7 @@
  *
  * 只开**面板**，不带别的东西：真正的开关逻辑仍然只有 App 那一处。
  */
-export type OpenablePanel = "voice" | "settings";
+export type OpenablePanel = "voice" | "settings" | "bug";
 
 const EVENT = "pop-agent:open-panel";
 
