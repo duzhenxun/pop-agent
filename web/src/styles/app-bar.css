@@ -1293,6 +1293,18 @@ html.is-resizing .appbar::after {
 /* 正文让出一个顶栏高（`--appbar-h` 实量；顶栏隐藏时是 0） */
 :root[data-shell] .workspace .main {
 	padding-top: calc(var(--gap) + var(--appbar-h, 0px));
+	/**
+	 * 顶部被浮起来的顶栏盖住的那一段，备案成 `scroll-padding-top`。两个用途：
+	 *
+	 *   1. `stick-to-bottom.ts` 的 `anchorTo` 会读这个**计算值**（`topInset()`）：
+	 *      发出消息后要把那条顶到视口上方，只留 10px 呼吸带的话它正好落在顶栏后面，
+	 *      用户看到自己刚发的话被切掉上半截（2026-11-25 的截图）。
+	 *   2. `scrollIntoView` / Tab 聚焦时浏览器自己也会绕过这一段。
+	 *
+	 * 浏览器里没有这条规则（顶栏是正常一行，不浮），顶栏被藏起来时 `--appbar-h` 是 0 ——
+	 * 两种情况都等于「没盖住」，JS 那边不用再判断「是不是壳」。
+	 */
+	scroll-padding-top: var(--appbar-h, 0px);
 }
 
 /* 分栏面板：它自己那一列现在从第 1 行开始，原有的 `-appbar-h` 上移要撤掉，
