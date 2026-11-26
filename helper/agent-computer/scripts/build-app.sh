@@ -20,15 +20,12 @@ cd "$root"
 swift build -c release
 binary="$(swift build -c release --show-bin-path)/AgentComputer"
 
-# 内嵌用的裸二进制：PopAgent.app 直接 spawn 它，用 stdio 帧通信，
-# 用户不再需要单独安装 Agent Computer.app。只拷 binary，不带 .app / zip。
+# 不再产出「内嵌裸二进制」（`release/agent-computer`）。
+# 踩过的坑（2026-11-26）：那份裸二进制跟已装的 .app 是两个 TCC 身份，CLI 一旦优先 spawn 它，
+# status 就变成 `helperVersion: dev` + `screenRecording: false`，看着像「没装 helper」。
+# 现在只出 .app 与分发 zip —— 想用自编二进制调试，显式给 AGENT_COMPUTER_BINARY。
 release_dir="$root/release"
 mkdir -p "$release_dir"
-write_embedded_binary() {
-	cp "$binary" "$release_dir/agent-computer"
-	chmod +x "$release_dir/agent-computer"
-	echo "==> 内嵌二进制：$release_dir/agent-computer"
-}
 
 echo "==> 组装 $app"
 rm -rf "$app"
@@ -92,8 +89,6 @@ if [[ "${1:-}" == "--install" ]]; then
 		new_hash="$(codesign -dv --verbose=4 "$app" 2>&1 | awk -F= '/^CDHash=/{print $2}')"
 		if [[ -n "$old_hash" && "$old_hash" == "$new_hash" ]]; then
 			echo "    二进制没变，跳过替换（避免让系统重新要求授权）"
-			# 注意这里会 exit 0：内嵌二进制仍然要更新，否则 release/ 会停在旧版本
-			write_embedded_binary
 			# 分发用 zip：放进仓库，前端「未安装」时直接给下载链接。
 # 用 ditto（不是 zip 命令）：它能保留 .app 的可执行权限、签名和资源分支。
 release_dir="$root/release"
@@ -128,4 +123,3 @@ echo "    大小：$(du -h "$release_dir/Agent Computer.zip" | cut -f1)"
 
 echo "==> 产物：$app"
 
-write_embedded_binary

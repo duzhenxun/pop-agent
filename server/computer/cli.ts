@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { HelperClient, HelperError, type HelperSession } from "./helper-client.js";
+import { startHelper } from "./install-helper.js";
 import { helperBinaryPath, helperTransport, socketPath } from "./paths.js";
 
 type Flags = Record<string, string | true>;
@@ -289,6 +290,22 @@ function act(client: HelperClient, app: string, step: Record<string, unknown>): 
 	return client.request("act", { app, step: compact(step) });
 }
 
+/**
+ * 连之前先把 helper 拉起来：helper 是独立 app，用户可能关掉了它（或登录项没配）。
+ *
+ * 为什么不在 helper-client 里做：那是纯粹的传输层，不该知道「有个 .app 可以 open」。
+ * 这里只处理 socket 模式 —— stdio 模式自己 spawn 子进程，不需要外部 App。
+ *
+ * 2026-11-26：`build:helper` 不再产出裸二进制（它会跟已装 .app 抢 TCC 身份），
+ * 所以 socket 成了唯一路径，这条自愈就必须有，否则 Agent 的第一条命令直接 ENOENT。
+ */
+async function ensureHelperRunning(): Promise<void> {
+	if (helperTransport(process.env, helperBinaryPath()) !== "socket") return;
+	if (existsSync(socketPath())) return;
+	const started = await startHelper();
+	if (!started.ok) throw new HelperError("helperMissing", started.message);
+}
+
 async function main(): Promise<void> {
 	const [command = "help", ...rest] = process.argv.slice(2);
 	if (command === "help" || command === "--help" || command === "-h") {
@@ -296,6 +313,7 @@ async function main(): Promise<void> {
 		return;
 	}
 	const { positionals, flags } = parseArgs(rest);
+	await ensureHelperRunning();
 	const binary = helperBinaryPath();
 	const client = new HelperClient({
 		socketPath: socketPath(),

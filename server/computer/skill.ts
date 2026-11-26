@@ -20,7 +20,12 @@ const MANAGED_MARKER = "<!-- managed-by: pop-agent agent-computer -->";
  * 这个应用就是那个项目改名过来的：老用户机器上躺着 `managed-by: oh-my-agent-web` 那份，
  * 只认新标记的话「启用电脑控制」会报「已存在且不是本应用写入的」，只能让人先去手删文件。
  */
-const LEGACY_MARKERS = ["<!-- managed-by: oh-my-agent-web agent-computer -->"];
+const LEGACY_MARKERS = [
+	"<!-- managed-by: oh-my-agent-web agent-computer -->",
+	// 2026-11-26：独立仓库那版 App 内 CLI 写的是这个标记；那份能力已经回到本项目，
+	// 认出来才能顺利接管（否则面板点「启用」会报「已存在且不是本应用写入的」）
+	"<!-- managed-by: agent-computer -->",
+];
 
 function isManagedByUs(text: string): boolean {
 	return text.includes(MANAGED_MARKER) || LEGACY_MARKERS.some((marker) => text.includes(marker));
