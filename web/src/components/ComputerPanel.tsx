@@ -262,7 +262,7 @@ export function ComputerPanel() {
 				</label>
 				{/*
 				 * 「重新生成」：文件里写的是绝对路径（node + cli.js），换过 node 版本 / 挪过安装位置就过期。
-				 * 不让用户自己去编辑 markdown —— 让他点一下，再把生成出来的命令显示在下面供核对。
+				 * 不让用户自己去编辑 markdown —— 点两下重写（命令不方便直接展示，见 tooltip）。
 				 */}
 				<div className="computer-skill-regen">
 					<span className="computer-hint">

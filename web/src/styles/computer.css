@@ -47,10 +47,25 @@
 .computer-row {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	/* 复选框在**文字前面**（2026-11-26 用户：「复选框在后面有时分不清是哪一个功能的」）：
+	   一行有六七项时，眼睛要在最左和最右之间来回找。左边贴着文字，归属一眼可见。
+	   数字输入框（指针速度 / 逐键间隔）保持靠右：它们和左边的名字距离近，不会认错。 */
+	justify-content: flex-start;
 	gap: 12px;
 	padding: 6px 0;
 	cursor: pointer;
+}
+
+/* 只把复选框提到最前；DOM 顺序不变（仍然是 label 里的最后一个），键盘焦点与读屏不受影响 */
+.computer-row > input[type="checkbox"] {
+	order: -1;
+	flex: none;
+	margin: 0;
+}
+
+/* 文字块吃掉剩下的宽度，数字输入框那种行仍然是「左名字 / 右输入框」 */
+.computer-row-label {
+	flex: 1;
 }
 
 .computer-row-label {

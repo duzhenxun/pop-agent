@@ -60,6 +60,14 @@
 	white-space: normal;
 }
 
+/* 复选框放在**文字前面**（2026-11-26 用户：「语音这块也一样，放前面去」）。
+   右对齐时一屏十几个开关，勾哪一行全靠眼睛去右边对一趟。
+   竖排的行（`.voice-row-stacked`，标题 + 下拉那种）不参与：它本来就不是「一行一个开关」。
+   DOM 顺序不动，只是视觉挪位 —— 键盘焦点与读屏仍按原顺序。 */
+.voice-row:not(.voice-row-stacked) > input[type="checkbox"] {
+	order: -1;
+}
+
 .voice-row input[type="checkbox"] {
 	flex: none;
 	width: 17px;
