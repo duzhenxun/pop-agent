@@ -3,14 +3,6 @@
  *
  * 长度为 0 或超过 8 MiB 都是协议错误，调用方必须关掉连接。
  */
-
-/**
- * ⚠️ 线协议的 TS 实现：只有 `helper-client.ts`（= ASR + 面板 status 探测）在用。
- *
- * 必须与两处保持一致：helper 的 `Framing.swift`，以及 App 内 CLI 的帧编解码。
- * 改格式时三处一起改；Agent 侧的电脑控制已经不走这里了（见 cli.ts 的薄壳）。
- */
-
 export const HEADER_BYTES = 4;
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 

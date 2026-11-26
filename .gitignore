@@ -4,9 +4,12 @@ dist/
 web/dist/
 electron-dist/
 release/
-# Agent Computer helper（电脑控制 + 本地语音识别）的源码与安装包都已移到独立仓库：
-#   https://github.com/duzhenxun/agent-computer
-# 那边的 release 资产 `Agent-Computer.zip` 就是用户装的 .app；本仓库只当它是外部 App。
+# 例外：Agent Computer helper（桌面操作 + 本地语音识别）。电脑控制面板里的「下载 Agent Computer.app」
+# 直接指 raw/main 上的这个 zip（见 server/computer/paths.ts），文件不在就是 404，功能装不上。
+!helper/agent-computer/release/
+!helper/agent-computer/release/Agent Computer.zip
+# 裸二进制是 build:helper 的中间产物，分发用上面的 zip，不必重复入库。
+helper/agent-computer/release/agent-computer
 # 打包期的临时产物（Node 运行时 / 生产依赖）：按需生成，不进库
 node-runtime/
 .pkg/

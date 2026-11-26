@@ -8,17 +8,6 @@
  * 与 agent-computer-turbo 的 helper-client.mjs 行为一致：超时后直接断开传输，
  * 避免迟到的回复被误认为下一次请求的回复。`act` 超时后绝不自动重试（可能已经点过了）。
  */
-
-/**
- * ⚠️ 这份客户端现在只服务**两个剩余场景**（2026-11-26 拆分后）：
- *   1. `server/asr/` 的本地语音识别 —— 它要高频 `asr.feed`，必须直连 helper 的 socket；
- *   2. `status.ts` 的一次 hello 探测（面板显示版本与权限）。
- *
- * Agent 侧的电脑控制命令**已经不经过这里**：`cli.ts` 变成薄壳，直接 exec
- * `Agent Computer.app/Contents/MacOS/agent-computer`（那份是 Swift 实现，随 App 分发）。
- * 所以别再往这个文件里加命令，否则又是两份实现、两个漂移点。
- */
-
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { connect, type Socket } from "node:net";
 import { FrameDecoder, encodeFrame } from "./framing.js";
