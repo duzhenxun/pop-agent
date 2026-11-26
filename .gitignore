@@ -41,3 +41,7 @@ out/
 novel/
 weather-charts/
 xhs/
+
+# 测试用例不再入库（用户 2026-11-26：「从库存里去掉」）：本机照旧保留 `tests/`，
+# 跑法不变（`node --import tsx --test tests/unit/*.test.ts`）；历史提交里仍然在，需要时可捞回。
+tests/
