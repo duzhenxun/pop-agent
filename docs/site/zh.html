@@ -53,8 +53,8 @@ var _hmt = _hmt || [];
     <button class="nav-toggle" aria-expanded="false" aria-controls="navlinks">菜单</button>
     <nav class="nav-links" id="navlinks">
       <a href="#rules">定位</a>
-      <a href="#features">功能</a>
       <a href="#input">输入</a>
+      <a href="#features">功能</a>
       <a href="#specials">特色</a>
       <a href="#workspace">工作区</a>
       <a href="#panels">面板</a>
@@ -141,6 +141,44 @@ var _hmt = _hmt || [];
     </div>
   </section>
 
+  <!-- 输入那半屏：模板 / 快捷指令 / 想想 -->
+  <section id="input">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">说话之前</div>
+        <h2>模板、快捷指令、想想</h2>
+        <p>输入框上方那一排：把「怎么开口」做成能点的东西。</p>
+      </div>
+
+      <div class="cards">
+        <article class="card wide reveal">
+          <div class="copy">
+            <h3>模板库：12 张内置，点一张落进输入框</h3>
+            <div class="list">
+              <div><span class="tick">✓</span><span><b>不发送，还能接着改</b>；写不利索就让「AI 帮写」按「目标 / 输入 / 步骤 / 输出 / 约束」补完。</span></div>
+              <div><span class="tick">✓</span><span><b>只能隐藏，不能真删</b>：手滑移出库也救得回来，「恢复默认」永远在。</span></div>
+              <div><span class="tick">✓</span><span><b>快捷指令</b>：一排胶囊，点一下就发，Shift + 点只填进输入框。</span></div>
+            </div>
+          </div>
+          <div class="term" aria-label="一份模板长什么样">
+<span class="c"># 模板：改造一个模块，先读再改</span>
+<span class="p">目标</span>  把 <b>store.ts</b> 的写盘改成按会话分片
+<span class="p">输入</span>  我会给你目标文件与一个失败样例
+<span class="p">步骤</span>  1. 读完再动  2. 只改这一处  3. 跑相关测试
+<span class="p">输出</span>  diff + 一句话说清风险
+<span class="p">约束</span>  不动公开 API；要改签名先问
+          </div>
+        </article>
+
+        <article class="card stack reveal">
+          <h3>想想：不知道下一句说什么，让它先给几条</h3>
+          <p>点一下，它跑一个<b>隐藏回合</b>读当前上下文，回 1–5 条「你接下来可以这么说」（默认 5 条，手机 3 条）。点一条就发；那一轮不进会话历史，也不花你一条消息。</p>
+          <div class="shot"><img src="assets/zh/think.webp" width="1800" height="473" alt="点「想想」之后输入框上方多出一排建议胶囊，点一条就直接发出去" loading="lazy" data-zoom /></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <!-- 功能 -->
   <section id="features">
     <div class="wrap">
@@ -182,50 +220,6 @@ var _hmt = _hmt || [];
           <h3>圈出重点再提意见</h3>
           <p>选中一段回复，浮出小工具条：加进会话、写一条标注、或丢到临时会话里单独问。正文上会留 <b>①②③</b> 编号，输入框里多出一颗「N 条注释」。</p>
           <div class="shot"><img src="assets/zh/annotations.webp" width="2100" height="1312" alt="标注之后：正文里留下编号徽标，输入框里多出「1 条注释」" loading="lazy" data-zoom /></div>
-        </article>
-
-        <article class="card reveal">
-          <h3>@ 找文件，/ 发指令</h3>
-          <p>输入框里打 <b>@</b> 就在工作区里找文件，↑↓ 选中、回车插入 <code>@src/store.ts</code>；打 <b>/</b> 弹出四条：<code>/new</code> 由工作台执行，<code>/skill</code> <code>/compact</code> <code>/plan</code> 直接交给引擎。</p>
-          <div class="shot"><img src="assets/zh/mention-crop.webp" width="1800" height="1125" alt="输入 @ 后弹出的文件提及面板，按文件名与路径匹配" loading="lazy" data-zoom /></div>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- 输入那半屏：模板 / 快捷指令 / 想想 -->
-  <section id="input">
-    <div class="wrap">
-      <div class="sec-head reveal">
-        <div class="kicker">说话之前</div>
-        <h2>模板、快捷指令、想想</h2>
-        <p>输入框上方那一排：把「怎么开口」做成能点的东西。</p>
-      </div>
-
-      <div class="cards">
-        <article class="card wide reveal">
-          <div class="copy">
-            <h3>模板库：12 张内置，点一张落进输入框</h3>
-            <div class="list">
-              <div><span class="tick">✓</span><span><b>不发送，还能接着改</b>；写不利索就让「AI 帮写」按「目标 / 输入 / 步骤 / 输出 / 约束」补完。</span></div>
-              <div><span class="tick">✓</span><span><b>只能隐藏，不能真删</b>：手滑移出库也救得回来，「恢复默认」永远在。</span></div>
-              <div><span class="tick">✓</span><span><b>快捷指令</b>：一排胶囊，点一下就发，Shift + 点只填进输入框。</span></div>
-            </div>
-          </div>
-          <div class="term" aria-label="一份模板长什么样">
-<span class="c"># 模板：改造一个模块，先读再改</span>
-<span class="p">目标</span>  把 <b>store.ts</b> 的写盘改成按会话分片
-<span class="p">输入</span>  我会给你目标文件与一个失败样例
-<span class="p">步骤</span>  1. 读完再动  2. 只改这一处  3. 跑相关测试
-<span class="p">输出</span>  diff + 一句话说清风险
-<span class="p">约束</span>  不动公开 API；要改签名先问
-          </div>
-        </article>
-
-        <article class="card stack reveal">
-          <h3>想想：不知道下一句说什么，让它先给几条</h3>
-          <p>点一下，它跑一个<b>隐藏回合</b>读当前上下文，回 1–5 条「你接下来可以这么说」（默认 5 条，手机 3 条）。点一条就发；那一轮不进会话历史，也不花你一条消息。</p>
-          <div class="shot"><img src="assets/zh/think.webp" width="1800" height="473" alt="点「想想」之后输入框上方多出一排建议胶囊，点一条就直接发出去" loading="lazy" data-zoom /></div>
         </article>
       </div>
     </div>

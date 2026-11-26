@@ -55,8 +55,8 @@ var _hmt = _hmt || [];
     <button class="nav-toggle" aria-expanded="false" aria-controls="navlinks">Menu</button>
     <nav class="nav-links" id="navlinks">
       <a href="#rules">Why</a>
-      <a href="#features">Conversation</a>
       <a href="#input">Input</a>
+      <a href="#features">Conversation</a>
       <a href="#specials">Beyond chat</a>
       <a href="#workspace">Workspace</a>
       <a href="#panels">Panels</a>
@@ -143,6 +143,44 @@ var _hmt = _hmt || [];
     </div>
   </section>
 
+  <!-- INPUT SIDE: templates / quick commands / Think -->
+  <section id="input">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">Before you speak</div>
+        <h2>Templates, quick commands, Think</h2>
+        <p>The row above the composer: “how do I even ask this” made clickable.</p>
+      </div>
+
+      <div class="cards">
+        <article class="card wide reveal">
+          <div class="copy">
+            <h3>Templates: 12 built-ins, one click into the composer</h3>
+            <div class="list">
+              <div><span class="tick">✓</span><span><b>Not sent, still editable</b>; not sure how to phrase it? “AI write it” fills in goal / input / steps / output / constraints.</span></div>
+              <div><span class="tick">✓</span><span><b>Hidden, never destroyed</b>: “restore defaults” always brings a built-in back.</span></div>
+              <div><span class="tick">✓</span><span><b>Quick commands</b>: a row of chips — click sends, Shift+click only fills the box.</span></div>
+            </div>
+          </div>
+          <div class="term" aria-label="What a template looks like">
+<span class="c"># template: change one module, read before writing</span>
+<span class="p">goal</span>     split store.ts writes per session
+<span class="p">input</span>    I will give you the file and one failing case
+<span class="p">steps</span>    1. read it all  2. touch only this  3. run the tests
+<span class="p">output</span>   a diff plus one line on the risk
+<span class="p">limits</span>   no public API change; ask before changing a signature
+          </div>
+        </article>
+
+        <article class="card stack reveal">
+          <h3>Think: out of words? have it draft the next line</h3>
+          <p>One click runs a <b>hidden turn</b> over the current context and returns 1–5 “here is what you could say next” (5 by default, 3 on phones). Click one to send — that turn never lands in history and costs you nothing to hide.</p>
+          <div class="shot"><img src="assets/en/think.webp" width="1800" height="473" alt="After hitting Think, a row of suggestion chips appears above the composer; click one to send it" loading="lazy" data-zoom /></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <!-- FEATURES -->
   <section id="features">
     <div class="wrap">
@@ -184,50 +222,6 @@ var _hmt = _hmt || [];
           <h3>Mark the passage, leave a note</h3>
           <p>Select any passage and a small toolbar appears: add it to the session, annotate it, or ask about it in a temp chat. The passage keeps a <b>①②③</b> badge and the composer grows an “N notes” capsule.</p>
           <div class="shot"><img src="assets/en/annotations.webp" width="2100" height="1312" alt="After annotating: a numbered badge in the text and an “N notes” capsule in the composer" loading="lazy" data-zoom /></div>
-        </article>
-
-        <article class="card reveal">
-          <h3><span class="mono">@</span> for files, <span class="mono">/</span> for commands</h3>
-          <p>Type <b>@</b> to search the workspace, ↑↓ to pick, Enter to insert <code>@src/store.ts</code>. Type <b>/</b> for local commands (new, rename, model, session stats) or ones handed straight to the agent (compact, plan mode).</p>
-          <div class="shot"><img src="assets/en/mention-crop.webp" width="1800" height="1125" alt="The @ mention panel, grouped into “Add” and “Recent”" loading="lazy" data-zoom /></div>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- INPUT SIDE: templates / quick commands / Think -->
-  <section id="input">
-    <div class="wrap">
-      <div class="sec-head reveal">
-        <div class="kicker">Before you speak</div>
-        <h2>Templates, quick commands, Think</h2>
-        <p>The row above the composer: “how do I even ask this” made clickable.</p>
-      </div>
-
-      <div class="cards">
-        <article class="card wide reveal">
-          <div class="copy">
-            <h3>Templates: 12 built-ins, one click into the composer</h3>
-            <div class="list">
-              <div><span class="tick">✓</span><span><b>Not sent, still editable</b>; not sure how to phrase it? “AI write it” fills in goal / input / steps / output / constraints.</span></div>
-              <div><span class="tick">✓</span><span><b>Hidden, never destroyed</b>: “restore defaults” always brings a built-in back.</span></div>
-              <div><span class="tick">✓</span><span><b>Quick commands</b>: a row of chips — click sends, Shift+click only fills the box.</span></div>
-            </div>
-          </div>
-          <div class="term" aria-label="What a template looks like">
-<span class="c"># template: change one module, read before writing</span>
-<span class="p">goal</span>     split store.ts writes per session
-<span class="p">input</span>    I will give you the file and one failing case
-<span class="p">steps</span>    1. read it all  2. touch only this  3. run the tests
-<span class="p">output</span>   a diff plus one line on the risk
-<span class="p">limits</span>   no public API change; ask before changing a signature
-          </div>
-        </article>
-
-        <article class="card stack reveal">
-          <h3>Think: out of words? have it draft the next line</h3>
-          <p>One click runs a <b>hidden turn</b> over the current context and returns 1–5 “here is what you could say next” (5 by default, 3 on phones). Click one to send — that turn never lands in history and costs you nothing to hide.</p>
-          <div class="shot"><img src="assets/en/think.webp" width="1800" height="473" alt="After hitting Think, a row of suggestion chips appears above the composer; click one to send it" loading="lazy" data-zoom /></div>
         </article>
       </div>
     </div>
