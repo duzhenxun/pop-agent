@@ -38,6 +38,94 @@ final class Onboarding: NSObject, NSWindowDelegate {
 	private var loggedInvisible = false
 	private var lastBeep = Date.distantPast
 
+	/// 引导窗的界面语言。默认**英文**（2026-11-26 用户：「默认用英文」），
+	/// 记在 `onboarding.json` 里，下次打开还是上次选的。
+	enum Lang: String {
+		case en
+		case zh
+	}
+
+
+	/// 只做这一屏要用的中英文案（菜单栏 / HUD 还是中文，后续要一起翻译再说）
+	private func copy(for lang: Lang) -> (
+		accessibility: String, accessibilityDetail: String,
+		screen: String, screenDetail: String,
+		grant: String, later: String, done: String, retry: String, restart: String,
+		allowed: String, denied: String, checking: String, ready: String,
+		missing: (Int) -> String
+	) {
+		switch lang {
+		case .zh:
+			return (
+				accessibility: "辅助功能",
+				accessibilityDetail: "读界面、点击、输入都要它",
+				screen: "屏幕录制",
+				screenDetail: "只用来看截图，不给也能操作",
+				grant: "去授权",
+				later: "稍后",
+				done: "完成",
+				retry: "已授权，重新检测",
+				restart: "重启",
+				allowed: "✓ 已允许",
+				denied: "✗ 未允许",
+				checking: "检查中…",
+				ready: "已就绪，可以开始操作了。",
+				missing: { "还差 \($0) 步才会生效" }
+			)
+		case .en:
+			return (
+				accessibility: "Accessibility",
+				accessibilityDetail: "Read the UI, click and type",
+				screen: "Screen Recording",
+				screenDetail: "Only used for screenshots",
+				grant: "Open Settings",
+				later: "Later",
+				done: "Done",
+				retry: "Check again",
+				restart: "Restart",
+				allowed: "✓ Allowed",
+				denied: "✗ Not allowed",
+				checking: "Checking…",
+				ready: "All set — you can start now.",
+				missing: { $0 == 1 ? "1 more step before it works" : "\($0) more steps before it works" }
+			)
+		}
+	}
+
+	private var copy: (
+		accessibility: String, accessibilityDetail: String,
+		screen: String, screenDetail: String,
+		grant: String, later: String, done: String, retry: String, restart: String,
+		allowed: String, denied: String, checking: String, ready: String,
+		missing: (Int) -> String
+	) {
+		copy(for: lang)
+	}
+
+	/// 当前语言：`onboarding.json` 里的 `lang` 字段，没有就英文
+	private var lang: Lang {
+		get {
+			guard let data = try? Data(contentsOf: markerFile),
+				let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+				let raw = json["lang"] as? String,
+				let value = Lang(rawValue: raw)
+			else { return .en }
+			return value
+		}
+		set {
+			var json: [String: Any] = [:]
+			if let data = try? Data(contentsOf: markerFile),
+				let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+				json = existing
+			}
+			json["lang"] = newValue.rawValue
+			try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
+			if let data = try? JSONSerialization.data(withJSONObject: json) {
+				try? data.write(to: markerFile)
+			}
+		}
+	}
+
 	private let supportDir = FileManager.default.homeDirectoryForCurrentUser
 		.appendingPathComponent("Library/Application Support/AgentComputer")
 
@@ -181,7 +269,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		// 标题位置放**应用名**，那句「还差一步就能用了」挪到底部状态行（2026-11-26 用户：
 		// 「还差一步就能用了，放下面」）—— 它本来就是个状态判断，跟着权限状态一起变更合理。
 		let title = NSTextField(labelWithString: "Agent Computer")
-		title.font = .systemFont(ofSize: 17, weight: .semibold)
+		title.font = .systemFont(ofSize: 15, weight: .semibold)
 
 		// 副标题（那句「macOS 不允许应用自己给自己授权…」）2026-11-26 用户要求去掉：
 		// 权限卡本身已经说清要什么，这一段只是在重复解释，还把 header 撑成两行压到卡片上。
@@ -193,21 +281,37 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		titleRow.alignment = .centerY
 		titleRow.spacing = 8
 
-		let header = NSStackView(views: [icon, titleRow])
+		// 语言切换：放在 header 右上角（2026-11-26 用户圈的位置）。切换后整窗重建 ——
+		// 这一屏只有十几个字符串，重建比逐个改文字更不容易漏。
+		let language = NSSegmentedControl(
+			labels: ["EN", "中"],
+			trackingMode: .selectOne,
+			target: self,
+			action: #selector(switchLanguage(_:))
+		)
+		language.selectedSegment = lang == .en ? 0 : 1
+		language.controlSize = .small
+		language.font = .systemFont(ofSize: 10)
+		language.segmentStyle = .rounded
+		language.setContentHuggingPriority(.required, for: .horizontal)
+		language.setContentCompressionResistancePriority(.required, for: .horizontal)
+		language.widthAnchor.constraint(equalToConstant: 62).isActive = true
+
+		let header = NSStackView(views: [icon, titleRow, NSView(), language])
 		header.orientation = .horizontal
 		header.alignment = .centerY
 		header.spacing = 12
 
 		let accessibilityRow = makePermissionRow(
-			name: "辅助功能",
-			detail: "读界面、点击、输入都要它",
+			name: copy.accessibility,
+			detail: copy.accessibilityDetail,
 			action: #selector(grantAccessibility)
 		)
 		accessibilityLabel = accessibilityRow.status
 		accessibilityButton = accessibilityRow.button
 		let screenRow = makePermissionRow(
-			name: "屏幕录制",
-			detail: "只用来看截图，不给也能操作",
+			name: copy.screen,
+			detail: copy.screenDetail,
 			action: #selector(grantScreenRecording)
 		)
 		screenLabel = screenRow.status
@@ -221,17 +325,17 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 		// 状态行：放在权限卡下面、横跨整行（2026-11-26 用户圈出来的那块空白）。
 		// 它就是「还差几步能用」这一句 —— 以前挤在底栏、和按钮抢地方，还被截断。
-		let status = NSTextField(wrappingLabelWithString: "还差 2 步才会生效")
+		let status = NSTextField(wrappingLabelWithString: copy.missing(2))
 		status.font = .systemFont(ofSize: 15, weight: .bold)
 		status.alignment = .center
 		status.textColor = .secondaryLabelColor
 		status.setContentCompressionResistancePriority(.required, for: .vertical)
 		statusLabel = status
 
-		let later = NSButton(title: "稍后", target: self, action: #selector(dismiss))
+		let later = NSButton(title: copy.later, target: self, action: #selector(dismiss))
 		later.bezelStyle = .rounded
 		later.controlSize = .regular
-		let done = NSButton(title: "已授权，重新检测", target: self, action: #selector(donePressed))
+		let done = NSButton(title: copy.retry, target: self, action: #selector(donePressed))
 		done.bezelStyle = .rounded
 		done.controlSize = .regular
 		done.keyEquivalent = "\r"
@@ -280,7 +384,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
 				let cards = permissions.arrangedSubviews.map { "\($0.frame)" }.joined(separator: " ")
 				Log.write(
 					"layout: content=\(content.frame) stack=\(stack.frame) header=\(header.frame) "
-						+ "permissions=\(permissions.frame) status=\(status.frame) footer=\(footer.frame) cards=[\(cards)]"
+						+ "permissions=\(permissions.frame) status=\(status.frame) footer=\(footer.frame) "
+						+ "lang=\(language.frame) cards=[\(cards)]"
 				)
 			}
 		}
@@ -304,7 +409,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 	/// 标题右边那枚 `v0.5.0` 小徽标
 	private func versionBadge() -> NSView {
 		let label = NSTextField(labelWithString: "v\(version())")
-		label.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+		label.font = .monospacedDigitSystemFont(ofSize: 9, weight: .medium)
 		label.textColor = .secondaryLabelColor
 
 		let box = NSView()
@@ -316,8 +421,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		label.translatesAutoresizingMaskIntoConstraints = false
 		box.addSubview(label)
 		NSLayoutConstraint.activate([
-			label.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 8),
-			label.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
+			label.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 6),
+			label.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -6),
 			label.centerYAnchor.constraint(equalTo: box.centerYAnchor),
 			box.heightAnchor.constraint(equalToConstant: 19),
 		])
@@ -357,9 +462,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
 	private func makePermissionRow(name: String, detail: String, action: Selector) -> (view: NSView, status: NSTextField, button: NSButton) {
 		let nameLabel = NSTextField(labelWithString: name)
 		nameLabel.font = .systemFont(ofSize: 12.5, weight: .medium)
-		nameLabel.widthAnchor.constraint(equalToConstant: 70).isActive = true
 
-		let detailLabel = NSTextField(labelWithString: detail)
+		let detailLabel = NSTextField(wrappingLabelWithString: detail)
 		detailLabel.font = .systemFont(ofSize: 10.5)
 		detailLabel.textColor = .tertiaryLabelColor
 
@@ -368,14 +472,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		left.alignment = .leading
 		left.spacing = 2
 
-		let status = NSTextField(labelWithString: "检查中…")
+		let status = NSTextField(labelWithString: copy.checking)
 		status.font = .systemFont(ofSize: 11.5)
 		status.textColor = .secondaryLabelColor
 		// 定宽 + 右对齐：两行的「✓ 已允许」必须落在同一条竖线上，否则切状态时整行会跳
 		status.alignment = .right
 		status.widthAnchor.constraint(equalToConstant: 62).isActive = true
 
-		let button = NSButton(title: "去授权", target: self, action: action)
+		let button = NSButton(title: copy.grant, target: self, action: action)
 		button.bezelStyle = .rounded
 		button.controlSize = .small
 		button.font = .systemFont(ofSize: 11.5)
@@ -421,6 +525,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		refresh()
 	}
 
+	/// 切语言：存进 onboarding.json，然后重建整个窗口（文案全部重新取）
+	@objc private func switchLanguage(_ sender: NSSegmentedControl) {
+		lang = sender.selectedSegment == 0 ? .en : .zh
+		Log.write("引导窗口：切换语言到 \(lang.rawValue)")
+		window?.orderOut(nil)
+		window = nil
+		show()
+	}
+
 	@objc private func dismiss() {
 		Log.write("dismiss()：用户点稍后")
 		markDismissed()
@@ -431,9 +544,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		let accessibility = Permissions.accessibilityGranted()
 		let screen = Permissions.screenRecordingGranted()
 
-		accessibilityLabel?.stringValue = accessibility ? "✓ 已允许" : "✗ 未允许"
+		accessibilityLabel?.stringValue = accessibility ? copy.allowed : copy.denied
 		accessibilityLabel?.textColor = accessibility ? .systemGreen : .systemOrange
-		screenLabel?.stringValue = screen ? "✓ 已允许" : "✗ 未允许"
+		screenLabel?.stringValue = screen ? copy.allowed : copy.denied
 		screenLabel?.textColor = screen ? .systemGreen : .systemOrange
 		// 已经授权的那一项不再显示「去授权」——留着只会让人以为还有事要做
 		accessibilityButton?.isHidden = accessibility
@@ -444,15 +557,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		// 文案不再解释「为什么」——权限卡自己写着要什么，这句只报数。
 		let missing = (accessibility ? 0 : 1) + (screen ? 0 : 1)
 		if missing > 0 {
-			statusLabel?.stringValue = "还差 \(missing) 步才会生效"
+			statusLabel?.stringValue = copy.missing(missing)
 			statusLabel?.font = .systemFont(ofSize: 15, weight: .bold)
 			statusLabel?.textColor = .systemRed
 		}
 		if accessibility && screen {
-			statusLabel?.stringValue = "已就绪，可以开始操作了。"
+			statusLabel?.stringValue = copy.ready
 			statusLabel?.font = .systemFont(ofSize: 15, weight: .bold)
 			statusLabel?.textColor = .systemGreen
-			doneButton?.title = "完成"
+			doneButton?.title = copy.done
 			// 只对「看着它变成已允许」的那种收窗：留 1.5s 让用户看清绿勾再收起。
 			// 打开时就已经就绪（菜单里点进来的）就停在窗口上，等用户自己关。
 			guard !readyWhenShown, userWentToSettings else { return }
@@ -464,9 +577,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
 			}
 		} else if accessibility {
 			// 屏幕录制授权后必须重启进程才生效 —— 按钮直接做成「重启」，不用用户自己去找
-			doneButton?.title = "重启"
+			doneButton?.title = copy.restart
 		} else {
-			doneButton?.title = "已授权，重新检测"
+			doneButton?.title = copy.retry
 		}
 	}
 

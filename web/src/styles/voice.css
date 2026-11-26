@@ -137,6 +137,14 @@
 /* 「试听」：不抢勾选框的位置，靠右侧但排在勾选框前面 */
 .voice-try {
 	flex: none;
+	/* 「试听」也往前放（2026-11-26 用户）：勾选框 → 试听 → 文字。
+	   两者都是 order:-1，按 DOM 顺序排，所以按钮落在勾选框**后面**、文字**前面**。 */
+	order: -1;
+}
+
+/* order 只改视觉顺序，不加这条的话按钮和文字之间没有间距（原先是靠右侧留白隔开的） */
+.voice-row > .voice-try {
+	margin-inline-end: 4px;
 }
 
 .voice-row-slider input[type="range"] {
