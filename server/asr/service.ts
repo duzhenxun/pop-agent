@@ -61,7 +61,11 @@ export type CloudEngines = {
 	engines: CloudEngine[];
 };
 
-type Logger = { warn: (message: string, ctx?: Record<string, unknown>) => void };
+/** 只声明用得到的级别：`debug` 用来把「云端已启用」这类常态事实降级成排查信息 */
+type Logger = {
+	debug: (message: string, ctx?: Record<string, unknown>) => void;
+	warn: (message: string, ctx?: Record<string, unknown>) => void;
+};
 
 /** 一次听写最多攒多久的音频（兜底，正常一句话远小于这个数） */
 const MAX_UTTERANCE_BYTES = 16 * 1024 * 1024;
@@ -114,8 +118,12 @@ export class AsrService {
 		if (read.error) this.log.warn("云端 STT 配置读不懂，按未配置处理", { error: read.error });
 		const config = read.config ? this.validateCloud(read.config, read.source) : null;
 		if (config) {
-			// 不打印 apiKey
-			this.log.warn("云端语音识别已启用", {
+			/**
+			 * debug 而不是 warn（用户 2026-11-26）：前台启动每个终端都刷一行「云端语音识别已启用」纯噪声，
+			 * 而它并不是异常 —— 配了 `stt.json` 就必然成立，面板里也一眼能看见当前引擎。
+			 * 要确认到底连的哪家：`POP_AGENT_LOG=debug pop`。密钥照样不打印。
+			 */
+			this.log.debug("云端语音识别已启用", {
 				provider: config.provider,
 				endpoint: safeEndpoint(config),
 				model: config.model ?? "(默认)",

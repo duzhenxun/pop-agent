@@ -17,7 +17,8 @@ import { AsrService } from "../../server/asr/service.ts";
 import { readSttConfig, readSttProviders, saveSttSelection, sttConfigPath } from "../../server/stt/config.ts";
 import { listSttProviders } from "../../server/stt/index.ts";
 
-const silentLog = { warn: () => undefined };
+/** `debug` 也要有：`readCloud()` 把「云端已启用」降成 debug（启动时不再往终端刷一行） */
+const silentLog = { debug: () => undefined, warn: () => undefined };
 const dirs: string[] = [];
 
 function tempDir(): string {

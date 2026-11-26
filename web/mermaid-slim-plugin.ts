@@ -282,13 +282,18 @@ export function mermaidSlim(): Plugin {
 
 		closeBundle() {
 			const count = plan.chunks.size + plan.deps.size;
+			/**
+			 * 默认闭嘴（用户 2026-11-26）：每次 `build:web` / `dev` 都刷一段裁剪报告，属于构建噪声。
+			 * 想看时 `POP_AGENT_MERMAID_VERBOSE=1 npm run build:web`。
+			 */
+			if (!process.env.POP_AGENT_MERMAID_VERBOSE) return;
 			if (count === 0) {
 				for (const note of plan.notes) console.log(`[pop-agent] ${note}`);
 				return;
 			}
 			console.log(
 				`[pop-agent] mermaid 已裁剪 ${plan.chunks.size} 个图型 chunk + ${plan.deps.size} 个重依赖` +
-					`（保留完整版：POP_AGENT_MERMAID_FULL=1；单独保留某项：POP_AGENT_MERMAID_KEEP=mindmap,katex）`,
+					`（保留完整版：POP_AGENT_MERMAID_FULL=1；单独保留某项：POP_AGENT_MERMAID_KEEP=mindmap,katex；看这行报告：POP_AGENT_MERMAID_VERBOSE=1）`,
 			);
 			for (const note of plan.notes) console.log(`[pop-agent]   ${note}`);
 		},
