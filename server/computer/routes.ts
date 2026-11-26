@@ -71,7 +71,9 @@ export function createComputerRouter(): express.Router {
 				res.json(await getComputerStatus());
 				return;
 			}
-			if (typeof req.body?.enabled !== "boolean") throw new Error("enabled 必须是布尔值");
+			if (typeof req.body?.enabled !== "boolean") {
+				throw new Error("请求里需要 {enabled:true|false}，或 {regenerate:true} 来重新生成");
+			}
 			if (req.body.enabled) enableSkill();
 			else disableSkill();
 			res.json(await getComputerStatus());

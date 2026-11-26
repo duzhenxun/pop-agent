@@ -195,7 +195,7 @@ export function ComputerPanel() {
 		<div className="computer-panel">
 			<header className="computer-head">
 				<h2>{t("电脑控制", "Computer control")}</h2>
-				<button type="button" className="computer-btn" onClick={() => void load()} disabled={busy}>
+				<button type="button" className="computer-btn" onClick={() => void run(load)} disabled={busy}>
 					{t("刷新", "Refresh")}
 				</button>
 			</header>
