@@ -12,7 +12,7 @@
  *   2. 默认 `allow_writes: false`：无人值守的写入必须由用户显式打开（和编辑器里的勾选同义）；
  *   3. 只碰任务定义，不替用户「先跑一次看看」—— 要立刻跑用 `action: "run_now"` 明说。
  */
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import {
 	cronDraftFromArgs,

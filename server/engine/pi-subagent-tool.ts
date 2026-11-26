@@ -9,7 +9,7 @@
  *
  * 纪律：这个工具**不给子会话**（子代理不能再开子代理），否则一次委派能无限展开。
  */
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { SubagentEnginePort } from "./port.js";
 import type { SubagentRunView } from "../protocol.js";

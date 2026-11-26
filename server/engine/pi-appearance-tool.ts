@@ -8,7 +8,7 @@
  * 落点是宿主的客户端设置（`set_settings` 那条路），浏览器收到快照后自己应用，
  * 所以改完一两秒内就能看见字变大，不需要刷新。
  */
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import {
 	APPEARANCE_LABEL,

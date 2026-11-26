@@ -8,7 +8,7 @@
  * 坐标由宿主算（`session/canvas.ts` 的 `layout`）：模型只给标题和依赖。
  * 让它自己给 x/y 的话，十个节点能摆成一片谁都看不懂的散点。
  */
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { defineTool, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import {
 	CANVAS_MAX_NODES,
