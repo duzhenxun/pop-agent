@@ -155,13 +155,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 	private func buildWindow() -> NSWindow {
 		let window = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 540, height: 336),
+			contentRect: NSRect(x: 0, y: 0, width: 360, height: 320),
 			styleMask: [.titled, .closable, .fullSizeContentView],
 			backing: .buffered,
 			defer: false
 		)
 		window.title = "Agent Computer"
 		window.titlebarAppearsTransparent = true
+		// 明确给系统窗口底色：不写的话，透明标题栏 + 材质会让整片背景带壁纸色调（偏暖）
+		window.backgroundColor = .windowBackgroundColor
 		window.isReleasedWhenClosed = false
 		window.delegate = self
 		// 关键：后台 app 抢不到前台（macOS 限制），所以靠「层级 + 跟随所有 Space」保证可见。
@@ -173,13 +175,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		icon.image = NSApp.applicationIconImage
 		icon.imageScaling = .scaleProportionallyUpOrDown
 		icon.translatesAutoresizingMaskIntoConstraints = false
-		icon.widthAnchor.constraint(equalToConstant: 60).isActive = true
-		icon.heightAnchor.constraint(equalToConstant: 60).isActive = true
+		icon.widthAnchor.constraint(equalToConstant: 46).isActive = true
+		icon.heightAnchor.constraint(equalToConstant: 46).isActive = true
 
 		// 标题位置放**应用名**，那句「还差一步就能用了」挪到底部状态行（2026-11-26 用户：
 		// 「还差一步就能用了，放下面」）—— 它本来就是个状态判断，跟着权限状态一起变更合理。
 		let title = NSTextField(labelWithString: "Agent Computer")
-		title.font = .systemFont(ofSize: 21, weight: .semibold)
+		title.font = .systemFont(ofSize: 17, weight: .semibold)
 
 		// 副标题（那句「macOS 不允许应用自己给自己授权…」）2026-11-26 用户要求去掉：
 		// 权限卡本身已经说清要什么，这一段只是在重复解释，还把 header 撑成两行压到卡片上。
@@ -189,12 +191,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		let titleRow = NSStackView(views: [title, versionBadge()])
 		titleRow.orientation = .horizontal
 		titleRow.alignment = .centerY
-		titleRow.spacing = 10
+		titleRow.spacing = 8
 
 		let header = NSStackView(views: [icon, titleRow])
 		header.orientation = .horizontal
 		header.alignment = .centerY
-		header.spacing = 16
+		header.spacing = 12
 
 		let accessibilityRow = makePermissionRow(
 			name: "辅助功能",
@@ -219,29 +221,28 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 		// 状态行：放在权限卡下面、横跨整行（2026-11-26 用户圈出来的那块空白）。
 		// 它就是「还差几步能用」这一句 —— 以前挤在底栏、和按钮抢地方，还被截断。
-		let status = NSTextField(wrappingLabelWithString: "还差一步就能用了。")
-		status.font = .systemFont(ofSize: 12.5, weight: .medium)
+		let status = NSTextField(wrappingLabelWithString: "还差 2 步才会生效")
+		status.font = .systemFont(ofSize: 15, weight: .bold)
+		status.alignment = .center
 		status.textColor = .secondaryLabelColor
 		status.setContentCompressionResistancePriority(.required, for: .vertical)
 		statusLabel = status
 
 		let later = NSButton(title: "稍后", target: self, action: #selector(dismiss))
 		later.bezelStyle = .rounded
-		later.controlSize = .large
+		later.controlSize = .regular
 		let done = NSButton(title: "已授权，重新检测", target: self, action: #selector(donePressed))
 		done.bezelStyle = .rounded
-		done.controlSize = .large
+		done.controlSize = .regular
 		done.keyEquivalent = "\r"
 		doneButton = done
 		// 两颗按钮一样宽：换文案（「已授权，重新检测」→「完成」）时右边缘不跳
-		for button in [later, done] {
-			button.widthAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
-		}
+		later.widthAnchor.constraint(equalToConstant: 68).isActive = true
 
 		let footer = NSStackView(views: [NSView(), later, done])
 		footer.orientation = .horizontal
 		footer.alignment = .centerY
-		footer.spacing = 10
+		footer.spacing = 8
 
 		let separator = divider()
 		// 高度顺序：header（图标或两行文字谁高算谁）→ 两张卡 → 状态行 → 分隔线 → 按钮行
@@ -253,7 +254,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		let stack = NSStackView(views: [header, permissions, status, spring, separator, footer])
 		stack.orientation = .vertical
 		stack.alignment = .leading
-		stack.spacing = 16
+		stack.spacing = 12
 		stack.translatesAutoresizingMaskIntoConstraints = false
 
 		// 内边距用**容器约束**给，不用 `stack.edgeInsets`：后者会让 arranged subview 的
@@ -262,10 +263,10 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		let content = NSView()
 		content.addSubview(stack)
 		NSLayoutConstraint.activate([
-			stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 26),
-			stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -26),
-			stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
-			stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
+			stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
+			stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
+			stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 34),
+			stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
 		])
 		for block in [header, permissions, status, separator, footer] {
 			block.translatesAutoresizingMaskIntoConstraints = false
@@ -286,6 +287,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		return window
 	}
 
+	/// 卡片底色：浅色下纯白、深色下白色 6% 叠加。
+	///
+	/// 为什么不用 `controlBackgroundColor`：这个窗口（透明标题栏 + 材质）里它会解析成偏灰的
+	/// 中间色，卡片和窗口底几乎糊在一起（用户 2026-11-26：「背景换个专业点的」）。
+	private func surfaceColor() -> NSColor {
+		let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+		return dark ? NSColor.white.withAlphaComponent(0.06) : NSColor.white
+	}
+
 	/// 版本号：只认 `Info.plist`（打包后由 electron-builder / build-app.sh 写进去）
 	private func version() -> String {
 		(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
@@ -294,12 +304,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
 	/// 标题右边那枚 `v0.5.0` 小徽标
 	private func versionBadge() -> NSView {
 		let label = NSTextField(labelWithString: "v\(version())")
-		label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+		label.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
 		label.textColor = .secondaryLabelColor
 
 		let box = NSView()
 		box.wantsLayer = true
-		box.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.30).cgColor
+		box.layer?.backgroundColor = surfaceColor().cgColor
+		box.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.55).cgColor
+		box.layer?.borderWidth = 1
 		box.layer?.cornerRadius = 9
 		label.translatesAutoresizingMaskIntoConstraints = false
 		box.addSubview(label)
@@ -312,19 +324,25 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		return box
 	}
 
-	/// 把一行装进浅灰圆角卡片里（带内边距）
+	/// 把一行装进圆角卡片里（带内边距）
+	///
+	/// 底色用 `controlBackgroundColor`（浅色 = 白，深色 = 深灰）+ `separatorColor` 细描边：
+	/// 这才是 macOS 设置类界面的标准做法。原来那版是「quaternaryLabelColor 叠透明度」，
+	/// 在带壁纸色调的窗口底上会泛成暖褐灰，用户 2026-11-26 直接说「换个专业点的」。
 	private func card(_ content: NSView) -> NSView {
 		let box = NSView()
 		box.wantsLayer = true
-		box.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.18).cgColor
-		box.layer?.cornerRadius = 10
+		box.layer?.backgroundColor = surfaceColor().cgColor
+		box.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.55).cgColor
+		box.layer?.borderWidth = 1
+		box.layer?.cornerRadius = 8
 		content.translatesAutoresizingMaskIntoConstraints = false
 		box.addSubview(content)
 		NSLayoutConstraint.activate([
-			content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 14),
-			content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -14),
-			content.topAnchor.constraint(equalTo: box.topAnchor, constant: 10),
-			content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -10),
+			content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 12),
+			content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -12),
+			content.topAnchor.constraint(equalTo: box.topAnchor, constant: 9),
+			content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -9),
 		])
 		return box
 	}
@@ -338,11 +356,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 	private func makePermissionRow(name: String, detail: String, action: Selector) -> (view: NSView, status: NSTextField, button: NSButton) {
 		let nameLabel = NSTextField(labelWithString: name)
-		nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
-		nameLabel.widthAnchor.constraint(equalToConstant: 84).isActive = true
+		nameLabel.font = .systemFont(ofSize: 12.5, weight: .medium)
+		nameLabel.widthAnchor.constraint(equalToConstant: 70).isActive = true
 
 		let detailLabel = NSTextField(labelWithString: detail)
-		detailLabel.font = .systemFont(ofSize: 11)
+		detailLabel.font = .systemFont(ofSize: 10.5)
 		detailLabel.textColor = .tertiaryLabelColor
 
 		let left = NSStackView(views: [nameLabel, detailLabel])
@@ -351,21 +369,22 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		left.spacing = 2
 
 		let status = NSTextField(labelWithString: "检查中…")
-		status.font = .systemFont(ofSize: 12)
+		status.font = .systemFont(ofSize: 11.5)
 		status.textColor = .secondaryLabelColor
 		// 定宽 + 右对齐：两行的「✓ 已允许」必须落在同一条竖线上，否则切状态时整行会跳
 		status.alignment = .right
-		status.widthAnchor.constraint(equalToConstant: 76).isActive = true
+		status.widthAnchor.constraint(equalToConstant: 62).isActive = true
 
 		let button = NSButton(title: "去授权", target: self, action: action)
 		button.bezelStyle = .rounded
-		button.controlSize = .regular
-		button.widthAnchor.constraint(equalToConstant: 84).isActive = true
+		button.controlSize = .small
+		button.font = .systemFont(ofSize: 11.5)
+		button.widthAnchor.constraint(equalToConstant: 66).isActive = true
 
 		let row = NSStackView(views: [left, NSView(), status, button])
 		row.orientation = .horizontal
 		row.alignment = .centerY
-		row.spacing = 12
+		row.spacing = 8
 		return (row, status, button)
 	}
 
@@ -420,12 +439,18 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		accessibilityButton?.isHidden = accessibility
 		screenButton?.isHidden = screen
 
-		if !(accessibility && screen) {
-			statusLabel?.stringValue = "还差一步就能用了。"
-			statusLabel?.textColor = .systemOrange
+		// 状态行：没齐就报「还差 N 步」（N = 缺几项权限），齐了报「已就绪」。
+		// 2026-11-26 用户：字号要大、颜色要红，一眼能看出还卡着事。
+		// 文案不再解释「为什么」——权限卡自己写着要什么，这句只报数。
+		let missing = (accessibility ? 0 : 1) + (screen ? 0 : 1)
+		if missing > 0 {
+			statusLabel?.stringValue = "还差 \(missing) 步才会生效"
+			statusLabel?.font = .systemFont(ofSize: 15, weight: .bold)
+			statusLabel?.textColor = .systemRed
 		}
 		if accessibility && screen {
-			statusLabel?.stringValue = "都好了，现在可以开始操作。"
+			statusLabel?.stringValue = "已就绪，可以开始操作了。"
+			statusLabel?.font = .systemFont(ofSize: 15, weight: .bold)
 			statusLabel?.textColor = .systemGreen
 			doneButton?.title = "完成"
 			// 只对「看着它变成已允许」的那种收窗：留 1.5s 让用户看清绿勾再收起。
@@ -438,12 +463,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
 				window?.orderOut(nil)
 			}
 		} else if accessibility {
-			statusLabel?.stringValue = "还差一步：屏幕录制还没授权，授权后要重启一次 Agent Computer。"
-			statusLabel?.textColor = .systemOrange
-			doneButton?.title = "重启 Agent Computer"
+			// 屏幕录制授权后必须重启进程才生效 —— 按钮直接做成「重启」，不用用户自己去找
+			doneButton?.title = "重启"
 		} else {
-			statusLabel?.stringValue = "还差一步：辅助功能还没授权，去系统设置里勾上 Agent Computer。"
-			statusLabel?.textColor = .systemOrange
 			doneButton?.title = "已授权，重新检测"
 		}
 	}
