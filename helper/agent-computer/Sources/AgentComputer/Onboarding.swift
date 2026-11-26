@@ -243,7 +243,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 	private func buildWindow() -> NSWindow {
 		let window = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 360, height: 320),
+			contentRect: NSRect(x: 0, y: 0, width: 420, height: 320),
 			styleMask: [.titled, .closable, .fullSizeContentView],
 			backing: .buffered,
 			defer: false
@@ -477,13 +477,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		status.textColor = .secondaryLabelColor
 		// 定宽 + 右对齐：两行的「✓ 已允许」必须落在同一条竖线上，否则切状态时整行会跳
 		status.alignment = .right
-		status.widthAnchor.constraint(equalToConstant: 62).isActive = true
+		status.widthAnchor.constraint(equalToConstant: 88).isActive = true
 
 		let button = NSButton(title: copy.grant, target: self, action: action)
 		button.bezelStyle = .rounded
 		button.controlSize = .small
 		button.font = .systemFont(ofSize: 11.5)
-		button.widthAnchor.constraint(equalToConstant: 66).isActive = true
+		button.widthAnchor.constraint(equalToConstant: 92).isActive = true
 
 		let row = NSStackView(views: [left, NSView(), status, button])
 		row.orientation = .horizontal
