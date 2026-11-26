@@ -151,7 +151,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 	private func buildWindow() -> NSWindow {
 		let window = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 580, height: 330),
+			contentRect: NSRect(x: 0, y: 0, width: 600, height: 352),
 			styleMask: [.titled, .closable, .fullSizeContentView],
 			backing: .buffered,
 			defer: false
@@ -169,22 +169,30 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		icon.image = NSApp.applicationIconImage
 		icon.imageScaling = .scaleProportionallyUpOrDown
 		icon.translatesAutoresizingMaskIntoConstraints = false
-		icon.widthAnchor.constraint(equalToConstant: 64).isActive = true
-		icon.heightAnchor.constraint(equalToConstant: 64).isActive = true
+		icon.widthAnchor.constraint(equalToConstant: 60).isActive = true
+		icon.heightAnchor.constraint(equalToConstant: 60).isActive = true
 
 		let title = NSTextField(labelWithString: "还差一步就能用了")
-		title.font = .systemFont(ofSize: 20, weight: .semibold)
+		title.font = .systemFont(ofSize: 21, weight: .semibold)
 
 		let subtitle = NSTextField(
 			wrappingLabelWithString: "macOS 不允许应用自己给自己授权（这是系统保护），\n需要你在系统设置里勾一下。点下面的按钮会直接跳到对应位置。"
 		)
 		subtitle.font = .systemFont(ofSize: 12)
 		subtitle.textColor = .secondaryLabelColor
+		subtitle.attributedStringValue = withLineHeight(subtitle.attributedStringValue, 18)
 
-		let header = NSStackView(views: [icon, NSStackView(views: [title, subtitle])])
+		// 标题那一行右边跟一个版本徽标（2026-11-26 用户：「这里面加一个版本显示」）：
+		// 版本对排查最关键 —— 用户说「授权了还是不行」时，第一件事就是问他装的是哪一版。
+		let titleRow = NSStackView(views: [title, versionBadge()])
+		titleRow.orientation = .horizontal
+		titleRow.alignment = .centerY
+		titleRow.spacing = 10
+
+		let header = NSStackView(views: [icon, NSStackView(views: [titleRow, subtitle])])
 		header.orientation = .horizontal
 		header.alignment = .centerY
-		header.spacing = 14
+		header.spacing = 16
 
 		let accessibilityRow = makePermissionRow(
 			name: "辅助功能",
@@ -198,6 +206,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
 			action: #selector(grantScreenRecording)
 		)
 		screenLabel = screenRow.status
+		// 两行各自装进一张「卡片」：一眼能看出这两条是同一组的两个开关，
+		// 也比纯分隔线更有层次（2026-11-26 用户：「排版布局弄好看一些」）。
+		let permissions = NSStackView(views: [card(accessibilityRow.view), card(screenRow.view)])
+		permissions.orientation = .vertical
+		permissions.alignment = .width
+		permissions.spacing = 10
 
 		let hint = NSTextField(wrappingLabelWithString: "")
 		hint.font = .systemFont(ofSize: 12)
@@ -206,33 +220,111 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 		let later = NSButton(title: "稍后", target: self, action: #selector(dismiss))
 		later.bezelStyle = .rounded
+		later.controlSize = .large
 		let done = NSButton(title: "已授权，重新检测", target: self, action: #selector(donePressed))
 		done.bezelStyle = .rounded
+		done.controlSize = .large
 		done.keyEquivalent = "\r"
 		doneButton = done
+		// 两颗按钮一样宽：换文案（「已授权，重新检测」→「完成」）时右边缘不跳
+		for button in [later, done] {
+			button.widthAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
+		}
 
 		let footer = NSStackView(views: [hint, NSView(), later, done])
 		footer.orientation = .horizontal
 		footer.alignment = .centerY
-		footer.spacing = 8
+		footer.spacing = 10
 
-		let stack = NSStackView(views: [header, divider(), accessibilityRow.view, screenRow.view, divider(), footer])
+		let separator = divider()
+		let stack = NSStackView(views: [header, permissions, separator, footer])
 		stack.orientation = .vertical
 		stack.alignment = .leading
-		stack.spacing = 14
-		stack.edgeInsets = NSEdgeInsets(top: 22, left: 24, bottom: 20, right: 24)
+		stack.spacing = 16
 		stack.translatesAutoresizingMaskIntoConstraints = false
 
+		// 内边距用**容器约束**给，不用 `stack.edgeInsets`：后者会让 arranged subview 的
+		// 宽度约束跟栈自身宽度对数不上（实测 header 会从 x=0 起跑、footer 差 5pt）。
+		// 这样写之后每块都明确 `width == stack.width`：卡片与右列（状态 + 按钮）必然对齐。
 		let content = NSView()
 		content.addSubview(stack)
 		NSLayoutConstraint.activate([
-			stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-			stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-			stack.topAnchor.constraint(equalTo: content.topAnchor),
-			stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+			stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 26),
+			stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -26),
+			stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
+			stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
 		])
+		for block in [header, permissions, separator, footer] {
+			block.translatesAutoresizingMaskIntoConstraints = false
+			block.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+		}
 		window.contentView = content
+		// `AGENT_COMPUTER_LOG_LAYOUT=1`：把关键块的最终 frame 打进 helper.log。
+		// 改排版时用它核对「卡片有没有撑满、右列有没有对齐」——比截图稳，也不依赖录屏权限。
+		if ProcessInfo.processInfo.environment["AGENT_COMPUTER_LOG_LAYOUT"] == "1" {
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+				let cards = permissions.arrangedSubviews.map { "\($0.frame)" }.joined(separator: " ")
+				Log.write(
+					"layout: content=\(content.frame) stack=\(stack.frame) header=\(header.frame) "
+						+ "permissions=\(permissions.frame) footer=\(footer.frame) cards=[\(cards)]"
+				)
+			}
+		}
 		return window
+	}
+
+	/// 版本号：只认 `Info.plist`（打包后由 electron-builder / build-app.sh 写进去）
+	private func version() -> String {
+		(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
+	}
+
+	/// 标题右边那枚 `v0.5.0` 小徽标
+	private func versionBadge() -> NSView {
+		let label = NSTextField(labelWithString: "v\(version())")
+		label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+		label.textColor = .secondaryLabelColor
+
+		let box = NSView()
+		box.wantsLayer = true
+		box.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.30).cgColor
+		box.layer?.cornerRadius = 9
+		label.translatesAutoresizingMaskIntoConstraints = false
+		box.addSubview(label)
+		NSLayoutConstraint.activate([
+			label.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 8),
+			label.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
+			label.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+			box.heightAnchor.constraint(equalToConstant: 19),
+		])
+		return box
+	}
+
+	/// 把一行装进浅灰圆角卡片里（带内边距）
+	private func card(_ content: NSView) -> NSView {
+		let box = NSView()
+		box.wantsLayer = true
+		box.layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.18).cgColor
+		box.layer?.cornerRadius = 10
+		content.translatesAutoresizingMaskIntoConstraints = false
+		box.addSubview(content)
+		NSLayoutConstraint.activate([
+			content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 14),
+			content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -14),
+			content.topAnchor.constraint(equalTo: box.topAnchor, constant: 10),
+			content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -10),
+		])
+		return box
+	}
+
+	/// 给一段富文本统一加行高（多行说明挤在一起很难读）
+	private func withLineHeight(_ text: NSAttributedString, _ height: CGFloat) -> NSAttributedString {
+		let output = NSMutableAttributedString(attributedString: text)
+		let style = NSMutableParagraphStyle()
+		style.lineHeightMultiple = 0
+		style.minimumLineHeight = height
+		style.maximumLineHeight = height
+		output.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: output.length))
+		return output
 	}
 
 	private func divider() -> NSBox {
@@ -258,15 +350,19 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		let status = NSTextField(labelWithString: "检查中…")
 		status.font = .systemFont(ofSize: 12)
 		status.textColor = .secondaryLabelColor
+		// 定宽 + 右对齐：两行的「✓ 已允许」必须落在同一条竖线上，否则切状态时整行会跳
+		status.alignment = .right
+		status.widthAnchor.constraint(equalToConstant: 76).isActive = true
 
 		let button = NSButton(title: "去授权", target: self, action: action)
 		button.bezelStyle = .rounded
 		button.controlSize = .regular
+		button.widthAnchor.constraint(equalToConstant: 84).isActive = true
 
 		let row = NSStackView(views: [left, NSView(), status, button])
 		row.orientation = .horizontal
 		row.alignment = .centerY
-		row.spacing = 10
+		row.spacing = 12
 		return (row, status)
 	}
 

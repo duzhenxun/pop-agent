@@ -212,8 +212,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		}
 
 		statusMenu = StatusMenu()
-		// 没授权时弹引导（含系统权限提示），已授权就安静地待在菜单栏
-		Onboarding.shared.showIfNeeded()
+		// `--onboarding`：不管有没有授权都把引导窗口叫出来（排查「授权了还弹不出窗口」时用，
+		// 也让 UI 改动能单独看一眼）。菜单栏里那一项效果一样，但这个不依赖点菜单。
+		if CommandLine.arguments.contains("--onboarding") {
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { Onboarding.shared.show() }
+		} else {
+			// 没授权时弹引导（含系统权限提示），已授权就安静地待在菜单栏
+			Onboarding.shared.showIfNeeded()
+		}
 
 		let thread = Thread {
 			do {
