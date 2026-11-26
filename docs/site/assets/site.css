@@ -48,12 +48,31 @@ p{margin:0}
              radial-gradient(40% 50% at 80% 20%, color-mix(in srgb, var(--brand-2) 18%, transparent), transparent 70%);
   filter:blur(10px); pointer-events:none;
 }
-.hero-grid{position:relative; display:grid; grid-template-columns:1.02fr .98fr; gap:44px; align-items:center}
+/* hero 的**左边缘与下面各节严格对齐**（同一个 1120 容器）；
+   截图要更大，就走「向右出血」：右列按 1.02fr 排在容器里，
+   再用负 margin 把画面往右侧窗口留白里借一点（最多 150px，且只借真有的留白）。
+   这样左边缘不会跑，右侧多出来的那截是**刻意的出血**，不是错位。 */
+.hero-grid{position:relative; display:grid; grid-template-columns:1fr 1.02fr; gap:24px; align-items:center}
+.hero-shot{margin-right:calc(-1 * min(150px, max(0px, (100vw - var(--max)) / 2)))}
 .eyebrow{display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--brand); background:var(--soft); border:1px solid color-mix(in srgb, var(--brand) 24%, var(--line)); padding:5px 11px; border-radius:999px}
-.hero h1{font-size:clamp(34px,4.4vw,54px); margin:18px 0 16px; font-weight:700}
+.hero h1{font-size:clamp(34px,4.2vw,50px); margin:18px 0 16px; font-weight:700}
 .hero h1 em{font-style:normal; background:linear-gradient(96deg,var(--brand),var(--brand-2)); -webkit-background-clip:text; background-clip:text; color:transparent}
 .lede{font-size:17.5px; color:var(--muted); max-width:34em}
+/* hero 里那三条痛点：短句 + 一个淡色方点，读起来像「这说的是我」 */
+.hero-pains{list-style:none; margin:18px 0 0; padding:0; display:grid; gap:7px; max-width:34em}
+.hero-pains li{position:relative; padding-left:17px; font-size:14.5px; line-height:1.6; color:var(--muted)}
+.hero-pains li::before{content:""; position:absolute; left:0; top:.66em; width:6px; height:6px; border-radius:2px; background:var(--brand); opacity:.5}
+
 .lede code{font-size:.92em; background:var(--soft); padding:1px 6px; border-radius:6px; color:var(--ink)}
+/* hero 里那排能力清单：六项各一颗胶囊（替代原来那段长文案），点了跳「不只是聊天」那一节 */
+.hero-feats{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:22px; max-width:27em}
+.hero-feats a{display:flex; align-items:center; gap:6px; font-size:13.5px; color:var(--muted); border:1px solid var(--line); background:var(--panel); border-radius:999px; padding:5px 12px; text-decoration:none; transition:border-color .12s ease, color .12s ease; white-space:nowrap}
+.hero-feats a:hover{border-color:var(--brand); color:var(--ink)}
+.hero-feats i{font-style:normal; color:var(--brand); font-weight:700; font-size:12px}
+.hero-feats b{font-weight:600; color:var(--ink)}
+/* 英文文案比中文短，右半边容易空出一大块 —— 让这排胶囊铺满列宽，并把栏间距再收一档 */
+html[lang="en"] .hero-feats{max-width:none}
+html[lang="en"] .hero-grid{gap:16px}
 .hero-actions{display:flex; flex-wrap:wrap; gap:12px; margin-top:26px}
 .install-pill{display:flex; align-items:center; gap:10px; background:var(--code); color:var(--code-ink); border-radius:12px; padding:11px 12px 11px 16px; font-size:13.5px}
 .install-pill code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -97,6 +116,9 @@ section{padding:64px 0; scroll-margin-top:78px}
 .card .shot img{width:100%; height:auto}
 .card.wide{grid-column:span 2; display:grid; grid-template-columns:1fr 1.15fr; gap:28px; align-items:center}
 .card.wide .copy{display:flex; flex-direction:column; gap:12px}
+/* 满宽、一列到底的卡片：截图要按**整幅宽度**看才读得清（想想那条建议行就是一条长条） */
+.card.stack{grid-column:span 2; display:block}
+.card.stack .shot{margin-top:16px}
 .tagrow{display:flex; flex-wrap:wrap; gap:7px}
 .tag{font-size:12px; color:var(--muted); border:1px solid var(--line); background:var(--bg); padding:3px 9px; border-radius:999px}
 .list{display:grid; gap:10px; margin-top:4px}
@@ -112,7 +134,9 @@ section{padding:64px 0; scroll-margin-top:78px}
 .spot .shot{border-radius:14px; overflow:hidden; border:1px solid var(--line); box-shadow:var(--shadow); background:var(--panel); align-self:start}
 .spot .shot img{width:100%; height:auto; max-height:560px; background:var(--panel)}
 .spot.rev .shot{order:2}
-.term{background:var(--code); color:var(--code-ink); border-radius:14px; padding:16px 18px; font-family:ui-monospace,Menlo,monospace; font-size:13px; line-height:1.75; box-shadow:var(--shadow); overflow:auto}
+/* `white-space:pre-wrap`：这些块是**手写的多行文本**（每行一组 span），
+   不设它浏览器会把换行折成一个空格，一整段挤成一行（终端示例、模板示例都靠它分行）。 */
+.term{background:var(--code); color:var(--code-ink); border-radius:14px; padding:16px 18px; font-family:ui-monospace,Menlo,monospace; font-size:13px; line-height:1.75; box-shadow:var(--shadow); overflow:auto; white-space:pre-wrap}
 .term .p{color:#6ee7b7}
 .term .c{color:#93a4c4}
 .term .o{color:#e5edff}
@@ -189,7 +213,12 @@ footer{border-top:1px solid var(--line); padding:44px 0 56px; color:var(--muted)
 .foot-grid h5{color:var(--ink); font-size:13.5px; margin:0 0 10px; letter-spacing:.02em}
 .foot-grid a{display:block; padding:3px 0}
 .foot-grid a:hover{color:var(--ink)}
-.foot-bottom{display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; margin-top:34px; padding-top:18px; border-top:1px solid var(--line); font-size:13px}
+/* 页脚的致谢：相关项目 / 一起做的人（两列，窄屏一列） */
+.foot-thanks{display:grid; grid-template-columns:1.5fr 1fr; gap:28px; margin-top:34px; padding-top:22px; border-top:1px solid var(--line); font-size:13.5px}
+.foot-thanks h5{color:var(--ink); font-size:13.5px; margin:0 0 8px; letter-spacing:.02em}
+.foot-thanks p{margin:0; line-height:1.7}
+.foot-thanks code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.92em; background:var(--soft); padding:1px 5px; border-radius:5px; color:var(--ink)}
+.foot-bottom{display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; margin-top:26px; padding-top:18px; border-top:1px solid var(--line); font-size:13px}
 
 /* lightbox */
 .lightbox{position:fixed; inset:0; z-index:90; background:#05070c; display:none; padding:32px; place-items:center}
@@ -209,6 +238,10 @@ html.reveal-ready .reveal.in{opacity:1; transform:none}
   .rules{grid-template-columns:1fr}
   .cards{grid-template-columns:1fr}
   .card.wide{grid-column:auto; grid-template-columns:1fr}
+  .card.stack{grid-column:auto}
+  .hero-feats{grid-template-columns:repeat(2,minmax(0,1fr)); max-width:none}
+  /* 单栏时不再出血：这时候图本来就占满整栏 */
+  .hero-shot{margin-right:0}
   .spot{grid-template-columns:1fr; gap:20px}
   .spot.rev .shot{order:0}
   .panels{grid-template-columns:repeat(2,1fr)}
@@ -233,6 +266,7 @@ html.reveal-ready .reveal.in{opacity:1; transform:none}
   .nav-cta .btn:not(.btn-primary){display:none}
   .panels{grid-template-columns:1fr}
   .foot-grid{grid-template-columns:1fr}
+  .foot-thanks{grid-template-columns:1fr}
   .hero{padding:44px 0 24px}
   .install-pill{font-size:12.5px}
 }

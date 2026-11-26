@@ -18,7 +18,7 @@
 npm -g install pop-agent
 ```
 
-**它是什么**：一个把 agent 的「过程」摊开给你看的前端 —— 思考块、工具调用、改动文件、token 与花费都在对话流里，回合中途能插话。
+**它是什么**：一个把 agent 的「过程」摊开给你看的前端 —— 思考块、工具调用、改动文件、token 与花费都在对话流里，回合中途能插话；输入框上方还有模板、快捷指令和「想想」，把「怎么开口」也做成能点的东西。
 
 **不是什么**：不是新的 agent 引擎，也不把会话搬到云上的 SaaS。它不重写 prompt、不接管工具实现，只是给你装的引擎配了一套能看的界面、能点的按钮和能落盘的会话列表。三条硬纪律：
 
@@ -27,6 +27,16 @@ npm -g install pop-agent
 | 01 | **不引数据库** | 会话就是引擎自己写的 JSONL / thread，网页只读它、改名字、必要时删它 |
 | 02 | **不假装** | 引擎没有的能力在界面上藏起来（能力矩阵）；面板拿不到数据就直说，不拿别的引擎的配置冒充 |
 | 03 | **不越界** | 默认只听 `127.0.0.1`；要远程就显式 `-H 0.0.0.0`，并且先在本机把密码设好 |
+
+---
+
+## 输入那半屏：模板、快捷指令、想想
+
+输入框上方那一排，把「怎么开口」做成能点的东西（都存在服务端，手机电脑同一份）。
+
+- **模板**：12 张内置，点一张落进输入框（不发送）；写不利索让「AI 帮写」补完。
+- **快捷指令**：点一下就发，Shift + 点只填不发。
+- **想想**：跑个隐藏回合给 1–5 条「下一句这么说」，点一条就发，不进历史。
 
 ---
 
@@ -181,5 +191,18 @@ README 到这里就够了，剩下的都在文档里：
 | 界面截图（未压缩原图） | [`docs/screenshots/`](docs/screenshots) |
 | 架构决定记录 | [`docs/adr/`](docs/adr) |
 | 手机访问与安全模型 | [参考手册 · 安全模型](docs/reference.zh.md#安全模型) |
+
+---
+
+## 感谢
+
+**相关项目** —— 这个工作台是站在这些 node 包上的：
+
+- 引擎与协议：`@earendil-works/pi-ai`、`@earendil-works/pi-coding-agent`、`@earendil-works/pi-mcp`
+- 服务端：`express`、`ws`、`web-push`、`node-edge-tts`、`node-pty`（可选，内嵌终端用）
+- 界面：`react` / `react-dom`、`react-markdown` / `remark-gfm` / `rehype-highlight`、`highlight.js`、`mermaid`、`@xterm/xterm` / `@xterm/addon-fit`
+- 工具链：`vite`、`typescript`、`electron` / `electron-builder`、`playwright-core`、`oxlint`、`prettier`、`tsx`
+
+**感谢我的同事们**：窦欣、李卉萌、宋鹤鹏、陈朝阳、吕琴艳、师超、张冰、覃兆银、王继超
 
 MIT License

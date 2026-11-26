@@ -54,6 +54,7 @@ var _hmt = _hmt || [];
     <nav class="nav-links" id="navlinks">
       <a href="#rules">定位</a>
       <a href="#features">功能</a>
+      <a href="#input">输入</a>
       <a href="#specials">特色</a>
       <a href="#workspace">工作区</a>
       <a href="#panels">面板</a>
@@ -77,30 +78,37 @@ var _hmt = _hmt || [];
       <div>
         <span class="eyebrow">开源 · MIT · 单用户 · 本地优先</span>
         <h1>给你正在跑的 agent，<br />配一个<em>外部操作页</em></h1>
-        <p class="lede">
-          引擎照旧跑在你自己的电脑上。你在网页里看它干活、管它的工具与模型、随时插话纠正；需要时直接翻文件、开终端、在网页上圈出那句要改的地方。
-          单用户、只听回环、<b>不引数据库</b> —— 会话的事实源永远是引擎自己的落盘文件。
-        </p>
+        <ul class="hero-pains">
+          <li>出门了，不知道它跑到哪一步 —— 还得回电脑前看。</li>
+          <li>它给出一堆行动方案，全是文字，想挑一个还得自己打字。</li>
+          <li>「继续」「OK」「下一步」「提交代码」「部署一下」……每天手打几十遍。</li>
+        </ul>
+        <div class="hero-feats" aria-label="六件不只是聊天的事">
+          <a href="#specials"><i>①</i><b>实时语音</b></a>
+          <a href="#specials"><i>②</i><b>定时任务</b></a>
+          <a href="#specials"><i>③</i><b>电脑控制</b></a>
+          <a href="#specials"><i>④</i><b>任务画布</b></a>
+          <a href="#specials"><i>⑤</i><b>手机推送</b></a>
+          <a href="#specials"><i>⑥</i><b>远程控制</b></a>
+        </div>
         <div class="hero-actions">
           <a class="btn btn-primary" href="https://github.com/duzhenxun/pop-agent/releases/latest" target="_blank" rel="noreferrer">下载 macOS App（.dmg）</a>
           <div class="install-pill">
             <code>npm -g install pop-agent</code>
             <button class="icon-btn" data-copy="npm -g install pop-agent" title="复制安装命令" aria-label="复制安装命令">⧉</button>
           </div>
-          <a class="btn" href="#tour">看看界面</a>
         </div>
         <div class="trust">
           <span><i></i>macOS 装包即用，不用 Node</span>
-          <span><i></i>pi / Codex / Claude Code / opencode / DeepSeek Harness</span>
           <span><i></i>Windows · macOS · Linux（CLI）</span>
         </div>
       </div>
-      <div>
+      <div class="hero-shot">
         <div class="frame">
-          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · demo-app</span></div>
-          <img src="assets/zh/hero.webp" width="2400" height="1350" alt="一次真实会话：左侧项目与会话，中间过程里的思考段与工具卡，右侧同一个仓库的改动对比" data-zoom />
+          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · pop-agent</span></div>
+          <img src="assets/zh/hero.webp" width="2400" height="1291" alt="一次真实会话：左侧项目与会话，中间对话与输入框上方的建议胶囊，右侧把同一件事摊成导图式的任务画布（节点、依赖与进度）" data-zoom />
         </div>
-        <p class="caption">一次真实会话：思考、工具、改动、用量，都在同一屏里。</p>
+        <p class="caption">一次真实会话：对话与工具在中间，任务画布在右边，跑完的步骤在图上直接变「已完成」。</p>
       </div>
     </div>
   </section>
@@ -180,6 +188,44 @@ var _hmt = _hmt || [];
           <h3>@ 找文件，/ 发指令</h3>
           <p>输入框里打 <b>@</b> 就在工作区里找文件，↑↓ 选中、回车插入 <code>@src/store.ts</code>；打 <b>/</b> 弹出四条：<code>/new</code> 由工作台执行，<code>/skill</code> <code>/compact</code> <code>/plan</code> 直接交给引擎。</p>
           <div class="shot"><img src="assets/zh/mention-crop.webp" width="1800" height="1125" alt="输入 @ 后弹出的文件提及面板，按文件名与路径匹配" loading="lazy" data-zoom /></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 输入那半屏：模板 / 快捷指令 / 想想 -->
+  <section id="input">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">说话之前</div>
+        <h2>模板、快捷指令、想想</h2>
+        <p>输入框上方那一排：把「怎么开口」做成能点的东西。</p>
+      </div>
+
+      <div class="cards">
+        <article class="card wide reveal">
+          <div class="copy">
+            <h3>模板库：12 张内置，点一张落进输入框</h3>
+            <div class="list">
+              <div><span class="tick">✓</span><span><b>不发送，还能接着改</b>；写不利索就让「AI 帮写」按「目标 / 输入 / 步骤 / 输出 / 约束」补完。</span></div>
+              <div><span class="tick">✓</span><span><b>只能隐藏，不能真删</b>：手滑移出库也救得回来，「恢复默认」永远在。</span></div>
+              <div><span class="tick">✓</span><span><b>快捷指令</b>：一排胶囊，点一下就发，Shift + 点只填进输入框。</span></div>
+            </div>
+          </div>
+          <div class="term" aria-label="一份模板长什么样">
+<span class="c"># 模板：改造一个模块，先读再改</span>
+<span class="p">目标</span>  把 <b>store.ts</b> 的写盘改成按会话分片
+<span class="p">输入</span>  我会给你目标文件与一个失败样例
+<span class="p">步骤</span>  1. 读完再动  2. 只改这一处  3. 跑相关测试
+<span class="p">输出</span>  diff + 一句话说清风险
+<span class="p">约束</span>  不动公开 API；要改签名先问
+          </div>
+        </article>
+
+        <article class="card stack reveal">
+          <h3>想想：不知道下一句说什么，让它先给几条</h3>
+          <p>点一下，它跑一个<b>隐藏回合</b>读当前上下文，回 1–5 条「你接下来可以这么说」（默认 5 条，手机 3 条）。点一条就发；那一轮不进会话历史，也不花你一条消息。</p>
+          <div class="shot"><img src="assets/zh/think.webp" width="1800" height="473" alt="点「想想」之后输入框上方多出一排建议胶囊，点一条就直接发出去" loading="lazy" data-zoom /></div>
         </article>
       </div>
     </div>
@@ -523,6 +569,16 @@ POP_AGENT_CWD=~/code/my-proj pop</pre>
         <a href="https://github.com/duzhenxun/pop-agent" target="_blank" rel="noreferrer">GitHub</a>
         <a href="https://github.com/duzhenxun/pop-agent/issues" target="_blank" rel="noreferrer">Issues</a>
         <a href="https://github.com/duzhenxun/pop-agent/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT License</a>
+      </div>
+    </div>
+    <div class="foot-thanks">
+      <div>
+        <h5>相关项目</h5>
+        <p>站在这些 node 包上：<code>pi-ai</code> / <code>pi-coding-agent</code> / <code>pi-mcp</code>、<code>express</code>、<code>ws</code>、<code>web-push</code>、<code>node-edge-tts</code>、<code>node-pty</code>、<code>react</code>、<code>react-markdown</code> / <code>remark-gfm</code> / <code>rehype-highlight</code>、<code>highlight.js</code>、<code>mermaid</code>、<code>xterm.js</code>、<code>vite</code>、<code>typescript</code>、<code>electron</code>、<code>playwright</code>、<code>oxlint</code>、<code>prettier</code>、<code>tsx</code>。</p>
+      </div>
+      <div>
+        <h5>感谢我的同事们</h5>
+        <p>窦欣、李卉萌、宋鹤鹏、陈朝阳、吕琴艳、师超、张冰、覃兆银、王继超</p>
       </div>
     </div>
     <div class="foot-bottom">

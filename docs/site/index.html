@@ -56,6 +56,7 @@ var _hmt = _hmt || [];
     <nav class="nav-links" id="navlinks">
       <a href="#rules">Why</a>
       <a href="#features">Conversation</a>
+      <a href="#input">Input</a>
       <a href="#specials">Beyond chat</a>
       <a href="#workspace">Workspace</a>
       <a href="#panels">Panels</a>
@@ -78,32 +79,38 @@ var _hmt = _hmt || [];
     <div class="wrap hero-grid">
       <div>
         <span class="eyebrow">Open source · MIT · Single user · Local-first</span>
-        <h1>An external control surface<br />for the agent you <em>already run</em></h1>
-        <p class="lede">
-          The engine keeps running on your own machine. From the browser you watch it work, manage its tools and models,
-          cut in mid-turn — and when you need to, open a file, start a shell, or mark the exact spot on a page that should change.
-          Single user, loopback only, <b>no database</b>: the source of truth stays the engine's own session files.
-        </p>
+        <h1>An external<br /><em>control surface</em><br />for the agent you run</h1>
+        <ul class="hero-pains">
+          <li>Away from the desk — no idea how far it got.</li>
+          <li>Its plan is plain text — picking one means typing.</li>
+          <li>“Continue”, “OK”, “deploy” — typed all day.</li>
+        </ul>
+        <div class="hero-feats" aria-label="Six things beyond chat">
+          <a href="#specials"><i>①</i><b>Live voice</b></a>
+          <a href="#specials"><i>②</i><b>Scheduled runs</b></a>
+          <a href="#specials"><i>③</i><b>Computer control</b></a>
+          <a href="#specials"><i>④</i><b>Canvas</b></a>
+          <a href="#specials"><i>⑤</i><b>Phone push</b></a>
+          <a href="#specials"><i>⑥</i><b>Remote access</b></a>
+        </div>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="https://github.com/duzhenxun/pop-agent/releases/latest" target="_blank" rel="noreferrer">Download the macOS app (.dmg)</a>
+          <a class="btn btn-primary" href="https://github.com/duzhenxun/pop-agent/releases/latest" target="_blank" rel="noreferrer">Download for macOS</a>
           <div class="install-pill">
             <code>npm -g install pop-agent</code>
             <button class="icon-btn" data-copy="npm -g install pop-agent" title="Copy install command" aria-label="Copy install command">⧉</button>
           </div>
-          <a class="btn" href="#tour">See the UI</a>
         </div>
         <div class="trust">
           <span><i></i>macOS: install and go, no Node</span>
-          <span><i></i>pi / Codex / Claude Code / opencode / DeepSeek Harness</span>
           <span><i></i>Windows · macOS · Linux (CLI)</span>
         </div>
       </div>
-      <div>
+      <div class="hero-shot">
         <div class="frame">
-          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · demo-app</span></div>
-          <img src="assets/en/hero.webp" width="2400" height="1350" alt="A real session: projects and sessions on the left, thinking blocks and tool cards in the middle, the diff of the same repo on the right" data-zoom />
+          <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · pop-agent</span></div>
+          <img src="assets/zh/hero.webp" width="2400" height="1291" alt="A real session: projects and sessions on the left, the conversation and its suggestion chips in the middle, and the same work laid out as a task canvas on the right" data-zoom />
         </div>
-        <p class="caption">A real session: thinking, tool calls, the diff and usage in one screen.</p>
+        <p class="caption">A real session: the conversation and its tools in the middle, the task canvas on the right — finished steps turn “done” right on the graph.</p>
       </div>
     </div>
   </section>
@@ -183,6 +190,44 @@ var _hmt = _hmt || [];
           <h3><span class="mono">@</span> for files, <span class="mono">/</span> for commands</h3>
           <p>Type <b>@</b> to search the workspace, ↑↓ to pick, Enter to insert <code>@src/store.ts</code>. Type <b>/</b> for local commands (new, rename, model, session stats) or ones handed straight to the agent (compact, plan mode).</p>
           <div class="shot"><img src="assets/en/mention-crop.webp" width="1800" height="1125" alt="The @ mention panel, grouped into “Add” and “Recent”" loading="lazy" data-zoom /></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- INPUT SIDE: templates / quick commands / Think -->
+  <section id="input">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="kicker">Before you speak</div>
+        <h2>Templates, quick commands, Think</h2>
+        <p>The row above the composer: “how do I even ask this” made clickable.</p>
+      </div>
+
+      <div class="cards">
+        <article class="card wide reveal">
+          <div class="copy">
+            <h3>Templates: 12 built-ins, one click into the composer</h3>
+            <div class="list">
+              <div><span class="tick">✓</span><span><b>Not sent, still editable</b>; not sure how to phrase it? “AI write it” fills in goal / input / steps / output / constraints.</span></div>
+              <div><span class="tick">✓</span><span><b>Hidden, never destroyed</b>: “restore defaults” always brings a built-in back.</span></div>
+              <div><span class="tick">✓</span><span><b>Quick commands</b>: a row of chips — click sends, Shift+click only fills the box.</span></div>
+            </div>
+          </div>
+          <div class="term" aria-label="What a template looks like">
+<span class="c"># template: change one module, read before writing</span>
+<span class="p">goal</span>     split store.ts writes per session
+<span class="p">input</span>    I will give you the file and one failing case
+<span class="p">steps</span>    1. read it all  2. touch only this  3. run the tests
+<span class="p">output</span>   a diff plus one line on the risk
+<span class="p">limits</span>   no public API change; ask before changing a signature
+          </div>
+        </article>
+
+        <article class="card stack reveal">
+          <h3>Think: out of words? have it draft the next line</h3>
+          <p>One click runs a <b>hidden turn</b> over the current context and returns 1–5 “here is what you could say next” (5 by default, 3 on phones). Click one to send — that turn never lands in history and costs you nothing to hide.</p>
+          <div class="shot"><img src="assets/en/think.webp" width="1800" height="473" alt="After hitting Think, a row of suggestion chips appears above the composer; click one to send it" loading="lazy" data-zoom /></div>
         </article>
       </div>
     </div>
@@ -526,6 +571,16 @@ POP_AGENT_CWD=~/code/my-proj pop</pre>
         <a href="https://github.com/duzhenxun/pop-agent" target="_blank" rel="noreferrer">GitHub</a>
         <a href="https://github.com/duzhenxun/pop-agent/issues" target="_blank" rel="noreferrer">Issues</a>
         <a href="https://github.com/duzhenxun/pop-agent/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT License</a>
+      </div>
+    </div>
+    <div class="foot-thanks">
+      <div>
+        <h5>Upstream projects</h5>
+        <p>Standing on these node packages: <code>pi-ai</code> / <code>pi-coding-agent</code> / <code>pi-mcp</code>, <code>express</code>, <code>ws</code>, <code>web-push</code>, <code>node-edge-tts</code>, <code>node-pty</code>, <code>react</code>, <code>react-markdown</code> / <code>remark-gfm</code> / <code>rehype-highlight</code>, <code>highlight.js</code>, <code>mermaid</code>, <code>xterm.js</code>, <code>vite</code>, <code>typescript</code>, <code>electron</code>, <code>playwright</code>, <code>oxlint</code>, <code>prettier</code>, <code>tsx</code>.</p>
+      </div>
+      <div>
+        <h5>Thanks to my colleagues</h5>
+        <p>Dou Xin, Li Huimeng, Song Hepeng, Chen Zhaoyang, Lü Qinyan, Shi Chao, Zhang Bing, Qin Zhaoyin, Wang Jichao</p>
       </div>
     </div>
     <div class="foot-bottom">

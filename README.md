@@ -18,7 +18,7 @@
 npm -g install pop-agent
 ```
 
-**What it is**: a front end that lays an agent's *process* open — thinking blocks, tool calls, changed files, tokens and cost all sit in the conversation, and you can cut in mid-turn.
+**What it is**: a front end that lays an agent's *process* open — thinking blocks, tool calls, changed files, tokens and cost all sit in the conversation, and you can cut in mid-turn. Above the composer sit templates, quick commands and Think, so *how you ask* is clickable too.
 
 **What it isn't**: not another agent engine, and not a SaaS that moves your sessions to the cloud. It doesn't rewrite prompts or take over tool implementations — it gives the engines you already installed a readable UI, clickable buttons and a session list that stays on disk. Three hard rules:
 
@@ -27,6 +27,16 @@ npm -g install pop-agent
 | 01 | **No database** | Sessions are the engine's own JSONL / threads. The web UI reads them, renames them, deletes them when needed |
 | 02 | **No faking** | Capabilities an engine lacks are hidden in the UI (capability matrix); a panel that can't get data says so instead of borrowing another engine's config |
 | 03 | **No overreach** | Loopback only by default (`127.0.0.1`); remote access means an explicit `-H 0.0.0.0` *and* a password set on the machine first |
+
+---
+
+## The typing side: templates, quick commands, Think
+
+The row above the composer makes “how do I even ask this” clickable (server-side, one copy for desktop and phone).
+
+- **Templates**: 12 built-ins; click one into the composer (not sent). Not sure how to phrase it — “AI write it” finishes the prompt.
+- **Quick commands**: click to send, Shift+click to only fill the box.
+- **Think**: a hidden turn returns 1–5 “say this next” lines; click to send, never in history.
 
 ---
 
@@ -181,5 +191,18 @@ The README stops here on purpose; everything else lives in the docs:
 | Screenshots (uncompressed originals) | [`docs/screenshots/`](docs/screenshots) |
 | Architecture decision records | [`docs/adr/`](docs/adr) |
 | Remote access and the security model | [Reference · Security model](docs/reference.md#security-model) |
+
+---
+
+## Thanks
+
+**Upstream projects** — this workbench stands on these node packages:
+
+- engine & protocol: `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-mcp`
+- server: `express`, `ws`, `web-push`, `node-edge-tts`, `node-pty` (optional, for the embedded terminal)
+- UI: `react` / `react-dom`, `react-markdown` / `remark-gfm` / `rehype-highlight`, `highlight.js`, `mermaid`, `@xterm/xterm` / `@xterm/addon-fit`
+- tooling: `vite`, `typescript`, `electron` / `electron-builder`, `playwright-core`, `oxlint`, `prettier`, `tsx`
+
+**Thanks to my colleagues**: Dou Xin, Li Huimeng, Song Hepeng, Chen Zhaoyang, Lü Qinyan, Shi Chao, Zhang Bing, Qin Zhaoyin, Wang Jichao
 
 MIT License
