@@ -96,19 +96,34 @@ export function allowProtectedPath(home: string = homedir()): string {
 }
 
 /**
- * helper 的下载地址：**项目仓库里那份 zip**（不走 npm 包，包体积 + Gatekeeper 都不划算）。
+ * helper 的下载地址：**agent-computer 仓库的 release 资产**。
  *
- * 2026-11-24 用户拍定：电脑控制就走「用户自己装 Agent Computer.app」这条路，
- * 不把 helper 内嵌进 PopAgent（那样等于把两件东西的版本、签名、权限捆在一起）。
- * 所以这里保留下载入口，面板据此给「下载 Agent Computer.app」按钮。
+ * 电脑控制走「用户自己装 Agent Computer.app」那条路，不把 helper 内嵌进 PopAgent
+ * （否则两件东西的版本、签名、权限捆在一起）。面板据此给「下载 Agent Computer.app」按钮。
  * 可用 `AGENT_COMPUTER_DOWNLOAD_URL` 覆盖（内网镜像 / 自己编译）。
+ *
+ * 注意资产名是 `Agent-Computer.zip`（连字符）：GitHub Release 会把上传文件名里的空格
+ * 换成点，带空格的 URL 会 404 —— 2026-11-26 踩过。
  */
 export function helperDownloadUrl(env: NodeJS.ProcessEnv = process.env): string {
 	const override = env.AGENT_COMPUTER_DOWNLOAD_URL?.trim();
 	if (override) return override;
-	// .app 的 zip 直接放在仓库里（helper/agent-computer/release/），
-	// 不需要 Releases / CI：改完 helper 跑一次 build-app.sh 就会更新这个文件。
-	return "https://github.com/duzhenxun/pop-agent/raw/main/helper/agent-computer/release/Agent%20Computer.zip";
+	return "https://github.com/duzhenxun/agent-computer/releases/latest/download/Agent-Computer.zip";
+}
+
+/**
+ * App 里那个命令行可执行文件（`agent-computer`）在哪：电脑控制的命令都交给它跑。
+ *
+ * 为什么要宿主来指路：CLI 已跟着 App 走（装一个 App 就够），宿主不再自己实现一份；
+ * 它只需要找到 App、把 argv 原样递过去。`AGENT_COMPUTER_CLI` 可覆盖（调试 / 非标准安装位置）。
+ */
+export function appCliPath(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): string | null {
+	const override = env.AGENT_COMPUTER_CLI?.trim();
+	if (override) return existsSync(override) ? override : null;
+	const app = findHelperApp(env, home);
+	if (!app) return null;
+	const cli = join(app, "Contents", "MacOS", "agent-computer");
+	return existsSync(cli) ? cli : null;
 }
 
 /**
