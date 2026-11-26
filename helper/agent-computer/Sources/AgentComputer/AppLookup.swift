@@ -51,7 +51,7 @@ enum AppLookup {
 		guard Permissions.accessibilityGranted() else {
 			throw HelperError(
 				"accessMissing",
-				"helper 还没有「辅助功能」权限：到 系统设置 → 隐私与安全性 → 辅助功能 里勾上 Agent Computer",
+				"还没有「辅助功能」权限：到 系统设置 → 隐私与安全性 → 辅助功能 里勾上 Agent Computer",
 				retryable: false
 			)
 		}

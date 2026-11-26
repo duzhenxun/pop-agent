@@ -15,7 +15,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
 	private var timer: Timer?
 	private var accessibilityLabel: NSTextField?
 	private var screenLabel: NSTextField?
-	private var hintLabel: NSTextField?
+	/// 两颗「去授权」按钮：那一项已经授权了就不该再露出来（2026-11-26 用户）
+	private var accessibilityButton: NSButton?
+	private var screenButton: NSButton?
+	/// 权限卡下面那条**状态行**（「还差一步…」/「都好了…」）
+	private var statusLabel: NSTextField?
 	private var doneButton: NSButton?
 	/// 本次显示时是否「已经全就绪」。已经就绪就不跑倒计时自动关，
 	/// 否则从菜单打开会看到窗口一闪就没了（2026-11-24 反馈）。
@@ -151,7 +155,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 	private func buildWindow() -> NSWindow {
 		let window = NSWindow(
-			contentRect: NSRect(x: 0, y: 0, width: 600, height: 352),
+			contentRect: NSRect(x: 0, y: 0, width: 540, height: 336),
 			styleMask: [.titled, .closable, .fullSizeContentView],
 			backing: .buffered,
 			defer: false
@@ -172,15 +176,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		icon.widthAnchor.constraint(equalToConstant: 60).isActive = true
 		icon.heightAnchor.constraint(equalToConstant: 60).isActive = true
 
-		let title = NSTextField(labelWithString: "还差一步就能用了")
+		// 标题位置放**应用名**，那句「还差一步就能用了」挪到底部状态行（2026-11-26 用户：
+		// 「还差一步就能用了，放下面」）—— 它本来就是个状态判断，跟着权限状态一起变更合理。
+		let title = NSTextField(labelWithString: "Agent Computer")
 		title.font = .systemFont(ofSize: 21, weight: .semibold)
 
-		let subtitle = NSTextField(
-			wrappingLabelWithString: "macOS 不允许应用自己给自己授权（这是系统保护），\n需要你在系统设置里勾一下。点下面的按钮会直接跳到对应位置。"
-		)
-		subtitle.font = .systemFont(ofSize: 12)
-		subtitle.textColor = .secondaryLabelColor
-		subtitle.attributedStringValue = withLineHeight(subtitle.attributedStringValue, 18)
+		// 副标题（那句「macOS 不允许应用自己给自己授权…」）2026-11-26 用户要求去掉：
+		// 权限卡本身已经说清要什么，这一段只是在重复解释，还把 header 撑成两行压到卡片上。
 
 		// 标题那一行右边跟一个版本徽标（2026-11-26 用户：「这里面加一个版本显示」）：
 		// 版本对排查最关键 —— 用户说「授权了还是不行」时，第一件事就是问他装的是哪一版。
@@ -189,7 +191,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		titleRow.alignment = .centerY
 		titleRow.spacing = 10
 
-		let header = NSStackView(views: [icon, NSStackView(views: [titleRow, subtitle])])
+		let header = NSStackView(views: [icon, titleRow])
 		header.orientation = .horizontal
 		header.alignment = .centerY
 		header.spacing = 16
@@ -200,12 +202,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
 			action: #selector(grantAccessibility)
 		)
 		accessibilityLabel = accessibilityRow.status
+		accessibilityButton = accessibilityRow.button
 		let screenRow = makePermissionRow(
 			name: "屏幕录制",
 			detail: "只用来看截图，不给也能操作",
 			action: #selector(grantScreenRecording)
 		)
 		screenLabel = screenRow.status
+		screenButton = screenRow.button
 		// 两行各自装进一张「卡片」：一眼能看出这两条是同一组的两个开关，
 		// 也比纯分隔线更有层次（2026-11-26 用户：「排版布局弄好看一些」）。
 		let permissions = NSStackView(views: [card(accessibilityRow.view), card(screenRow.view)])
@@ -213,10 +217,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		permissions.alignment = .width
 		permissions.spacing = 10
 
-		let hint = NSTextField(wrappingLabelWithString: "")
-		hint.font = .systemFont(ofSize: 12)
-		hint.textColor = .secondaryLabelColor
-		hintLabel = hint
+		// 状态行：放在权限卡下面、横跨整行（2026-11-26 用户圈出来的那块空白）。
+		// 它就是「还差几步能用」这一句 —— 以前挤在底栏、和按钮抢地方，还被截断。
+		let status = NSTextField(wrappingLabelWithString: "还差一步就能用了。")
+		status.font = .systemFont(ofSize: 12.5, weight: .medium)
+		status.textColor = .secondaryLabelColor
+		status.setContentCompressionResistancePriority(.required, for: .vertical)
+		statusLabel = status
 
 		let later = NSButton(title: "稍后", target: self, action: #selector(dismiss))
 		later.bezelStyle = .rounded
@@ -231,13 +238,19 @@ final class Onboarding: NSObject, NSWindowDelegate {
 			button.widthAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
 		}
 
-		let footer = NSStackView(views: [hint, NSView(), later, done])
+		let footer = NSStackView(views: [NSView(), later, done])
 		footer.orientation = .horizontal
 		footer.alignment = .centerY
 		footer.spacing = 10
 
 		let separator = divider()
-		let stack = NSStackView(views: [header, permissions, separator, footer])
+		// 高度顺序：header（图标或两行文字谁高算谁）→ 两张卡 → 状态行 → 分隔线 → 按钮行
+		for block in [header, permissions, status as NSView] {
+			block.setContentCompressionResistancePriority(.required, for: .vertical)
+		}
+		let spring = NSView()
+		spring.setContentHuggingPriority(.init(1), for: .vertical)
+		let stack = NSStackView(views: [header, permissions, status, spring, separator, footer])
 		stack.orientation = .vertical
 		stack.alignment = .leading
 		stack.spacing = 16
@@ -254,7 +267,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 			stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 24),
 			stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
 		])
-		for block in [header, permissions, separator, footer] {
+		for block in [header, permissions, status, separator, footer] {
 			block.translatesAutoresizingMaskIntoConstraints = false
 			block.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 		}
@@ -266,7 +279,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 				let cards = permissions.arrangedSubviews.map { "\($0.frame)" }.joined(separator: " ")
 				Log.write(
 					"layout: content=\(content.frame) stack=\(stack.frame) header=\(header.frame) "
-						+ "permissions=\(permissions.frame) footer=\(footer.frame) cards=[\(cards)]"
+						+ "permissions=\(permissions.frame) status=\(status.frame) footer=\(footer.frame) cards=[\(cards)]"
 				)
 			}
 		}
@@ -316,16 +329,6 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		return box
 	}
 
-	/// 给一段富文本统一加行高（多行说明挤在一起很难读）
-	private func withLineHeight(_ text: NSAttributedString, _ height: CGFloat) -> NSAttributedString {
-		let output = NSMutableAttributedString(attributedString: text)
-		let style = NSMutableParagraphStyle()
-		style.lineHeightMultiple = 0
-		style.minimumLineHeight = height
-		style.maximumLineHeight = height
-		output.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: output.length))
-		return output
-	}
 
 	private func divider() -> NSBox {
 		let box = NSBox()
@@ -333,7 +336,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		return box
 	}
 
-	private func makePermissionRow(name: String, detail: String, action: Selector) -> (view: NSView, status: NSTextField) {
+	private func makePermissionRow(name: String, detail: String, action: Selector) -> (view: NSView, status: NSTextField, button: NSButton) {
 		let nameLabel = NSTextField(labelWithString: name)
 		nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
 		nameLabel.widthAnchor.constraint(equalToConstant: 84).isActive = true
@@ -363,7 +366,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		row.orientation = .horizontal
 		row.alignment = .centerY
 		row.spacing = 12
-		return (row, status)
+		return (row, status, button)
 	}
 
 	// MARK: - 动作
@@ -413,9 +416,17 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		accessibilityLabel?.textColor = accessibility ? .systemGreen : .systemOrange
 		screenLabel?.stringValue = screen ? "✓ 已允许" : "✗ 未允许"
 		screenLabel?.textColor = screen ? .systemGreen : .systemOrange
+		// 已经授权的那一项不再显示「去授权」——留着只会让人以为还有事要做
+		accessibilityButton?.isHidden = accessibility
+		screenButton?.isHidden = screen
 
+		if !(accessibility && screen) {
+			statusLabel?.stringValue = "还差一步就能用了。"
+			statusLabel?.textColor = .systemOrange
+		}
 		if accessibility && screen {
-			hintLabel?.stringValue = "都好了，现在可以开始操作。"
+			statusLabel?.stringValue = "都好了，现在可以开始操作。"
+			statusLabel?.textColor = .systemGreen
 			doneButton?.title = "完成"
 			// 只对「看着它变成已允许」的那种收窗：留 1.5s 让用户看清绿勾再收起。
 			// 打开时就已经就绪（菜单里点进来的）就停在窗口上，等用户自己关。
@@ -427,10 +438,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
 				window?.orderOut(nil)
 			}
 		} else if accessibility {
-			hintLabel?.stringValue = "辅助功能已就绪。屏幕录制授权后需要重启一次 helper 才会生效。"
-			doneButton?.title = "重启 helper"
+			statusLabel?.stringValue = "还差一步：屏幕录制还没授权，授权后要重启一次 Agent Computer。"
+			statusLabel?.textColor = .systemOrange
+			doneButton?.title = "重启 Agent Computer"
 		} else {
-			hintLabel?.stringValue = "在系统设置里勾上「Agent Computer」，回到这里会自动变成已允许。"
+			statusLabel?.stringValue = "还差一步：辅助功能还没授权，去系统设置里勾上 Agent Computer。"
+			statusLabel?.textColor = .systemOrange
 			doneButton?.title = "已授权，重新检测"
 		}
 	}

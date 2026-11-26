@@ -63,7 +63,7 @@ enum Protocol {
 		guard clientVersion == apiVersion else {
 			throw HelperError(
 				"protocolMismatch",
-				"客户端 API 版本是 \(clientVersion)，本 helper 只支持 \(apiVersion)",
+				"客户端 API 版本是 \(clientVersion)，Agent Computer 只支持 \(apiVersion)",
 				retryable: false
 			)
 		}

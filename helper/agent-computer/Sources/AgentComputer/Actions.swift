@@ -137,7 +137,7 @@ enum Actions {
 		if let elementNumber = step["elementNumber"] as? Int, isSecure(try element(elementNumber)) {
 			throw HelperError(
 				"notSupported",
-				"#\(elementNumber) 看起来是密码输入框：helper 不会代填密码，请让用户自己输入",
+				"#\(elementNumber) 看起来是密码输入框：Agent Computer 不会代填密码，请让用户自己输入",
 				retryable: false
 			)
 		}
@@ -182,7 +182,7 @@ enum Actions {
 		AgentHUD.begin(app: target.name, action: "填写 #\(elementNumber)")
 		raise(target)
 		if isSecure(element) {
-			throw HelperError("notSupported", "#\(elementNumber) 是密码框，helper 不代填密码", retryable: false)
+			throw HelperError("notSupported", "#\(elementNumber) 是密码框，Agent Computer 不代填密码", retryable: false)
 		}
 		// 焦点 + 全选 + 写入：比只设 AXValue 更接近真人操作，也能触发 App 的校验逻辑
 		AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
