@@ -186,6 +186,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
 		userWentToSettings = false
 		loggedInvisible = false
 		readyWhenShown = Permissions.accessibilityGranted() && Permissions.screenRecordingGranted()
+		if launchedFromTerminal() {
+			Log.write("注意：本次进程是从终端拉起的，TCC 会把授权算给那个终端（建议 open -a 启动）")
+		}
 		Log.write(
 			"show()：readyWhenShown=\(readyWhenShown) accessibility=\(Permissions.accessibilityGranted()) screen=\(Permissions.screenRecordingGranted())"
 		)
@@ -494,8 +497,42 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 	// MARK: - 动作
 
+	/// 当前进程是不是「从终端被直接拉起来」的。
+	///
+	/// 为什么要判断：TCC 把隐私授权记在**责任进程**（responsible process）头上。终端里执行
+	/// `/Applications/Agent Computer.app/Contents/MacOS/AgentComputer` 时，责任进程是那个终端，
+	/// 于是「录屏与系统录音」列表里根本不会出现 Agent Computer（用户 2026-11-26 的截图）。
+	/// 走 LaunchServices（`open -a` / 访达双击 / 菜单栏自启）才是它自己的身份。
+	private func launchedFromTerminal() -> Bool {
+		var buffer = [CChar](repeating: 0, count: 4096)
+		let length = proc_pidpath(getppid(), &buffer, UInt32(buffer.count))
+		guard length > 0 else { return false }
+		let parent = String(cString: buffer).lowercased()
+		let hosts = ["/terminal", "/iterm", "/warp", "/alacritty", "/kitty", "/zsh", "/bash", "/fish", "/node", "/code helper", "/python"]
+		return hosts.contains { parent.contains($0) }
+	}
+
+	/// 以 App 自己的身份重开一次（然后退出当前进程）。
+	///
+	/// 用户点「去授权」时如果发现身份不对，先自我重启：新实例由 LaunchServices 拉起，
+	/// 责任进程就是它自己，`CGRequest…` 才会把「Agent Computer」登记进系统设置的那个列表。
+	private func relaunchAsApp() -> Bool {
+		guard Bundle.main.bundlePath.hasSuffix(".app") else { return false }
+		Log.write("身份不对（父进程是终端）：以 App 身份重启一次，再走授权")
+		let process = Process()
+		process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+		// --args --onboarding：重开后直接把引导窗摆出来，用户不用再找
+		process.arguments = ["-a", Bundle.main.bundlePath, "--args", "--onboarding"]
+		try? process.run()
+		process.waitUntilExit()
+		window?.orderOut(nil)
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { NSApp.terminate(nil) }
+		return true
+	}
+
 	@objc private func grantAccessibility() {
 		userWentToSettings = true
+		if launchedFromTerminal(), relaunchAsApp() { return }
 		// 顺序很重要：先请求（让 app 出现在列表里），再打开面板
 		Permissions.requestAccessibility()
 		openSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
@@ -504,6 +541,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
 	@objc private func grantScreenRecording() {
 		userWentToSettings = true
+		// 终端拉起的实例：先以 App 身份重启，否则登记进列表的是终端
+		if launchedFromTerminal(), relaunchAsApp() { return }
 		Permissions.requestScreenRecording()
 		openSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
 		refresh()
