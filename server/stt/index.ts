@@ -7,12 +7,14 @@
  * 现有：
  *   · `openai-compatible` —— `/v1/audio/transcriptions` 形状（Whisper 及大量网关）
  *   · `deepseek`         —— `POST /v1/tools/asr`，multipart WAV 进、`{text}` 出
- *   · `qwen`             —— 百炼 Qwen-Audio-ASR（多模态 messages + 必填 parameters.format），整段识别
- *   · `qwen-realtime`    —— 百炼 ASR message 协议的实时识别（`run-task` / `result-generated`）
  *   · `qwen-omni-realtime` —— 百炼 **Realtime 协议**（`session.update` / `input_audio_buffer.append`），
  *                           模型如 `qwen3.8-omni-flash-realtime`（多模态实时，比较贵）
  *
- * 后两个都是「边说边出字」，但**协议不同、模型不通用**：换模型不能只改 model，得换 provider。
+ * 2026-11-26 删掉了两个千问 provider（用户：「语音里这 2 块不要了吧」）：
+ *   · `qwen`（Qwen-Audio-ASR 整段识别）
+ *   · `qwen-realtime`（旧版 ASR **message** 协议）
+ * 都是千问新一代 Realtime（`qwen-omni-realtime`）的前身，留着只会让人在两个下拉里选错。
+ * 用旧 id 写的 `stt.json` 不会崩：`createSttSession` 抛「未知的 STT provider」，调用方退回本地识别。
  *
  * 已经留好的位置：
  *   · 阿里千问其它模型（qwen3-asr-flash 等）如果走 OpenAI 兼容形状，`openai-compatible` 也能用
@@ -26,11 +28,9 @@
 import { deepseekStt } from "./deepseek.js";
 import { openaiCompatible } from "./openai.js";
 import { qwenOmniRealtimeStt } from "./qwen-omni-realtime.js";
-import { qwenStt } from "./qwen.js";
-import { qwenRealtimeStt } from "./qwen-realtime.js";
 import type { SttConfig, SttLogger, SttProvider, SttSession } from "./types.js";
 
-const PROVIDERS: SttProvider[] = [openaiCompatible, deepseekStt, qwenStt, qwenRealtimeStt, qwenOmniRealtimeStt];
+const PROVIDERS: SttProvider[] = [openaiCompatible, deepseekStt, qwenOmniRealtimeStt];
 
 /** 实际要请求的端点（配置里没写就用厂商的默认端点）；都没有则抛错 */
 export function sttEndpoint(config: SttConfig): string {

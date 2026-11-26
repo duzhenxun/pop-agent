@@ -137,7 +137,7 @@ export class AsrService {
 	 * 面板「云端引擎」下拉的数据源。
 	 *
 	 * 需要它是因为 `readSttConfig()` 只给**当前选中的那一家**，而面板要让人在
-	 * 「千问整段识别 / 千问实时识别（边说边出字）」之间选 —— 两家的模型和价格都不一样。
+	 * 「整段识别 / 边说边出字」之间选 —— 模型和价格都不一样。
 	 */
 	cloudEngines(): CloudEngines {
 		const read = readSttConfig(this.dataDir);
@@ -151,7 +151,7 @@ export class AsrService {
 				const block = blocks[provider.id] ?? {};
 				const modelField = provider.fields.find((field) => field.key === "model");
 				// 同厂商兄弟 provider 的密钥可以互借（selectorID 见 selectCloud）：
-				// 只配过 `qwen` 的人也应该能直接选 `qwen-omni-realtime`，
+				// 一个人只配过同厂商某一项的 key，另一项也该能直接选，
 				// 否则面板里那一项是灰的，而灰的永远点不到 —— 互借逻辑就没机会生效。
 				const vendor = provider.id.split("-")[0];
 				const siblingHasKey = Object.entries(blocks).some(
@@ -240,7 +240,7 @@ export class AsrService {
 			return null;
 		}
 		if (!config.apiKey && !config.headers?.Authorization) {
-			// deepseek / qwen 这类只要一个 key 的：缺了就不算配好，回落到本地识别
+			// deepseek / qwen-omni-realtime 这类只要一个 key 的：缺了就不算配好，回落到本地识别
 			this.log.warn("云端 STT 缺密钥，按未配置处理", { source, hint: `providers.${config.provider}.apiKey` });
 			return null;
 		}

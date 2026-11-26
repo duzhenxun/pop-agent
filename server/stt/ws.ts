@@ -1,7 +1,7 @@
 /**
  * 千问实时语音的两套协议共用的最小 WebSocket 适配。
  *
- * 为什么单独一个文件：`qwen-realtime.ts`（ASR message 协议：run-task / result-generated）
+ * 为什么单独一个文件：`qwen-omni-realtime.ts`（Realtime 协议：session.update / input_audio_buffer.append）
  * 和 `qwen-omni-realtime.ts`（Realtime 协议：session.update / input_audio_buffer.append）
  * 是两套完全不同的协议，但「怎么拿到 WebSocket、怎么把 extraFields 收敛成上游要的类型」
  * 是一模一样的 —— 复制一份只会两边慢慢抄歪。

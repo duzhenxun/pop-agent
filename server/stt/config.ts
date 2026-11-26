@@ -15,7 +15,7 @@
  *     "provider": "deepseek",
  *     "providers": {
  *       "deepseek":   { "apiKey": "sk-…" },
- *       "qwen":       { "apiKey": "sk-…", "model": "qwen3-asr-flash" }
+ *       "qwen-omni-realtime": { "apiKey": "sk-…" }
  *     }
  *   }
  *
