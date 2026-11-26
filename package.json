@@ -7,7 +7,9 @@
 	},
 	"files": [
 		"dist",
-		"web/dist"
+		"web/dist",
+		"!web/dist/icons/icon-1024.png",
+		"!web/dist/apple-touch-icon.png"
 	],
 	"description": "PopAgent — 多 Agent 统一 Web 工作台，对 Pi Agent 深度适配，同时支持 Codex、Claude 等引擎；可打包成桌面 App",
 	"author": "duzhenxun",
@@ -44,7 +46,7 @@
 		"dev:web": "vite --config web/vite.config.ts",
 		"serve": "node --import tsx server/index.ts",
 		"build": "npm run build:server && npm run build:web",
-		"build:server": "tsc -p tsconfig.server.json",
+		"build:server": "node -e \"require('node:fs').rmSync('dist/server',{recursive:true,force:true})\" && tsc -p tsconfig.server.json",
 		"build:web": "vite build --config web/vite.config.ts",
 		"build:electron": "tsc -p electron/tsconfig.json",
 		"app": "npm run build && npm run build:electron && npm run app:name && electron .",
