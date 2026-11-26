@@ -243,15 +243,15 @@
 	min-width: 0;
 }
 
-.computer-skill-cli {
-	display: block;
-	margin-top: 6px;
-	padding: 6px 8px;
-	border-radius: 6px;
-	background: var(--bg-elev2, rgba(127, 127, 127, 0.08));
-	color: var(--text-dim);
-	font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-	font-size: 11px;
-	line-height: 1.5;
-	word-break: break-all;
+/* 上膛态：第一下点完、等第二下 —— 和删除会话那几处同一个视觉语言 */
+.computer-btn-armed {
+	border-color: var(--red, #c62828);
+	color: var(--red, #c62828);
+}
+
+/* 「已重新生成 · 19:38:12」：成功后短暂出现，别让人以为还在写 */
+.computer-regen-done {
+	color: var(--green, #2e7d32);
+	font-size: 12px;
+	white-space: nowrap;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useArmed } from "../use-armed.ts";
 import { useT } from "../use-language.ts";
 import {
 	KEY_DELAY_RANGE,
@@ -145,11 +146,18 @@ export function ComputerPanel() {
 	 *
 	 * 换过 node（nvm 切版本）、挪过 pop-agent 的安装位置、或这文件是别的版本写进去的，
 	 * 旧路径就会失效 —— Agent 一跑 `command not found`，但它不会告诉你「路径过期了」。
-	 * 这里给一颗显式按钮，改完上面那行会跟着变，用户能自己核对。
+	 *
+	 * 会**覆盖**用户目录里的 `~/.agents/skills/agent-computer/SKILL.md`，所以走两下确认
+	 * （`useArmed`：第一下上膛、第二下才真写，和删除会话那几处一个规矩，不用 window.confirm）。
 	 */
+	const regen = useArmed();
+	const [regenDoneAt, setRegenDoneAt] = useState<number | null>(null);
 	const regenerateSkill = () =>
 		run(async () => {
 			setStatus(await regenerateComputerSkill());
+			setRegenDoneAt(Date.now());
+			// 提示自己退场：留在那儿会让人以为「还在写」
+			window.setTimeout(() => setRegenDoneAt(null), 6000);
 		});
 
 	const commitSpeed = () => {
@@ -259,24 +267,33 @@ export function ComputerPanel() {
 				<div className="computer-skill-regen">
 					<span className="computer-hint">
 						{t(
-							"技能里的命令是绝对路径（node + cli.js）。换过 node 版本或挪过安装目录后点右边重新生成。",
+							"技能里的命令是绝对路径（node + cli.js）。换过 node 版本或挪过安装目录后，点右边重新生成一次。",
 							"The skill embeds an absolute path (node + cli.js). Regenerate it after switching Node versions or moving the install.",
 						)}
 					</span>
+					{regenDoneAt ? (
+						<span className="computer-regen-done" role="status">
+							{t("已重新生成", "Regenerated")} ·{" "}
+							{new Date(regenDoneAt).toLocaleTimeString(undefined, {
+								hour: "2-digit",
+								minute: "2-digit",
+								second: "2-digit",
+							})}
+						</span>
+					) : null}
 					<button
 						type="button"
-						className="computer-btn"
-						onClick={() => void regenerateSkill()}
+						className={`computer-btn${regen.armed ? " computer-btn-armed" : ""}`}
+						onClick={() => regen.run(() => void regenerateSkill())}
 						disabled={busy || !status?.supported}
+						title={t(
+							`会覆盖 ~/.agents/skills/agent-computer/SKILL.md 里的命令（当前这份 CLI 的 node + cli.js 绝对路径）`,
+							"Overwrites the command in ~/.agents/skills/agent-computer/SKILL.md with this CLI's absolute node + cli.js path",
+						)}
 					>
-						{t("重新生成 Skill", "Regenerate skill")}
+						{regen.armed ? t("再点一次确认", "Click again to confirm") : t("重新生成 Skill", "Regenerate skill")}
 					</button>
 				</div>
-				{status?.skill.cli ? (
-					<code className="computer-skill-cli" title={status.skill.cli}>
-						{status.skill.cli}
-					</code>
-				) : null}
 			</section>
 
 			{/*
