@@ -383,7 +383,18 @@ function createWindow(url: string): BrowserWindow {
 		...(isMac ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: TRAFFIC_LIGHT_X, y: 12 } } : {}),
 		show: false,
 		// 没有 preload、没有 node 集成：页面只是访问本机服务的一个普通网页
-		webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+		webPreferences: {
+			contextIsolation: true,
+			nodeIntegration: false,
+			sandbox: true,
+			/**
+			 * 唯一的 preload：只给渲染层一个函数（把拖进来的 File 换成真实路径）。
+			 * 拖文件/文件夹进输入框时要的是那个路径，而 Electron 32+ 删了 `File.path`，
+			 * 只能靠 `webUtils.getPathForFile`，它只在有 preload 的渲染进程里存在。
+			 * 产物和 main.js 同级（`electron-dist/electron/preload.js`，见 electron/tsconfig.json 的 outDir）。
+			 */
+			preload: fileURLToPath(new URL("./preload.js", import.meta.url)),
+		},
 	});
 
 	/**
@@ -417,6 +428,23 @@ function createWindow(url: string): BrowserWindow {
 	window.webContents.on("did-fail-load", (_event, code, description, _validatedUrl, isMainFrame) => {
 		if (!isMainFrame || code === -3) return;
 		showOffline(window, `加载失败：${description}（${code}）`);
+	});
+	/**
+	 * 渲染进程**自己挂了**（内存爆了 / Chromium 内部崩溃）：页面不会报错，窗口就只剩一块白底 ——
+	 * 用户看到的就是「白屏了」。这种情况前端再怎么兜（错误边界）也接不到，只能在壳这一层重载。
+	 *
+	 * 只自动重载**一次**：如果重载完立刻又崩（同一个必崩的页面 / 会话），
+	 * 那就说明不是偶发，转成能读懂的提示页，别让窗口在「白屏 ↔ 崩」之间反复闪。
+	 */
+	let revived = false;
+	window.webContents.on("render-process-gone", (_event, details) => {
+		if (quitting || window.isDestroyed() || details.reason === "clean-exit") return;
+		if (!revived) {
+			revived = true;
+			window.webContents.reload();
+			return;
+		}
+		showOffline(window, `界面崩溃：${details.reason}`);
 	});
 	// 用**系统**那三颗红绿灯（用户 2026-11-23：「这个不好，不要自己写，用系统的」）。
 	// 位置随顶栏高度自动居中：见下面 `watchTrafficLights`。

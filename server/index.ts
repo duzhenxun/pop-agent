@@ -17,7 +17,7 @@ import { createRuntime } from "./session/runtime.js";
 import { createFileSettingsStore, readSettingsSync } from "./session/settings.js";
 import { createSender, type OutFrame } from "./snapshot/sender.js";
 import { createPiSessionsProvider, piAgentDir } from "./session/pi-sessions-provider.js";
-import { createUploadStore, uploadsDir } from "./uploads/upload-store.js";
+import { createUploadStore } from "./uploads/upload-store.js";
 import { createProviderWiring } from "./providers/provider-handlers.js";
 import { providerPool } from "./providers/provider-pool.js";
 import { probeProvider } from "./providers/probe.js";
@@ -436,7 +436,8 @@ const runtime = createRuntime({
 	subagentAgentDir: piAgentDir(),
 	uploadStore: {
 		read: (id) => uploadStore.read(id),
-		pathOf: (id) => join(uploadsDir(config.dataDir), id),
+		/** 路径必须跟实际落盘名一致（带原名的那份），不能再拿 `join(dir, id)` 自己拼 */
+		pathOf: (id) => uploadStore.pathOf(id),
 	},
 	piSessions: engineCatalog.sessionsFor(resolved.descriptor.name) ?? undefined,
 	engines: engineCatalog,

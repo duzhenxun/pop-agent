@@ -232,7 +232,8 @@ export type RuntimeOptions = {
 	/** 附件上传存储（ADR-0020 §P3）：读回上传的文件；不给则附件一律失效 */
 	uploadStore?: {
 		read: (id: string) => Promise<{ bytes: Buffer; mime: string } | null>;
-		pathOf?: (id: string) => string;
+		/** 副本在磁盘上的绝对路径（异步：落盘名带原名，得先查目录；拿不到给 null） */
+		pathOf?: (id: string) => string | null | Promise<string | null>;
 	};
 	/** 客户端设置存储（ADR-0020 §P1）；不给就用默认值（可选） */
 	settings?: SettingsStore;

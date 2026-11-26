@@ -6,6 +6,7 @@ import {
 	useRef,
 	useState,
 	type ClipboardEvent,
+	type DragEvent,
 	type KeyboardEvent,
 	type ReactNode,
 } from "react";
@@ -745,6 +746,127 @@ export function Composer({
 		}
 	};
 
+	/**
+	 * 拖文件进输入框（用户 2026-11-26：「这个输入框要支持将文件拖进来，有文件进来时就跟图片那样
+	 * 在上面显示，也可以 X 掉」）。
+	 *
+	 * 以前只有 `onPaste`：从访达 / 另一个窗口把文件**拖**进来是完全没反应的。
+	 * 这里只补「接住」这一步 —— 上传、大小/数量校验、chip 展示（图片缩略图、非图片显示 📄 + 文件名
+	 * + 大小 + ×）全都复用 `addFiles` 那一套，非图片本来就走得通。
+	 */
+	const [dropActive, setDropActive] = useState(false);
+	const hasFiles = (event: DragEvent) => event.dataTransfer.types.includes("Files");
+	const onDragOver = (event: DragEvent<HTMLDivElement>) => {
+		// 只接管"拖文件"：拖一段选中的文字进来还是要能落进 textarea
+		if (!hasFiles(event)) return;
+		event.preventDefault();
+		event.dataTransfer.dropEffect = "copy";
+		if (!dropActive) setDropActive(true);
+	};
+	const onDragLeave = (event: DragEvent<HTMLDivElement>) => {
+		// 在子元素之间挪动会连续触发 leave/enter：只有真的离开整块才收起高亮
+		if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+		setDropActive(false);
+	};
+	/**
+	 * 拖进来的东西按**路径**进提示词（用户 2026-11-26：「拖进来的文件、文件夹在发送时，
+	 * 发他们的具体路径就可以的，不需要合到它的大小」）。
+	 *
+	 * 为什么不能走上传：文件夹和 `.app` 是目录，没有字节可上传；而上传那条路给到模型的
+	 * 是 `.pop-agent/uploads/<id>` 这个**副本**路径，不是用户拖的那份。所以这里直接取原路径。
+	 *
+	 * 两类例外：
+	 *   - **图片**仍然走上传：视觉注入要字节，路径给不了模型"看见"；
+	 *   - 拿不到路径的环境（浏览器 / 远程访问，没有 preload）→ 退回上传，并说清楚为什么。
+	 */
+	const pathOfDropped = (file: File): string => {
+		const bridge = (window as { popAgentFiles?: { pathOf?: (input: File) => string } }).popAgentFiles;
+		try {
+			return typeof bridge?.pathOf === "function" ? bridge.pathOf(file) : "";
+		} catch {
+			return "";
+		}
+	};
+
+	/**
+	 * 浏览器里拖文件是「只能拿到字节」的：没有 preload 就拿不到原路径，只能传副本。
+	 *
+	 * 不说的话用户会以为模型看的是他拖的那份（用户 2026-11-26：「发送时没有发路径」）——
+	 * 所以**每个会话只提一次**，提示改去桌面 App 就能拿到原路径。
+	 */
+	const pathlessNoticeShown = useRef(false);
+	const hasPathBridge = (): boolean => {
+		const bridge = (window as { popAgentFiles?: { pathOf?: unknown } }).popAgentFiles;
+		return typeof bridge?.pathOf === "function";
+	};
+
+	/** 把若干路径按 `@路径` 插到草稿末尾（和「@ 提及」同一个语法，服务端照旧解析） */
+	const insertDroppedPaths = (paths: string[]) => {
+		const element = inputRef.current;
+		let text = element?.value ?? draftRef.current;
+		let caret = element?.selectionStart ?? caretRef.current;
+		for (const raw of paths) {
+			// 带空格的路径用引号包起来：不加引号会被下一段空白截断，模型看到的就是一半路径
+			const next = insertReference(text, caret, /\s/.test(raw) ? `"${raw}"` : raw);
+			text = next.text;
+			caret = next.caret;
+		}
+		setDraft(text);
+		caretRef.current = caret;
+		setCaret(caret);
+		requestAnimationFrame(() => {
+			const live = inputRef.current;
+			if (live === null) return;
+			live.focus();
+			live.setSelectionRange(caret, caret);
+		});
+	};
+
+	const onDrop = (event: DragEvent<HTMLDivElement>) => {
+		if (!hasFiles(event)) return;
+		event.preventDefault();
+		setDropActive(false);
+		const paths: string[] = [];
+		const uploads: File[] = [];
+		const pathless: string[] = [];
+		for (const item of [...event.dataTransfer.items]) {
+			if (item.kind !== "file") continue;
+			const file = item.getAsFile();
+			if (file === null) continue;
+			// 目录（含 `.app` 这种 bundle）浏览器给的 size 是 0，只能靠 entry 判
+			const entry = typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null;
+			const isDir = entry?.isDirectory === true;
+			const path = pathOfDropped(file);
+			if (path !== "") {
+				// 图片要字节（视觉注入），其余一律只给路径
+				if (!isDir && file.type.startsWith("image/")) uploads.push(file);
+				else paths.push(path);
+				continue;
+			}
+			if (isDir) pathless.push(file.name);
+			else uploads.push(file);
+		}
+		if (paths.length > 0) insertDroppedPaths(paths);
+		if (uploads.length > 0) void addFiles(uploads);
+		if (uploads.length > 0 && !hasPathBridge() && !pathlessNoticeShown.current) {
+			pathlessNoticeShown.current = true;
+			showToast({
+				text: t(
+					"浏览器拿不到文件的原路径：这次发给模型的是上传副本的路径（要发你拖的那份原路径，用桌面 App）",
+					"A browser cannot read a file's real path: the model gets the uploaded copy's path. Use the desktop app to send the original path",
+				),
+			});
+		}
+		if (pathless.length > 0) {
+			setUploadError(
+				t(
+					`${pathless.join("、")}：这个环境拿不到文件夹路径（要用桌面 App 才支持拖文件夹），先拖单个文件或用 @ 选`,
+					`${pathless.join(", ")}: folder paths are unavailable here (use the desktop app to drop folders); drop files or use @ instead`,
+				),
+			);
+		}
+	};
+
 	const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
 		// 只看图片：纯文本粘贴交回给浏览器默认行为
 		const files = [...event.clipboardData.items]
@@ -890,7 +1012,16 @@ export function Composer({
 	useEffect(() => onComposerAction((action) => composerActionRef.current(action)), []);
 
 	return (
-		<div className="composer-wrap">
+		<div
+			className={`composer-wrap${dropActive ? " is-drop" : ""}`}
+			onDragEnter={onDragOver}
+			onDragOver={onDragOver}
+			onDragLeave={onDragLeave}
+			onDrop={onDrop}
+		>
+			{dropActive ? (
+				<div className="composer-drop-hint">{t("松开就把文件加进来", "Drop to attach the file")}</div>
+			) : null}
 			<div className="composer-topbar">
 				{/* 输入框上方一行：模型 / 强度 · 模板 · 想想 + 快捷短语（审批在底部状态栏） */}
 				<div className="composer-tools">
