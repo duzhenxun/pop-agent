@@ -25,10 +25,13 @@ import { useAppState } from "../store.ts";
 import { requestInterruptSpeech } from "../speech-control.ts";
 import {
 	canvasDeleteNodes,
+	canvasLink,
 	canvasMoveNodes,
 	canvasSetStatus,
+	canvasCurve,
 	canvasStartNode,
 	canvasSuggest,
+	canvasUnlink,
 	canvasUpdateNode,
 	interrupt,
 	sendMessage,
@@ -527,6 +530,14 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 	 */
 	const [ask, setAsk] = useState<{ x: number; y: number; nodeIds: string[]; text: string } | null>(null);
 
+	/**
+	 * 「开始做这一步」的二次确认：存的是那个节点的 id。
+	 *
+	 * 为什么双击要挡一道：双击是全图最容易被误触的手势（想钻进子计划、想放大、手抖点了两下），
+	 * 而它会让 agent 真的开跑一轮、把节点标成「正在做」—— 先问一句比事后去中断一轮便宜得多。
+	 */
+	const [confirmStart, setConfirmStart] = useState<string | null>(null);
+
 	/** 重命名（内联输入）：先摆出当前值，Enter 保存 / Esc 取消 */
 	const [editing, setEditing] = useState<{ id: string; title: string; detail: string } | null>(null);
 
@@ -568,6 +579,116 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 	}, [menu]);
 
 	const closeMenu = useCallback(() => setMenu(null), []);
+
+	/**
+	 * 「自己在画布上画线」：从一张卡右侧的圆点拖到另一张卡，就连出一条依赖线。
+	 *
+	 * 为什么需要这个：依赖原来是 agent 给的，画错了用户只能去对话里让它重画一遍（
+	 * 而重画会把整张图连同摆好的位置一起换掉）。现在位置、内容、依赖三样都能直接在图上手改。
+	 * `target` 就是现在指针下面那张卡（拿来高亮，松手时连它）。
+	 */
+	const [linking, setLinking] = useState<{
+		from: string;
+		/** 从源卡哪一侧出线（用户从左边那颗圆点拖出来就是 left） */
+		fromSide: "left" | "right";
+		x: number;
+		y: number;
+		target: string | null;
+		sx: number;
+		sy: number;
+	} | null>(null);
+	/**
+	 * 「点一下圆点、再点目标卡」的连线模式（存源节点 id）。
+	 *
+	 * 为什么除了拖还要这一条：那颗圆点在卡片右侧外面、又小，拖动要**一按到底还要走几百像素**，
+	 * 手抖一下就掉到空白处什么也没发生（用户 2026-11-26：「不太好触发」）。
+	 * 点一下 = 进入连线模式，再点目标卡就连上，全程只要求"点得中"。
+	 */
+	const [linkPick, setLinkPick] = useState<{ from: string; fromSide: "left" | "right" } | null>(null);
+	/** 选中的那条线（思维导图那套：点线选中 → 拖它改弧度 / ✕ 删 / Delete 删） */
+	const [chosenEdge, setChosenEdge] = useState<{ from: string; to: string } | null>(null);
+	/**
+	 * 正在拖的弧度草稿：拖动期间只改它（线实时跟着弯），松手才写服务端。
+	 * 存的是控制点相对**两端中点**的偏移，和服务端那份 `edge.curve` 同一套坐标。
+	 */
+	const [curveDraft, setCurveDraft] = useState<{ from: string; to: string; dx: number; dy: number } | null>(null);
+	/** 鼠标停在哪条线上（那一小段时间里它是可删的） */
+	const [hoverEdge, setHoverEdge] = useState<string | null>(null);
+	const edgeHoverTimer = useRef<number | null>(null);
+	const keepEdge = useCallback((key: string) => {
+		if (edgeHoverTimer.current !== null) window.clearTimeout(edgeHoverTimer.current);
+		edgeHoverTimer.current = null;
+		setHoverEdge(key);
+	}, []);
+	/**
+	 * 移出线以后**过一会儿**再收起 ✕。
+	 * 立即收会把按钮也一起弄没：鼠标从线移到 ✕ 上的那一瞬已经离开了 path，按钮一消失就永远点不到。
+	 */
+	const dropEdge = useCallback((key: string) => {
+		if (edgeHoverTimer.current !== null) window.clearTimeout(edgeHoverTimer.current);
+		edgeHoverTimer.current = window.setTimeout(() => {
+			setHoverEdge((current) => (current === key ? null : current));
+			edgeHoverTimer.current = null;
+		}, 260);
+	}, []);
+
+	/** 拖弧度把手时记的两端点 + 指针（世界坐标换算在 move 里做） */
+	const curveDragRef = useRef<{
+		pointerId: number;
+		from: string;
+		to: string;
+		ends: { sx: number; sy: number; ex: number; ey: number };
+	} | null>(null);
+
+	/**
+	 * 按住把手拖动 = 把曲线的"肚子"挪到指针处。
+	 *
+	 * 反推：二次曲线 t=0.5 的点是 `(P0 + 2C + P2) / 4`，所以控制点 `C = 2×指针 − (P0+P2)/2`，
+	 * 再减去两端中点就是存给服务端的那份偏移。也就是说**手指在哪儿，线就从哪儿过**。
+	 */
+	const onCurveDown = (
+		event: React.PointerEvent<HTMLButtonElement>,
+		edge: { from: string; to: string; ends: { sx: number; sy: number; ex: number; ey: number } },
+	) => {
+		if (event.button !== 0) return;
+		event.preventDefault();
+		event.stopPropagation();
+		curveDragRef.current = { pointerId: event.pointerId, from: edge.from, to: edge.to, ends: edge.ends };
+		event.currentTarget.setPointerCapture(event.pointerId);
+		// 这里**不**先塞一个 {0,0} 草稿：那会让线在按下的一瞬间弹成直的，第一次移动才算数
+		setCurveDraft(null);
+	};
+
+	const onCurveMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+		const drag = curveDragRef.current;
+		if (drag === null || event.pointerId !== drag.pointerId) return;
+		const point = toWorld(event.clientX, event.clientY);
+		const midX = (drag.ends.sx + drag.ends.ex) / 2;
+		const midY = (drag.ends.sy + drag.ends.ey) / 2;
+		// 指针 = 曲线中点 → 控制点 = 2×中点 − 中点(两端)；再换成相对两端的偏移
+		setCurveDraft({ from: drag.from, to: drag.to, dx: 2 * point.x - 2 * midX, dy: 2 * point.y - 2 * midY });
+	};
+
+	const onCurveUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+		const drag = curveDragRef.current;
+		if (drag === null || event.pointerId !== drag.pointerId) return;
+		curveDragRef.current = null;
+		const draft = curveDraft;
+		setCurveDraft(null);
+		if (draft !== null && conversationId !== null) {
+			canvasCurve(conversationId, drag.from, drag.to, { dx: draft.dx, dy: draft.dy }, parentId ?? undefined);
+		}
+	};
+
+	/** 删一条依赖线（✕ / 右键 / Delete 三个入口共用） */
+	const unlink = useCallback(
+		(from: string, to: string) => {
+			setChosenEdge(null);
+			setHoverEdge(null);
+			if (conversationId !== null) canvasUnlink(conversationId, from, to, parentId ?? undefined);
+		},
+		[conversationId, parentId],
+	);
 
 	const [selected, setSelected] = useState<string[]>([]);
 	const selectedRef = useRef<Set<string>>(new Set());
@@ -751,6 +872,8 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 				closeMenu();
 				setEditing(null);
 				setSelected([]);
+				setChosenEdge(null);
+				setLinkPick(null);
 				return;
 			}
 			if ((event.metaKey || event.ctrlKey) && (event.key === "a" || event.key === "A")) {
@@ -759,15 +882,29 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 				setSelected(level.nodes.map((node) => node.id));
 				return;
 			}
-			if ((event.key === "Delete" || event.key === "Backspace") && selected.length > 0 && conversationId !== null) {
-				event.preventDefault();
-				canvasDeleteNodes(conversationId, selected, parentId ?? undefined);
-				setSelected([]);
+			if (event.key === "Delete" || event.key === "Backspace") {
+				// 选中了线就删线（和思维导图一样：点一下线，按 Delete）；否则删节点
+				if (chosenEdge !== null) {
+					event.preventDefault();
+					unlink(chosenEdge.from, chosenEdge.to);
+					return;
+				}
+				if (selected.length > 0 && conversationId !== null) {
+					event.preventDefault();
+					canvasDeleteNodes(conversationId, selected, parentId ?? undefined);
+					setSelected([]);
+				}
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [closeMenu, conversationId, level.nodes, parentId, selected]);
+	}, [chosenEdge, closeMenu, conversationId, level.nodes, parentId, selected, unlink]);
+
+	/** 线没了（被删/重画）就把选中态一起清掉，不然 Delete 会往服务端发一条无效请求 */
+	useEffect(() => {
+		if (chosenEdge === null) return;
+		if (!level.edges.some((edge) => edge.from === chosenEdge.from && edge.to === chosenEdge.to)) setChosenEdge(null);
+	}, [chosenEdge, level.edges]);
 
 	/**
 	 * 快照里节点变了（agent 重画 / 加节点）之后重新量高度。
@@ -903,6 +1040,13 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 
 	const onNodePointerDown = (event: React.PointerEvent<HTMLDivElement>, id: string) => {
 		if (event.button !== 0) return;
+		// 连线模式（先点了某个圆点）下点另一张卡 = 连过去；点自己 = 取消
+		if (linkPick !== null && !zDownRef.current && !zoomArmedRef.current) {
+			event.stopPropagation();
+			if (linkPick.from !== id) commitLink(linkPick.from, id, linkPick.fromSide);
+			setLinkPick(null);
+			return;
+		}
 		// 时间线 / 清单是按依赖重排出来的只读视图，拖它没有意义
 		if (!canDrag) return;
 		// 放大工具开着的时候，拖在节点上也应该画放大框 —— 不 stopPropagation，交给视口接管
@@ -1161,6 +1305,76 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 		paint();
 	}, [paint]);
 
+	/** 屏幕坐标 → 世界坐标（和拖动 / 框选用同一套换算：世界 = （屏幕 − view）÷ k） */
+	const toWorld = useCallback((clientX: number, clientY: number) => {
+		const viewport = viewportRef.current;
+		const view = viewRef.current;
+		if (viewport === null) return { x: 0, y: 0 };
+		const rect = viewport.getBoundingClientRect();
+		return { x: (clientX - rect.left - view.x) / view.k, y: (clientY - rect.top - view.y) / view.k };
+	}, []);
+
+	/**
+	 * 指针下面是哪张卡：用 elementsFromPoint 而不是靠事件冒泡 —— 拖拽期间指针被那颗圆点捕获了。
+	 *
+	 * 为什么用**列表**：连线层的点击热区（18px）压在卡片上面，落点正好有线经过时
+	 * `elementFromPoint` 会给到那条线（closest(".canvas-node") 是 null）—— 于是"明明松手在卡上却没连上"。
+	 * 从最上层往下找第一张卡，这类穿透就都不影响了。
+	 */
+	const nodeUnder = useCallback((clientX: number, clientY: number): string | null => {
+		for (const element of document.elementsFromPoint(clientX, clientY)) {
+			const card = element.closest(".canvas-node");
+			if (card instanceof HTMLElement && card.dataset.nodeId) return card.dataset.nodeId;
+		}
+		return null;
+	}, []);
+
+	/** 真的把这条线发出去（拖和点两种入口共用） */
+	const commitLink = useCallback(
+		(from: string, to: string, fromSide?: "left" | "right") => {
+			if (conversationId === null || from === to) return;
+			// 已经有这条就不重复发（服务端也会拒，但界面这边不该白跑一次请求）
+			if (level.edges.some((edge) => edge.from === from && edge.to === to)) return;
+			canvasLink(conversationId, from, to, fromSide === undefined ? {} : { fromSide }, parentId ?? undefined);
+		},
+		[conversationId, level.edges, parentId],
+	);
+
+	const beginLink = (
+		event: React.PointerEvent<HTMLSpanElement>,
+		from: string,
+		fromSide: "left" | "right" = "right",
+	) => {
+		if (event.button !== 0) return;
+		// 不拦住的话这一下会变成「拖这张卡」
+		event.preventDefault();
+		event.stopPropagation();
+		const point = toWorld(event.clientX, event.clientY);
+		setLinking({ from, fromSide, x: point.x, y: point.y, target: null, sx: event.clientX, sy: event.clientY });
+		event.currentTarget.setPointerCapture(event.pointerId);
+	};
+
+	const moveLink = (event: React.PointerEvent<HTMLSpanElement>) => {
+		if (linking === null) return;
+		const point = toWorld(event.clientX, event.clientY);
+		const target = nodeUnder(event.clientX, event.clientY);
+		setLinking({ ...linking, x: point.x, y: point.y, target: target === linking.from ? null : target });
+	};
+
+	const endLink = (event: React.PointerEvent<HTMLSpanElement>) => {
+		if (linking === null) return;
+		const target = nodeUnder(event.clientX, event.clientY);
+		const { from, fromSide, sx, sy } = linking;
+		setLinking(null);
+		if (target !== null && target !== from) {
+			commitLink(from, target, fromSide);
+			return;
+		}
+		// 没落到别的卡上、而且手几乎没动 → 当成「点了一下」，进连线模式等第二次点击。
+		// 手真的拖动过（比如拖到空白处想放弃）就不进，免得平白多出一个"待连线"状态。
+		if (Math.hypot(event.clientX - sx, event.clientY - sy) < 6) setLinkPick({ from, fromSide });
+	};
+
 	const endPointer = (event: React.PointerEvent<HTMLDivElement>) => {
 		const pan = panRef.current;
 		if (pan !== null && event.pointerId === pan.id) {
@@ -1187,7 +1401,11 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 			marqueeRefState.current = null;
 			// 先提交、再隐藏：反过来会让 commitMarquee 读到 display:none
 			if (marquee.moved) commitMarquee(marquee.additive);
-			else if (!marquee.additive) setSelected([]);
+			else if (!marquee.additive) {
+				setSelected([]);
+				setChosenEdge(null);
+				setLinkPick(null);
+			}
 			if (marqueeRef.current) marqueeRef.current.style.display = "none";
 		}
 
@@ -1430,6 +1648,22 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 		return () => document.removeEventListener("fullscreenchange", onChange);
 	}, [paint]);
 
+	/** `F` 也是全屏（和工具条那颗同一套开关）。放进输入框里不算，那是正经字母。 */
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "f" && event.key !== "F") return;
+			if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+			const target = event.target as HTMLElement | null;
+			if (target !== null && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+			// 只在鼠标落在画布上时抢：全局抢 F 会把人搞疯
+			if (!hoverRef.current) return;
+			event.preventDefault();
+			toggleCanvasFullscreen();
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [toggleCanvasFullscreen]);
+
 	/**
 	 * 第一次打开这张画布时先缩到 0.8。
 	 *
@@ -1593,6 +1827,36 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 
 	const nodes = level.nodes;
 	const chosen = useMemo(() => new Set(selected), [selected]);
+	/** 确认框要显示的那个节点（被删/被重画掉时它就是 null，框自己收起来） */
+	const confirmNode = confirmStart === null ? null : (nodes.find((node) => node.id === confirmStart) ?? null);
+
+	/** 二次确认里点了「开始做」：真开跑（节点可能在这一瞬间已经被删/被重画掉，找不到就当没点） */
+	const startConfirmed = useCallback(() => {
+		const node = confirmStart === null ? undefined : nodes.find((each) => each.id === confirmStart);
+		setConfirmStart(null);
+		if (node !== undefined) startNode(node);
+	}, [confirmStart, nodes, startNode]);
+
+	/**
+	 * 确认框的键盘：Enter = 开始做，Esc = 取消。
+	 * 挂 window 而不是挂弹窗自己：双击之后焦点还在画布上，不挂 window 的话按 Enter 没反应。
+	 */
+	useEffect(() => {
+		if (confirmStart === null) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				setConfirmStart(null);
+				return;
+			}
+			if (event.key === "Enter") {
+				event.preventDefault();
+				startConfirmed();
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, [confirmStart, startConfirmed]);
 
 	/** 悬停的节点（缩得很小时弹一张不缩放的预览卡，否则字永远看不清） */
 	const [hover, setHover] = useState<{ id: string; x: number; y: number; w: number; h: number } | null>(null);
@@ -1659,30 +1923,8 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 	const edges = useMemo(() => {
 		if (doc === null || level.edges.length === 0) return [];
 		const posById = new Map(level.nodes.map((node) => [node.id, posOf(node)]));
-		const heightById = new Map(
-			level.nodes.map((node) => [node.id, far ? FAR_NODE_HEIGHT : (heights[node.id] ?? 84)]),
-		);
+		const heightById = new Map(level.nodes.map((node) => [node.id, far ? FAR_NODE_HEIGHT : (heights[node.id] ?? 84)]));
 		const statusById = new Map(level.nodes.map((node) => [node.id, node.status]));
-		/**
-		 * 同一个节点出去的线、进来的线各占一个纵向位置。
-		 *
-		 * 不分开的话所有线从卡片右侧**同一个点**出发，看上去就是一根灰线分叉，
-		 * 根本数不出这是几条依赖（用户 2026-11-26：「连线可以区分一下」）。
-		 */
-		const outCount = new Map<string, number>();
-		const inCount = new Map<string, number>();
-		for (const edge of level.edges) {
-			outCount.set(edge.from, (outCount.get(edge.from) ?? 0) + 1);
-			inCount.set(edge.to, (inCount.get(edge.to) ?? 0) + 1);
-		}
-		const outSeen = new Map<string, number>();
-		const inSeen = new Map<string, number>();
-		/** 第 index 条（共 count 条）在卡片侧边上的落点：均分、上下对称，别超出上下圆角 */
-		const portOffset = (index: number, count: number, height: number) => {
-			if (count <= 1) return 0;
-			const usable = Math.max(0, height - 26);
-			return (index - (count - 1) / 2) * Math.min(16, usable / (count - 1));
-		};
 		return level.edges
 			.map((edge) => {
 				const from = posById.get(edge.from);
@@ -1699,11 +1941,6 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 				const toStatus = statusById.get(edge.to) ?? "todo";
 				const fromHeight = heightById.get(edge.from) ?? 84;
 				const toHeight = heightById.get(edge.to) ?? 84;
-				// 这一条是这个节点伸出去 / 接进来的第几条（按 level.edges 顺序，稳定）
-				const outIndex = outSeen.get(edge.from) ?? 0;
-				outSeen.set(edge.from, outIndex + 1);
-				const inIndex = inSeen.get(edge.to) ?? 0;
-				inSeen.set(edge.to, inIndex + 1);
 				const tone =
 					toStatus === "done"
 						? "done"
@@ -1712,33 +1949,149 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 							: toStatus === "doing" && fromStatus === "done"
 								? "active"
 								: "idle";
-				const x1 = from.x + NODE_WIDTH;
-				const y1 = from.y + fromHeight / 2 + portOffset(outIndex, outCount.get(edge.from) ?? 1, fromHeight);
-				const x2 = to.x;
-				const y2 = to.y + toHeight / 2 + portOffset(inIndex, inCount.get(edge.to) ?? 1, toHeight);
-				// 目标在左边时（用户可能把节点拖乱了）从源节点左侧出，别画一条横穿整张图的线
-				const backwards = x2 < x1;
-				const sx = backwards ? from.x : x1;
-				const ex = backwards ? to.x + NODE_WIDTH : x2;
+				/**
+				 * 出口 / 入口各只有**一个点**：卡片右侧中点出、左侧中点进。
+				 *
+				 * 以前同一个节点的多条线会沿侧边均分（为了"数得出几条依赖"），
+				 * 但线一多就这样：入口被推到卡片下部，一根线看着像从上面拐到下面去了
+				 * （用户 2026-11-26：「这些都集中到一个小圆点里面就好了，就一个，出进一个」）。
+				 */
+				// 目标整体在左边时默认把出/进边翻过来，别画一条横穿整张图的线
+				const backwards = to.x + NODE_WIDTH < from.x + NODE_WIDTH;
+				/**
+				 * 出线 / 进线用哪条边：**用户指定的优先**（他手画时从左边那颗圆点拖出来就是 left），
+				 * 没指定才按位置自动判断（右出左进；目标在左边时反过来）。
+				 * 用户 2026-11-27：「2 个卡片相联时，可以指定连的是左边还是右边」。
+				 */
+				const exitRight = (edge.fromSide ?? (backwards ? "left" : "right")) === "right";
+				const entryRight = (edge.toSide ?? (backwards ? "right" : "left")) === "right";
+				const y1 = from.y + fromHeight / 2;
+				const y2 = to.y + toHeight / 2;
+				const sx = exitRight ? from.x + NODE_WIDTH : from.x;
+				const ex = entryRight ? to.x + NODE_WIDTH : to.x;
 				/**
 				 * 收一点点，把箭头留在卡片外面。
 				 * 不收回来的话箭头尖会顶在卡片边框上、一半压在字上，反而更像"接错了"。
 				 */
-				const tip = backwards ? ex + ARROW_GAP : ex - ARROW_GAP;
-				const bend = Math.max(48, Math.abs(tip - sx) * 0.45) * (backwards ? -1 : 1);
-				const d = `M ${sx} ${y1} C ${sx + bend} ${y1}, ${tip - bend} ${y2}, ${tip} ${y2}`;
+				const tip = entryRight ? ex + ARROW_GAP : ex - ARROW_GAP;
+				/**
+				 * 线的形状。
+				 *
+				 * 默认是一条 S 形三次曲线（`bend` 让它在卡片之间横着走）；
+				 * 用户拖过之后（`edge.curve`，控制点相对两端中点的偏移）就由那个偏移决定 ——
+				 * **拖成什么样就是什么样**，不再有"自动好看"的修正。
+				 *
+				 * 统一都按三次贝塞尔算：二次控制点换算成两个三次控制点（标准换算），
+				 * 这样"曲线上 t 处的点"只有一个算法，把手和 ✕ 都钉在曲线上。
+				 */
+				const draft =
+					curveDraft !== null && curveDraft.from === edge.from && curveDraft.to === edge.to ? curveDraft : null;
+				const curve = draft !== null ? { dx: draft.dx, dy: draft.dy } : edge.curve;
+				const chordMidX = (sx + ex) / 2;
+				const chordMidY = (y1 + y2) / 2;
+				let c1x: number;
+				let c1y: number;
+				let c2x: number;
+				let c2y: number;
+				if (curve !== undefined) {
+					const cx = chordMidX + curve.dx;
+					const cy = chordMidY + curve.dy;
+					c1x = sx + (2 / 3) * (cx - sx);
+					c1y = y1 + (2 / 3) * (cy - y1);
+					c2x = tip + (2 / 3) * (cx - tip);
+					c2y = y2 + (2 / 3) * (cy - y2);
+				} else {
+					const bend = Math.max(48, Math.abs(tip - sx) * 0.45);
+					// 控制点朝卡片外侧伸：出线在右边就向右伸，进线在右边就向右伸
+					c1x = sx + bend * (exitRight ? 1 : -1);
+					c1y = y1;
+					c2x = tip + bend * (entryRight ? 1 : -1);
+					c2y = y2;
+				}
+				/** 曲线上 t 处的点 */
+				const at = (t: number): Pos => {
+					const u = 1 - t;
+					return {
+						x: u * u * u * sx + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * tip,
+						y: u * u * u * y1 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y2,
+					};
+				};
 				return {
 					key: `${edge.from}->${edge.to}`,
-					d,
+					from: edge.from,
+					to: edge.to,
+					d: `M ${sx} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tip} ${y2}`,
 					label: edge.label,
 					tone,
-					mid: { x: (sx + ex) / 2, y: (y1 + y2) / 2 },
+					/** 线的"肚子"（t=0.5）：拖弧度的把手钉在这儿 */
+					mid: at(0.5),
+					/** ✕ 放在靠近起点那一截（t=0.32），别和把手撞在一起 */
+					kill: at(0.32),
+					/** 两端点：拖把手时用它反推控制点 */
+					ends: { sx, sy: y1, ex: tip, ey: y2 },
 				};
 			})
 			.filter(
-				(edge): edge is { key: string; d: string; label: string | undefined; tone: string; mid: Pos } => edge !== null,
+				(
+					edge,
+				): edge is {
+					key: string;
+					from: string;
+					to: string;
+					d: string;
+					label: string | undefined;
+					tone: string;
+					mid: Pos;
+					kill: Pos;
+					ends: { sx: number; sy: number; ex: number; ey: number };
+				} => edge !== null,
 			);
-	}, [doc, level, heights, far, posOf]);
+	}, [curveDraft, doc, level, heights, far, posOf]);
+
+	/**
+	 * 有入线的节点：在它**左边缘中点**画一个小圆点，几条线都收在这一个点上。
+	 *
+	 * 为什么要这个点：线全都落在同一处，不给个"接头"的话，好几条箭头挤在卡片边上看着像没连上。
+	 * 用户 2026-11-26：「都集中到一个小圆点里面就好了」。
+	 */
+	const edgeJoints = useMemo(() => {
+		if (doc === null || level.edges.length === 0) return [];
+		const targets = new Set(level.edges.map((edge) => edge.to));
+		const posById = new Map(level.nodes.map((node) => [node.id, posOf(node)]));
+		const joints: { id: string; x: number; y: number }[] = [];
+		for (const id of targets) {
+			const pos = posById.get(id);
+			if (pos === undefined) continue;
+			const height = far ? FAR_NODE_HEIGHT : (heights[id] ?? 84);
+			joints.push({ id, x: pos.x, y: pos.y + height / 2 });
+		}
+		return joints;
+	}, [doc, far, heights, level, posOf]);
+
+	/**
+	 * 连线层的视口范围（世界坐标）。
+	 *
+	 * 为什么不再用一个 1×1 的 svg：**SVG 只在自己的视口范围内接指针事件**，
+	 * 而线全画在视口外面 —— 于是鼠标永远碰不到线，「悬停出现 ✕」一次也没生效过
+	 * （用户 2026-11-26：「无法删除连线」）。现在按内容包围盒给视口，再把内容整体平移进去，
+	 * 线既能看见、也能点中；四周留 400 的世界空余，手画到视口外也不会被裁。
+	 */
+	const edgeFrame = useMemo(() => {
+		const pad = 400;
+		let minX = 0;
+		let minY = 0;
+		let maxX = NODE_WIDTH;
+		let maxY = 200;
+		for (const node of level.nodes) {
+			const pos = posOf(node);
+			const height = heights[node.id] ?? 84;
+			minX = Math.min(minX, pos.x);
+			minY = Math.min(minY, pos.y);
+			maxX = Math.max(maxX, pos.x + NODE_WIDTH);
+			maxY = Math.max(maxY, pos.y + height);
+		}
+		return { x: minX - pad, y: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 };
+	}, [heights, level.nodes, posOf]);
 
 	/* 空状态：还没有画布 */
 	if (doc === null || nodes.length === 0) {
@@ -1799,39 +2152,102 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 							<span className="canvas-lane-label">{band.label}</span>
 						</div>
 					))}
-					{/* 连线画在世界坐标系里，跟着一起缩放 */}
-					{edges.length > 0 ? (
-						<svg className="canvas-edges">
-							{/*
-							 * 方向箭头：只要一个瘦瘦的 V，跟着线自己的颜色走。
-							 * 没有它的时候，弯线从卡片右侧出发绕到下一张，看着像"接反了"
-							 * （用户 2026-11-26：「带上一个小箭头我看看方向，不要太明显」）。
-							 */}
-							<defs>
-								{(["idle", "active", "done", "blocked"] as const).map((tone) => (
-									<marker
-										key={tone}
-										id={`canvas-arrow-${tone}`}
-										className={`canvas-arrow is-${tone}`}
-										viewBox="0 0 8 8"
-										refX="6.4"
-										refY="4"
-										markerWidth="4.6"
-										markerHeight="4.6"
-										orient="auto"
-									>
-										<path d="M 1.6 1.4 L 6.4 4 L 1.6 6.6" />
-									</marker>
+					{/* 连线画在世界坐标系里，跟着一起缩放。
+					 * 没有任何线时也要留这一层：正在手画的那条临时线得有个地方画。 */}
+					{edges.length > 0 || linking !== null ? (
+						<svg
+							className="canvas-edges"
+							style={{
+								left: edgeFrame.x,
+								top: edgeFrame.y,
+								width: edgeFrame.width,
+								height: edgeFrame.height,
+							}}
+						>
+							{/* 内容整体平移进视口：世界里坐标有正有负，而 svg 自己的坐标原点在左上角 */}
+							<g transform={`translate(${-edgeFrame.x} ${-edgeFrame.y})`}>
+								{/*
+								 * 方向箭头：只要一个瘦瘦的 V，跟着线自己的颜色走。
+								 * 没有它的时候，弯线从卡片右侧出发绕到下一张，看着像"接反了"
+								 * （用户 2026-11-26：「带上一个小箭头我看看方向，不要太明显」）。
+								 */}
+								<defs>
+									{(["idle", "active", "done", "blocked"] as const).map((tone) => (
+										<marker
+											key={tone}
+											id={`canvas-arrow-${tone}`}
+											className={`canvas-arrow is-${tone}`}
+											viewBox="0 0 8 8"
+											refX="6.4"
+											refY="4"
+											markerWidth="6.4"
+											markerHeight="6.4"
+											orient="auto"
+										>
+											<path d="M 1.6 1.4 L 6.4 4 L 1.6 6.6" />
+										</marker>
+									))}
+								</defs>
+								{edges.map((edge) => (
+									<path
+										key={edge.key}
+										className={`is-${edge.tone}${
+											chosenEdge?.from === edge.from && chosenEdge?.to === edge.to ? " is-chosen" : ""
+										}`}
+										d={edge.d}
+										markerEnd={`url(#canvas-arrow-${edge.tone})`}
+									/>
 								))}
-							</defs>
-							{edges.map((edge) => (
-								<path
-									key={edge.key}
-									className={`is-${edge.tone}`}
-									d={edge.d}
-									markerEnd={`url(#canvas-arrow-${edge.tone})`}
-								/>
-							))}
+								{/*
+								 * 线上的可点热区：透明、加宽到 14px。
+								 * 只为了让鼠标「碰到线」：预览里的线只有 1.4px，直接去悬停它是在碰运气。
+								 */}
+								{edges.map((edge) => (
+									<path
+										key={`hit-${edge.key}`}
+										className="canvas-edge-hit"
+										d={edge.d}
+										onPointerEnter={() => keepEdge(edge.key)}
+										onPointerLeave={() => dropEdge(edge.key)}
+										/* 不让视口把这一下当成平移：指针被视口捕获后 click 会落到视口上，线就永远选不中 */
+										onPointerDown={(event) => event.stopPropagation()}
+										/* 点一下 = 选中这条线（选中之后 ✕ / Delete / 右键都能删） */
+										onClick={(event) => {
+											event.stopPropagation();
+											setChosenEdge({ from: edge.from, to: edge.to });
+										}}
+										/* 右键直接删：和思维导图里一样，线没有别的可改的东西 */
+										onContextMenu={(event) => {
+											event.preventDefault();
+											event.stopPropagation();
+											unlink(edge.from, edge.to);
+										}}
+									/>
+								))}
+								{/* 汇合点：有入线的卡片左边缘一个小圆点 */}
+								{edgeJoints.map((joint) => (
+									<circle key={`joint-${joint.id}`} className="canvas-edge-joint" cx={joint.x} cy={joint.y} r={2.6} />
+								))}
+								{/* 正在手画的那一条：虚线跟着指针跑，松开就连上 */}
+								{linking !== null
+									? (() => {
+											const source = level.nodes.find((node) => node.id === linking.from);
+											if (source === undefined) return null;
+											const origin = posOf(source);
+											const height = nodeElsRef.current.get(source.id)?.offsetHeight ?? heights[source.id] ?? 84;
+											// 从哪颗圆点拖出来的，临时线就从那条边出发
+											const sx = linking.fromSide === "right" ? origin.x + NODE_WIDTH : origin.x;
+											const sy = origin.y + height / 2;
+											const bend = Math.max(48, Math.abs(linking.x - sx) * 0.45);
+											return (
+												<path
+													className="canvas-edge-temp"
+													d={`M ${sx} ${sy} C ${sx + bend} ${sy}, ${linking.x - bend} ${linking.y}, ${linking.x} ${linking.y}`}
+												/>
+											);
+										})()
+									: null}
+							</g>
 						</svg>
 					) : null}
 					{nodes.map((node, index) => {
@@ -1843,8 +2259,9 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 						const liveText = isLive ? describeRun(run, t) : null;
 						return (
 							<div
-								className={`canvas-node is-${state.tone} kind-${kindOf(node)}${isSelected ? " is-selected" : ""}${isLive ? " is-live" : ""}`}
+								className={`canvas-node is-${state.tone} kind-${kindOf(node)}${isSelected ? " is-selected" : ""}${isLive ? " is-live" : ""}${linking?.from === node.id ? " is-link-source" : ""}${linking?.target === node.id ? " is-link-target" : ""}`}
 								key={node.id}
+								data-node-id={node.id}
 								ref={(element) => {
 									if (element) nodeElsRef.current.set(node.id, element);
 									else nodeElsRef.current.delete(node.id);
@@ -1874,14 +2291,50 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 								}}
 								onPointerLeave={scheduleDropHover}
 								onDoubleClick={() => {
-									// 有子计划 → 钻进去看；没有 → 还是"开始做这一步"
+									// 有子计划 → 钻进去看（只读，不用确认）；没有 → 问一句再开跑
 									if (node.sub !== undefined) setPath([node.id]);
-									else startNode(node);
+									else setConfirmStart(node.id);
 								}}
-								title={t("双击让 agent 开始做这一步", "Double-click to have the agent start this step")}
+								title={t(
+									"双击让 agent 开始做这一步（会先确认）",
+									"Double-click to have the agent start this step (asks first)",
+								)}
 							>
 								{/* 缩略时的顺序号：标题也一起留在卡上（见 canvas.css 的 is-far 那一段），编号负责对顺序 */}
 								<span className="canvas-node-index">{index + 1}</span>
+								{/*
+								 * 两颗圆点（左 / 右）：从哪边拖出去，线就从哪条边出。
+								 * 只有右边一颗时，想把线从卡片左边引出来只能靠自动判断，做不到
+								 * （用户 2026-11-27：「2 个卡片相联时，可以指定连的是左边还是右边」）。
+								 */}
+								{canDrag ? (
+									<>
+										<span
+											className="canvas-node-port is-left"
+											role="button"
+											tabIndex={-1}
+											title={t("从左边连出一条线", "Link from the left edge")}
+											onPointerDown={(event) => beginLink(event, node.id, "left")}
+											onPointerMove={moveLink}
+											onPointerUp={endLink}
+											onPointerCancel={() => setLinking(null)}
+											onDoubleClick={(event) => event.stopPropagation()}
+											aria-label={t("从左边连一条依赖线", "Draw a dependency from the left")}
+										/>
+										<span
+											className="canvas-node-port is-right"
+											role="button"
+											tabIndex={-1}
+											title={t("从右边连出一条线", "Link from the right edge")}
+											onPointerDown={(event) => beginLink(event, node.id, "right")}
+											onPointerMove={moveLink}
+											onPointerUp={endLink}
+											onPointerCancel={() => setLinking(null)}
+											onDoubleClick={(event) => event.stopPropagation()}
+											aria-label={t("从右边连一条依赖线", "Draw a dependency from the right")}
+										/>
+									</>
+								) : null}
 								{editing !== null && editing.id === node.id ? (
 									/* 重命名：标题一行输入 + 说明多行输入，Enter 保存 / Esc 取消 */
 									<div className="canvas-node-edit">
@@ -1978,7 +2431,61 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 							</div>
 						);
 					})}
+					{/*
+					 * 线的 ✕：鼠标停在某条线上（悬停热区，带 260ms 宽限）才出现。
+					 * 为什么不放在 svg 里：svg 只有 1×1px 且 pointer-events:none（卡片才能被点中），
+					 * 按钮必须是一个能吃的 HTML 元素 —— 放在世界层里，跟着一起缩放。
+					 */}
+					{edges.map((edge) =>
+						chosenEdge?.from === edge.from && chosenEdge?.to === edge.to ? (
+							/* 弧度把手：拖动它把线拉成任意形状（双击复位成默认 S 形） */
+							<button
+								key={`curve-${edge.key}`}
+								type="button"
+								className="canvas-edge-curve"
+								style={{ left: edge.mid.x, top: edge.mid.y }}
+								title={t("拖动我，把线拉成你要的形状（双击复位）", "Drag to bend the line (double-click to reset)")}
+								onPointerDown={(event) => onCurveDown(event, edge)}
+								onPointerMove={onCurveMove}
+								onPointerUp={onCurveUp}
+								onPointerCancel={() => {
+									curveDragRef.current = null;
+									setCurveDraft(null);
+								}}
+								onDoubleClick={(event) => {
+									event.stopPropagation();
+									if (conversationId !== null)
+										canvasCurve(conversationId, edge.from, edge.to, null, parentId ?? undefined);
+								}}
+								onPointerEnter={() => keepEdge(edge.key)}
+								onPointerLeave={() => dropEdge(edge.key)}
+								aria-label={t("调整线的弧度", "Bend the line")}
+							/>
+						) : null,
+					)}
+					{edges.map((edge) =>
+						hoverEdge === edge.key || (chosenEdge?.from === edge.from && chosenEdge?.to === edge.to) ? (
+							<button
+								key={`kill-${edge.key}`}
+								type="button"
+								className="canvas-edge-kill"
+								style={{ left: edge.kill.x, top: edge.kill.y }}
+								title={t("删掉这条依赖线", "Remove this dependency")}
+								onPointerEnter={() => keepEdge(edge.key)}
+								onPointerLeave={() => dropEdge(edge.key)}
+								onPointerDown={(event) => event.stopPropagation()}
+								onClick={() => unlink(edge.from, edge.to)}
+							>
+								✕
+							</button>
+						) : null,
+					)}
 				</div>
+				{linkPick !== null ? (
+					<div className="canvas-link-hint" role="status">
+						{t("点一张卡连过去 · Esc 取消", "Click a card to link it · Esc to cancel")}
+					</div>
+				) : null}
 				<div className="canvas-marquee" ref={marqueeRef} />
 				<div className="canvas-guide canvas-guide-x" ref={guideXRef} />
 				<div className="canvas-guide canvas-guide-y" ref={guideYRef} />
@@ -2093,6 +2600,42 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 								{t("取消", "Cancel")}
 							</button>
 						</div>
+					</div>
+				</>
+			) : null}
+			{/* 双击节点的二次确认：先说清楚「会发消息让 agent 动手」，再让人自己按开始 */}
+			{confirmNode !== null ? (
+				<>
+					<div className="canvas-menu-backdrop" onPointerDown={() => setConfirmStart(null)} />
+					<div
+						className="canvas-confirm"
+						role="dialog"
+						aria-modal="true"
+						aria-label={t("开始做这一步", "Start this step")}
+					>
+						<div className="canvas-confirm-title">{t("开始做这一步？", "Start this step?")}</div>
+						<div className="canvas-confirm-node">{confirmNode.title}</div>
+						<div className="canvas-confirm-body">
+							{t(
+								"会给 agent 发一条消息让它动手做，这一步会标成「正在做」，跑完自动标完成。",
+								"The agent gets a message and starts working; this step turns into “Doing” and finishes as done.",
+							)}
+						</div>
+						<div className="canvas-confirm-actions">
+							<button type="button" className="is-primary" onClick={startConfirmed} autoFocus>
+								{confirmNode.status === "done"
+									? t("重新做一遍", "Run it again")
+									: confirmNode.status === "doing"
+										? t("重新开始", "Restart")
+										: confirmNode.status === "blocked"
+											? t("重试这一步", "Retry")
+											: t("开始做", "Start")}
+							</button>
+							<button type="button" onClick={() => setConfirmStart(null)}>
+								{t("取消", "Cancel")}
+							</button>
+						</div>
+						<div className="canvas-confirm-hint">{t("Enter 开始 · Esc 取消", "Enter to start · Esc to cancel")}</div>
 					</div>
 				</>
 			) : null}
@@ -2369,29 +2912,28 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 						className={`canvas-icon-btn${canvasFull ? " is-on" : ""}`}
 						onClick={toggleCanvasFullscreen}
 						aria-pressed={canvasFull}
-						title={canvasFull ? t("退出全屏（Esc）", "Exit full screen (Esc)") : t("画布全屏", "Full screen canvas")}
+						title={
+							canvasFull
+								? t("退出全屏（Esc / F）", "Exit full screen (Esc / F)")
+								: t("画布全屏（F）", "Full screen canvas (F)")
+						}
 						aria-label={canvasFull ? t("退出全屏", "Exit full screen") : t("画布全屏", "Full screen canvas")}
 					>
 						<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-							{canvasFull ? (
-								<path
-									d="M6.2 2.6v3.6H2.6M9.8 2.6v3.6h3.6M6.2 13.4v-3.6H2.6M9.8 13.4v-3.6h3.6"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="1.4"
-									strokeLinecap="round"
-									strokeLinejoin="round"
-								/>
-							) : (
-								<path
-									d="M2.6 6.2V2.6h3.6M13.4 6.2V2.6H9.8M2.6 9.8v3.6h3.6M13.4 9.8v3.6H9.8"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="1.4"
-									strokeLinecap="round"
-									strokeLinejoin="round"
-								/>
-							)}
+							{/* 退出态：两支对角箭头朝外（拉满全屏）；进入态：两支朝内。
+							 * 刻意不用四角括号——那是左边的「看全局」，13px 下两套括号长得一模一样。 */}
+							<path
+								d={
+									canvasFull
+										? "M2.67 9.33h4v4M13.33 6.67h-4V2.67M9.33 6.67L14 2M2 14l4.67-4.67"
+										: "M10 2h4v4M6 14H2v-4M14 2L9.33 6.67M2 14l4.67-4.67"
+								}
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="1.4"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
 						</svg>
 					</button>
 				) : null}
@@ -2481,11 +3023,12 @@ export function CanvasView({ onOpenFile }: { root: string | null; onOpenFile: (p
 					</>
 				) : null}
 			</div>
-			{doc.goal ? <div className="canvas-goal">{doc.goal}</div> : null}
+			{/* 原来这里还有一条左下角的目标句（.canvas-goal，用户 2026-11-27：「底部这个不要了」）：
+			 * 只显示一句被 ellipsis 截断的 doc.goal，看图的人压根读不到，已去掉。 */}
 			<div className="canvas-hint">
 				{t(
-					"拖空白平移 · Shift+拖框选 · Z+拖框选放大 · +/- 缩放 · 双击节点开工",
-					"Drag to pan · Shift+drag to box-select · Z+drag to zoom · +/- to zoom · double-click to start",
+					"拖空白平移 · Shift+拖框选 · Z+拖框选放大 · +/- 缩放 · F 全屏 · 双击节点开工",
+					"Drag to pan · Shift+drag to box-select · Z+drag to zoom · +/- to zoom · F for full screen · double-click to start",
 				)}
 			</div>
 		</div>

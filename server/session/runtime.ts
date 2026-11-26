@@ -19,7 +19,16 @@ import { createTemplatePromptGenerator } from "./template-prompt.js";
 import { createCronPromptGenerator } from "./cron-prompt.js";
 import { messagesForTitle } from "./title-prompt.js";
 import { createSnapshotFor } from "./snapshot-for.js";
-import { moveNodes, removeNodes, setArtifacts, setStatus, updateNode } from "./canvas.js";
+import {
+	linkNodes,
+	moveNodes,
+	removeNodes,
+	setArtifacts,
+	setEdgeCurve,
+	setStatus,
+	unlinkEdge,
+	updateNode,
+} from "./canvas.js";
 import { collectArtifacts } from "./canvas-artifacts.js";
 import {
 	CANVAS_SUGGEST_SYSTEM,
@@ -789,6 +798,17 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 		},
 		canvasMove(conversationId, moves, parent = null) {
 			return editCanvas(conversationId, (doc) => moveNodes(doc, moves, parent));
+		},
+		/** 用户自己画一条依赖线（不重排坐标：位置是他刚摆好的「工作产物」） */
+		canvasLink(conversationId, from, to, sides = {}, parent = null) {
+			return editCanvas(conversationId, (doc) => linkNodes(doc, from, to, sides, parent));
+		},
+		canvasUnlink(conversationId, from, to, parent = null) {
+			return editCanvas(conversationId, (doc) => unlinkEdge(doc, from, to, parent));
+		},
+		/** 用户拖出来的弧度（null = 复位成默认 S 形） */
+		canvasCurve(conversationId, from, to, curve, parent = null) {
+			return editCanvas(conversationId, (doc) => setEdgeCurve(doc, from, to, curve, parent));
 		},
 		async canvasSuggest(conversationId, nodeIds, parent = null) {
 			const doc = options.canvasOf?.(conversationId) ?? null;

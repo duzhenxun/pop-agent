@@ -9,10 +9,10 @@ import { normalizeWorkspacePath } from "./util/paths.js";
 
 /** 这个服务端版本认识这条请求吗？（用来把"不认识"和"载荷不对"分开报） */
 export function isKnownRequestType(type: unknown): type is ClientRequestType {
-	return typeof type === "string" && (REQUEST_TYPES as string[]).includes(type);
+	return typeof type === "string" && (REQUEST_TYPES as readonly string[]).includes(type);
 }
 
-export const REQUEST_TYPES: ClientRequestType[] = [
+export const REQUEST_TYPES = [
 	"set_engine",
 	"refresh_resources",
 	"refresh_actions",
@@ -31,6 +31,9 @@ export const REQUEST_TYPES: ClientRequestType[] = [
 	"canvas_set_status",
 	"canvas_delete",
 	"canvas_move",
+	"canvas_link",
+	"canvas_unlink",
+	"canvas_curve",
 	"canvas_start_node",
 	"canvas_update_node",
 	"canvas_suggest",
@@ -50,7 +53,19 @@ export const REQUEST_TYPES: ClientRequestType[] = [
 	"delete_subagent_profile",
 	"set_subagent_settings",
 	"interrupt_subagent",
-];
+] as const satisfies readonly ClientRequestType[];
+
+/**
+ * 编译期护栏：`ClientRequest` 里新加了一种请求、却忘了往上面那张清单里加，这一行就编译不过。
+ *
+ * 为什么需要它：清单是手工维护的，只改 `protocol.ts` 的联合类型 + ws 的 switch 也能过 tsc，
+ * 但请求在**进入 switch 之前**就先被 `isKnownRequestType` 判掉了 —— 前端收到的是
+ * 「这个版本不认识这条请求，重启一下就好」，看着像没重启，其实代码里就缺这一行。
+ * （2026-11-26：`canvas_link` / `canvas_unlink` 就是这么翻车的。）
+ */
+export const REQUEST_TYPES_COMPLETE: Exclude<ClientRequestType, (typeof REQUEST_TYPES)[number]> extends never
+	? true
+	: never = true;
 const DECISIONS: ApprovalDecision[] = ["once", "always", "deny"];
 
 function isAttachmentRef(value: unknown): value is AttachmentRef {
@@ -71,6 +86,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function nonEmptyString(value: unknown): value is string {
 	return typeof value === "string" && value.length > 0;
+}
+
+/** 连线的端点只能落在卡片的左右两条边上 */
+function sideOf(value: unknown): "left" | "right" | null {
+	return value === "left" || value === "right" ? value : null;
 }
 
 /** 画布写操作的公共校验：会话 id 必须是字符串，节点 id 只收安全字符（与 canvas.ts 一致） */
@@ -105,7 +125,7 @@ export function parseClientRequest(raw: unknown): ClientRequest | null {
 	if (!isRecord(raw)) return null;
 	const { id, type } = raw;
 	if (!nonEmptyString(id) || !nonEmptyString(type)) return null;
-	if (!REQUEST_TYPES.includes(type as ClientRequestType)) return null;
+	if (!isKnownRequestType(type)) return null;
 
 	if (type === "get_state") return { id, type: "get_state" };
 	if (type === "new_chat") {
@@ -404,6 +424,69 @@ export function parseClientRequest(raw: unknown): ClientRequest | null {
 			payload: {
 				conversationId: conversationId.trim(),
 				moves,
+				...(parent.parent === undefined ? {} : { parent: parent.parent }),
+			},
+		};
+	}
+
+	// 用户手画的依赖线：两端都是节点 id（和 canvas_move 里的 id 同一条规矩），自己连自己一律不收
+	if (type === "canvas_link" || type === "canvas_unlink") {
+		const conversationId = payload.conversationId;
+		if (!nonEmptyString(conversationId)) return null;
+		const from = payload.from;
+		const to = payload.to;
+		if (!nonEmptyString(from) || !nonEmptyString(to)) return null;
+		const fromId = from.trim();
+		const toId = to.trim();
+		if (!CANVAS_NODE_ID.test(fromId) || !CANVAS_NODE_ID.test(toId) || fromId === toId) return null;
+		const parent = optionalParent(payload.parent);
+		if (!parent.ok) return null;
+		const fromSide = sideOf(payload.fromSide);
+		const toSide = sideOf(payload.toSide);
+		const body = {
+			conversationId: conversationId.trim(),
+			from: fromId,
+			to: toId,
+			...(fromSide === null ? {} : { fromSide }),
+			...(toSide === null ? {} : { toSide }),
+			...(parent.parent === undefined ? {} : { parent: parent.parent }),
+		};
+		return type === "canvas_link"
+			? { id, type: "canvas_link", payload: body }
+			: { id, type: "canvas_unlink", payload: body };
+	}
+
+	// 拖线的弧度：`curve: null` = 复位成默认形状
+	if (type === "canvas_curve") {
+		const conversationId = payload.conversationId;
+		if (!nonEmptyString(conversationId)) return null;
+		const from = payload.from;
+		const to = payload.to;
+		if (!nonEmptyString(from) || !nonEmptyString(to)) return null;
+		const fromId = from.trim();
+		const toId = to.trim();
+		if (!CANVAS_NODE_ID.test(fromId) || !CANVAS_NODE_ID.test(toId) || fromId === toId) return null;
+		let curve: { dx: number; dy: number } | null = null;
+		const raw = payload.curve;
+		if (raw !== null && raw !== undefined) {
+			if (!isRecord(raw)) return null;
+			const { dx, dy } = raw;
+			if (typeof dx !== "number" || typeof dy !== "number") return null;
+			if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+			// 和 canvas.ts 的 CURVE_LIMIT 一致：再大的偏移只会把线甩到屏幕外
+			const clamp = (value: number) => Math.max(-4000, Math.min(4000, value));
+			curve = { dx: clamp(dx), dy: clamp(dy) };
+		}
+		const parent = optionalParent(payload.parent);
+		if (!parent.ok) return null;
+		return {
+			id,
+			type: "canvas_curve",
+			payload: {
+				conversationId: conversationId.trim(),
+				from: fromId,
+				to: toId,
+				curve,
 				...(parent.parent === undefined ? {} : { parent: parent.parent }),
 			},
 		};

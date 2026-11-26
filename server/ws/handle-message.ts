@@ -216,6 +216,47 @@ export async function handleMessage(socket: ClientSink, raw: string, deps: Handl
 					deps.runtime.canvasMove(request.payload.conversationId, request.payload.moves, request.payload.parent ?? null),
 				);
 				return;
+			case "canvas_link":
+				deps.reply(
+					socket,
+					request.id,
+					deps.runtime.canvasLink(
+						request.payload.conversationId,
+						request.payload.from,
+						request.payload.to,
+						{
+							...(request.payload.fromSide === undefined ? {} : { fromSide: request.payload.fromSide }),
+							...(request.payload.toSide === undefined ? {} : { toSide: request.payload.toSide }),
+						},
+						request.payload.parent ?? null,
+					),
+				);
+				return;
+			case "canvas_curve":
+				deps.reply(
+					socket,
+					request.id,
+					deps.runtime.canvasCurve(
+						request.payload.conversationId,
+						request.payload.from,
+						request.payload.to,
+						request.payload.curve,
+						request.payload.parent ?? null,
+					),
+				);
+				return;
+			case "canvas_unlink":
+				deps.reply(
+					socket,
+					request.id,
+					deps.runtime.canvasUnlink(
+						request.payload.conversationId,
+						request.payload.from,
+						request.payload.to,
+						request.payload.parent ?? null,
+					),
+				);
+				return;
 			case "canvas_suggest":
 				deps.reply(
 					socket,

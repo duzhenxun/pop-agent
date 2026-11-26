@@ -788,6 +788,53 @@ export function canvasMoveNodes(
 	});
 }
 
+/** 画布：用户自己画一条依赖线（从一张卡的圆点拖到另一张卡） */
+export function canvasLink(
+	conversationId: string,
+	from: string,
+	to: string,
+	sides: { fromSide?: "left" | "right"; toSide?: "left" | "right" } = {},
+	parent?: string,
+): void {
+	if (from === to) return;
+	send({
+		id: `req-${++seq}`,
+		type: "canvas_link",
+		payload: {
+			conversationId,
+			from,
+			to,
+			...(sides.fromSide === undefined ? {} : { fromSide: sides.fromSide }),
+			...(sides.toSide === undefined ? {} : { toSide: sides.toSide }),
+			...(parent === undefined ? {} : { parent }),
+		},
+	});
+}
+
+/** 画布：拖出来的线形（`curve: null` = 复位成默认形状） */
+export function canvasCurve(
+	conversationId: string,
+	from: string,
+	to: string,
+	curve: { dx: number; dy: number } | null,
+	parent?: string,
+): void {
+	send({
+		id: `req-${++seq}`,
+		type: "canvas_curve",
+		payload: { conversationId, from, to, curve, ...(parent === undefined ? {} : { parent }) },
+	});
+}
+
+/** 画布：删掉一条依赖线 */
+export function canvasUnlink(conversationId: string, from: string, to: string, parent?: string): void {
+	send({
+		id: `req-${++seq}`,
+		type: "canvas_unlink",
+		payload: { conversationId, from, to, ...(parent === undefined ? {} : { parent }) },
+	});
+}
+
 export function setModel(
 	modelId: string,
 	conversationId?: string | null,

@@ -103,7 +103,27 @@ export type NodeInput = {
 	kind?: unknown;
 	order?: unknown;
 };
-export type EdgeInput = { from?: unknown; to?: unknown; label?: unknown };
+export type EdgeInput = { from?: unknown; to?: unknown; label?: unknown; curve?: unknown; fromSide?: unknown; toSide?: unknown };
+
+/** 连线端点只能落在卡片的左右两条边上 */
+export type EdgeSide = "left" | "right";
+
+function sideOf(value: unknown): EdgeSide | null {
+	return value === "left" || value === "right" ? value : null;
+}
+
+/** 线的弧度偏移上限（世界坐标）：超出这个量级的"弧度"只会把线甩出屏幕 */
+const CURVE_LIMIT = 4000;
+
+/** 只收有限的数值对；其它一律当成"没有手动形状" */
+function curveOf(value: unknown): { dx: number; dy: number } | null {
+	if (typeof value !== "object" || value === null) return null;
+	const { dx, dy } = value as { dx?: unknown; dy?: unknown };
+	if (typeof dx !== "number" || typeof dy !== "number") return null;
+	if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null;
+	const clamp = (v: number) => Math.max(-CURVE_LIMIT, Math.min(CURVE_LIMIT, v));
+	return { dx: clamp(dx), dy: clamp(dy) };
+}
 
 /**
  * 模型给的节点清单 → 合法节点（先不排坐标）。
@@ -149,7 +169,18 @@ export function normalizeEdges(input: readonly EdgeInput[], nodes: readonly Canv
 		if (seen.has(key)) continue;
 		seen.add(key);
 		const label = text(raw.label, 24);
-		edges.push({ from, to, ...(label === "" ? {} : { label }) });
+		// 用户拖过的弧度要保住：agent 往同一层加节点时会带上网旧边一起过一遍 normalizeEdges
+		const curve = curveOf(raw.curve);
+		const fromSide = sideOf(raw.fromSide);
+		const toSide = sideOf(raw.toSide);
+		edges.push({
+			from,
+			to,
+			...(label === "" ? {} : { label }),
+			...(fromSide === null ? {} : { fromSide }),
+			...(toSide === null ? {} : { toSide }),
+			...(curve === null ? {} : { curve }),
+		});
 		if (edges.length >= CANVAS_MAX_EDGES) break;
 	}
 	return edges;
@@ -359,6 +390,75 @@ export function removeNodes(doc: CanvasDoc, ids: readonly string[], parent: stri
 	const nodes = level.nodes.filter((node) => !kill.has(node.id));
 	const edges = level.edges.filter((edge) => !kill.has(edge.from) && !kill.has(edge.to));
 	return withLevel(doc, parent, nodes, edges) ?? doc;
+}
+
+/**
+ * 用户自己画一条依赖线。
+ *
+ * 为什么不顺手重排坐标：手画线是为了「就按我画的流程来」，一重排就把刚摆好的位置也抺了。
+ * 坐标只在 agent 重画整张图（`planDoc`）时才由 `layout` 重算。
+ * 不合法（节点不在这一层 / 自己连自己 / 已经有这条 / 超过上限）就原样返回，不升 rev。
+ */
+export function linkNodes(
+	doc: CanvasDoc,
+	from: string,
+	to: string,
+	sides: { fromSide?: unknown; toSide?: unknown } = {},
+	parent: string | null = null,
+): CanvasDoc {
+	const level = levelOf(doc, parent);
+	if (level === null) return doc;
+	const known = new Set(level.nodes.map((node) => node.id));
+	if (!known.has(from) || !known.has(to) || from === to) return doc;
+	if (level.edges.some((edge) => edge.from === from && edge.to === to)) return doc;
+	if (level.edges.length >= CANVAS_MAX_EDGES) return doc;
+	const fromSide = sideOf(sides.fromSide);
+	const toSide = sideOf(sides.toSide);
+	return (
+		withLevel(doc, parent, level.nodes, [
+			...level.edges,
+			{ from, to, ...(fromSide === null ? {} : { fromSide }), ...(toSide === null ? {} : { toSide }) },
+		]) ?? doc
+	);
+}
+
+/**
+ * 拖一条线的弧度（用户在线的把手上拖）。
+ *
+ * `curve === null` → 回到默认 S 形（把手拖回去就是"复位"）。
+ * 存相对两端中点的偏移，所以节点之后被拖动/重排，弧线还跟着这两端走。
+ */
+export function setEdgeCurve(
+	doc: CanvasDoc,
+	from: string,
+	to: string,
+	curve: unknown,
+	parent: string | null = null,
+): CanvasDoc {
+	const level = levelOf(doc, parent);
+	if (level === null) return doc;
+	const next = curveOf(curve);
+	let found = false;
+	const edges = level.edges.map((edge) => {
+		if (edge.from !== from || edge.to !== to) return edge;
+		found = true;
+		const copy: CanvasEdge = { ...edge };
+		if (next === null) delete copy.curve;
+		else copy.curve = next;
+		return copy;
+	});
+	// 线已经不在了（被删/被重画）：原样返回，不升 rev
+	if (!found) return doc;
+	return withLevel(doc, parent, level.nodes, edges) ?? doc;
+}
+
+/** 删掉一条依赖线（用户在画布上点线上那个 ✕ 删的）。 */
+export function unlinkEdge(doc: CanvasDoc, from: string, to: string, parent: string | null = null): CanvasDoc {
+	const level = levelOf(doc, parent);
+	if (level === null) return doc;
+	const edges = level.edges.filter((edge) => !(edge.from === from && edge.to === to));
+	if (edges.length === level.edges.length) return doc;
+	return withLevel(doc, parent, level.nodes, edges) ?? doc;
 }
 
 /** 用户在画布上拖动后回写坐标（只动位置，不改内容） */

@@ -328,7 +328,25 @@ export type CanvasNode = {
 };
 
 /** 依赖连线：from 先于 to。`label` 可选（例如「走完才能进下一步」）。 */
-export type CanvasEdge = { from: string; to: string; label?: string };
+/**
+ * 一条依赖线。
+ *
+ * `curve` 是**用户手动拖出来的形状**：控制点相对「两端中点」的偏移（世界坐标）。
+ * 存相对偏移而不是绝对坐标，节点挪动时弧线会跟着一起走，而不是留在原地。
+ * 没有 `curve` = 用默认的 S 形（见 `CanvasView` 里那段曲线算法）。
+ */
+export type CanvasEdge = {
+	from: string;
+	to: string;
+	label?: string;
+	/**
+	 * 从卡片哪一侧出线 / 从哪一侧进线（用户手画时指定的）。
+	 * 不写就按几何自动判断（右边出、左边进；目标在左边时整体翻过来）。
+	 */
+	fromSide?: "left" | "right";
+	toSide?: "left" | "right";
+	curve?: { dx: number; dy: number };
+};
 
 /**
  * 一条会话对应的一份画布。
@@ -804,6 +822,52 @@ export type CanvasMoveNodesRequest = {
 };
 
 /**
+ * 用户自己在画布上画的那条依赖线（从一张卡的圆点拖到另一张卡）。
+ *
+ * 和 `canvas_move` 分开两条而不是「整份 edges 覆盖」：手画和手删是同一个动作的正反面，
+ * 传「一条线」不用担心两边同时改把对方的改动抺掉。只改依赖，坐标不动（用户刚摆好的位置不能被重排）。
+ */
+export type CanvasLinkRequest = {
+	id: string;
+	type: "canvas_link";
+	payload: {
+		conversationId: string;
+		from: string;
+		to: string;
+		/** 从源卡的哪一侧出线（默认自动） */
+		fromSide?: "left" | "right";
+		/** 进目标卡的哪一侧（默认自动） */
+		toSide?: "left" | "right";
+		parent?: string;
+	};
+};
+
+/**
+ * 拖线的弧度（用户在线中间那个把手上拖动）。
+ *
+ * `curve: null` = 恢复默认 S 形。存的是控制点相对两端中点的偏移，所以节点被拖动/重排后
+ * 弧线的形状还跟着这两端走，不会飘在原处。
+ */
+export type CanvasCurveRequest = {
+	id: string;
+	type: "canvas_curve";
+	payload: {
+		conversationId: string;
+		from: string;
+		to: string;
+		curve: { dx: number; dy: number } | null;
+		parent?: string;
+	};
+};
+
+/** 删掉一条依赖线（是 `canvas_link` 的反操作） */
+export type CanvasUnlinkRequest = {
+	id: string;
+	type: "canvas_unlink";
+	payload: { conversationId: string; from: string; to: string; parent?: string };
+};
+
+/**
  * 画布：让模型给几条"用户可能想说的话"（那个输入框的候选指令）。
  * 返回 `{ ok: true, suggestions: string[] }`。
  */
@@ -868,6 +932,9 @@ export type ClientRequest =
 	| CanvasSetStatusRequest
 	| CanvasDeleteNodesRequest
 	| CanvasMoveNodesRequest
+	| CanvasLinkRequest
+	| CanvasUnlinkRequest
+	| CanvasCurveRequest
 	| CanvasStartNodeRequest
 	| CanvasUpdateNodeRequest
 	| CanvasSuggestRequest;

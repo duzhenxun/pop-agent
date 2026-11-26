@@ -166,6 +166,23 @@ export type Runtime = {
 	canvasSetStatus(conversationId: string, nodeId: string, status: CanvasNodeStatus, parent?: string | null): Result;
 	canvasDelete(conversationId: string, ids: readonly string[], parent?: string | null): Result;
 	canvasMove(conversationId: string, moves: readonly { id: string; x: number; y: number }[], parent?: string | null): Result;
+	/** 画布：用户自己画的依赖线（连线 / 删线），只改依赖、不重排坐标 */
+	canvasLink(
+		conversationId: string,
+		from: string,
+		to: string,
+		sides?: { fromSide?: "left" | "right"; toSide?: "left" | "right" },
+		parent?: string | null,
+	): Result;
+	canvasUnlink(conversationId: string, from: string, to: string, parent?: string | null): Result;
+	/** 画布：拖线的弧度（`curve: null` = 复位） */
+	canvasCurve(
+		conversationId: string,
+		from: string,
+		to: string,
+		curve: { dx: number; dy: number } | null,
+		parent?: string | null,
+	): Result;
 	/** 让模型给几条"用户可能想说的话"（输入框的候选指令）；失败时退回固定候选 */
 	canvasSuggest(
 		conversationId: string,

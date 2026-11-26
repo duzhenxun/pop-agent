@@ -92,23 +92,38 @@
  * （用户 2026-11-26：「这种线为什么不是在上面」）。pointer-events 已经是 none，不会挡点击。 */
 .canvas-edges {
 	position: absolute;
-	top: 0;
-	left: 0;
-	width: 1px;
-	height: 1px;
-	overflow: visible;
+	/* left / top / width / height 由 JSX 按内容包围盒给：
+	 * SVG 只在**自己的视口范围内**接指针事件，视口比内容小的话线就点不中。 */
 	pointer-events: none;
 	z-index: 3;
+}
+
+/* 入线的汇合点：有依赖进来的卡片左边缘一颗小圆点，几条线都收在这一点上 */
+.canvas-edges circle.canvas-edge-joint {
+	fill: var(--bg-elev);
+	stroke: var(--border-strong);
+	stroke-width: 1.2;
+}
+
+/* 选中（点过）的那条线：加粗提亮，让人知道 Delete 删的是它 */
+.canvas-edges path.is-chosen {
+	stroke: var(--accent);
+	stroke-width: 2.4;
+	opacity: 1;
+	stroke-dasharray: none;
+	animation: none;
 }
 
 /* 连线：默认压暗一点，让「走完的路」和「正在走的那段」自己浮出来。
  * 十几条一样亮的灰线挤在一起就是一团噪声（用户：「现在的线感觉很乱」）。 */
 .canvas-edges path {
 	fill: none;
-	stroke: var(--border-strong);
-	stroke-width: 1.4;
+	/* 从 --border-strong（#cfd6df，几乎和底色一样）换成更深的灰蓝：
+	 * 默认状态下也得"一眼看见有几条依赖"（用户 2026-11-27：「画布的线默认不明显」）。 */
+	stroke: var(--text-faint);
+	stroke-width: 1.8;
 	stroke-linecap: round;
-	opacity: 0.5;
+	opacity: 0.8;
 	transition:
 		stroke 0.18s ease,
 		opacity 0.18s ease;
@@ -117,7 +132,7 @@
 /* 还没轮到：前置没完成，压到最暗。
  * 但别压太狠（0.3 → 0.42）：箭头尖也吃这层透明度，太淡就只剩一根线、看不出方向了。 */
 .canvas-edges path.is-idle {
-	opacity: 0.42;
+	opacity: 0.62;
 }
 
 /* 已经走完的依赖：和 done 节点同色，缩略时也能和色块图对得上 */
@@ -149,7 +164,8 @@
  * 透明度由 path 自己带（marker 会跟着父元素的不透明度），不用重复写。 */
 .canvas-arrow path {
 	fill: none;
-	stroke-width: 1.3;
+	/* 箭头比线本身粗一点，指方向的那个尖才看得出来（用户 2026-11-27：「箭头要明显」） */
+	stroke-width: 1.8;
 	stroke-linecap: round;
 	stroke-linejoin: round;
 }
@@ -181,6 +197,176 @@
 	.canvas-edges path.is-active {
 		animation: none;
 	}
+}
+
+/* 卡上的「连线」圆点：拖到另一张卡上就连一条依赖线。
+ * 默认透明，悬停在卡上才浮出来 —— 一张图十几张卡，一排圆点会抢走标题的注意力。 */
+.canvas-node-port {
+	position: absolute;
+	inset-inline-end: -8px;
+	top: 50%;
+	width: 13px;
+	height: 13px;
+	margin-top: -7px;
+	border: 1px solid var(--border-strong);
+	border-radius: 50%;
+	background: var(--bg-elev);
+	/* 常显但淡：看不见的圆点等于没有这个功能（用户 2026-11-26：「自己连接」要能看得出来） */
+	opacity: 0.45;
+	cursor: crosshair;
+	/* 触屏上不能让它变成滚动：不然手指一拖就是在滚页 */
+	touch-action: none;
+	z-index: 4;
+	transition:
+		opacity 0.15s ease,
+		transform 0.15s ease,
+		background-color 0.15s ease;
+}
+
+/* 11px 的圆点对鼠标还是太小：拿一圈透明垫层把可抓范围撑到 23px */
+/* 左边那颗：从卡片左侧出线 */
+.canvas-node-port.is-left {
+	inset-inline-end: auto;
+	inset-inline-start: -8px;
+}
+
+/* 正在从左侧拉线时，右边那颗别抢注意力 */
+.canvas-node.is-link-source .canvas-node-port:not(.is-right) {
+	opacity: 1;
+}
+
+.canvas-node-port::before {
+	content: "";
+	position: absolute;
+	inset: -9px;
+	border-radius: 50%;
+}
+
+.canvas-node:hover .canvas-node-port,
+.canvas-node.is-selected .canvas-node-port,
+.canvas-node.is-link-source .canvas-node-port {
+	opacity: 1;
+}
+
+.canvas-node-port:hover {
+	transform: scale(1.35);
+	background: var(--accent);
+	border-color: var(--accent);
+}
+
+.canvas-node.is-link-source .canvas-node-port {
+	background: var(--accent);
+	border-color: var(--accent);
+	opacity: 1;
+}
+
+/*
+ * 悬停 / 选中的卡片抬到连线**上面**。
+ *
+ * 为什么必须抬：卡片右边的连线圆点就在卡片边缘外一两像素，而连线的点击热区（18px 宽）
+ * 正是从卡片右边缘出发的 —— 不抬起来的话鼠标先碰到的是线，那颗圆点几乎点不中
+ * （用户 2026-11-26：「那个小圆点放上去之后就可以画线，但是现在不太好触发」）。
+ * 只在悬停 / 选中时抬，平时保持「线在卡片上面」，不改变整体的层次。
+ */
+.canvas-node:hover,
+.canvas-node.is-selected,
+.canvas-node.is-link-source {
+	z-index: 6;
+}
+
+/* 拖拽中指针下面那张卡：虚线框告诉人「松手就连到它」 */
+.canvas-node.is-link-target {
+	outline: 2px dashed var(--accent);
+	outline-offset: 2px;
+}
+
+/* 缩略态（≤ FAR_K）不提供连线：卡片只剩一行字，图也没几个人会在这时改结构 */
+.canvas-view.is-far .canvas-node-port {
+	display: none;
+}
+
+/* 正在手画的那一条：虚线跟着指针跑 */
+.canvas-edges path.canvas-edge-temp {
+	stroke: var(--accent);
+	stroke-width: 2;
+	stroke-dasharray: 6 5;
+	opacity: 0.9;
+}
+
+/* 线的悬停热区：画成透明的、宽 14px。
+ * 只为了鼠标能「碰到线」（线本身只有 1.4px，直接悬停在碰运气），
+ * 所以它不能影响看到的样子 —— opacity:0 + 透明笔触；父层 pointer-events:none 不影响子元素自己接事件。 */
+.canvas-edges path.canvas-edge-hit {
+	/* 不靠 opacity:0 藏起来：透明仍可命中，但“看得见的笔触”在各家浏览器 / 合成层下最稳 */
+	stroke: var(--accent);
+	stroke-opacity: 0.001;
+	stroke-width: 18;
+	opacity: 1;
+	pointer-events: stroke;
+	cursor: pointer;
+}
+
+/* 连线模式的提示条：贴在视口底部中间（视口坐标，不跟缩放） */
+.canvas-link-hint {
+	position: absolute;
+	left: 50%;
+	bottom: 14px;
+	transform: translateX(-50%);
+	z-index: 6;
+	padding: 5px 12px;
+	border-radius: 999px;
+	border: 1px solid var(--accent);
+	background: var(--bg-elev);
+	color: var(--accent);
+	font-size: 12px;
+	white-space: nowrap;
+	pointer-events: none;
+	box-shadow: 0 6px 18px rgb(0 0 0 / 14%);
+}
+
+/* 线的弧度把手：选中那条线之后出现在线的"肚子"上，拖它任意弯 */
+.canvas-edge-curve {
+	position: absolute;
+	z-index: 6;
+	width: 13px;
+	height: 13px;
+	margin: -6.5px 0 0 -6.5px;
+	padding: 0;
+	border: 2px solid var(--accent);
+	border-radius: 50%;
+	background: var(--bg-elev);
+	cursor: grab;
+	box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+}
+
+.canvas-edge-curve:active {
+	cursor: grabbing;
+	background: var(--accent);
+}
+
+/* 线上的 ✕（删这条依赖）：落在世界层里，跟着缩放 */
+.canvas-edge-kill {
+	position: absolute;
+	z-index: 5;
+	display: grid;
+	place-items: center;
+	width: 18px;
+	height: 18px;
+	margin: -9px 0 0 -9px;
+	padding: 0;
+	border: 1px solid var(--border-strong);
+	border-radius: 50%;
+	background: var(--bg-elev);
+	color: var(--text-dim);
+	font-size: 11px;
+	line-height: 1;
+	cursor: pointer;
+	box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+.canvas-edge-kill:hover {
+	border-color: var(--red);
+	color: var(--red);
 }
 
 /* 一个任务节点：世界坐标定位；拖动位移走独立的 translate，React 重渲染不会把它冲掉 */
@@ -512,6 +698,87 @@
 	flex: 0 0 auto;
 	font-size: 10px;
 	color: #b45309;
+}
+
+/* 双击节点的二次确认：屏幕居中，比「就这几步说两句」那个输入框更“重” */
+.canvas-confirm {
+	position: absolute;
+	z-index: 44;
+	/* 横向居中、竖向略偏上：人的视线在画布中上部，正中间反而会被工具栏挡住 */
+	top: 46%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 300px;
+	box-sizing: border-box;
+	padding: 14px;
+	border-radius: 12px;
+	background: var(--bg-elev);
+	border: 1px solid var(--border-strong);
+	box-shadow: 0 18px 44px rgb(0 0 0 / 24%);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.canvas-confirm-title {
+	font-size: 13.5px;
+	font-weight: 600;
+	color: var(--text);
+}
+
+/* 点的是哪一步：单独一行、带左侧状态色条，一眼对上刚双击的那张卡 */
+.canvas-confirm-node {
+	font-size: 12.5px;
+	color: var(--text-dim);
+	padding: 6px 8px;
+	border-left: 3px solid var(--accent);
+	border-radius: 4px;
+	background: var(--bg-elev-2);
+	/* 标题可能很长：最多两行，后面的省略 */
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.canvas-confirm-body {
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-faint);
+}
+
+.canvas-confirm-actions {
+	display: flex;
+	gap: 8px;
+	justify-content: flex-end;
+	margin-top: 2px;
+}
+
+.canvas-confirm-actions button {
+	font: inherit;
+	font-size: 12px;
+	padding: 4px 12px;
+	border-radius: 7px;
+	border: 1px solid var(--border);
+	background: transparent;
+	color: var(--text-dim);
+	cursor: pointer;
+}
+
+.canvas-confirm-actions button.is-primary {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: #fff;
+}
+
+.canvas-confirm-actions button.is-primary:hover {
+	filter: brightness(1.05);
+}
+
+.canvas-confirm-hint {
+	font-size: 10.5px;
+	color: var(--text-faint);
+	text-align: right;
 }
 
 /* 「就这几步说两句」的输入框 */
@@ -1188,24 +1455,8 @@
 	border-left: 1px solid var(--border);
 }
 
-.canvas-goal {
-	position: absolute;
-	left: 8px;
-	bottom: 8px;
-	max-width: 60%;
-	padding: 4px 9px;
-	border-radius: 8px;
-	background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
-	border: 1px solid var(--border);
-	font-size: 11.5px;
-	color: var(--text-dim);
-	backdrop-filter: blur(6px);
-	pointer-events: none;
-	z-index: 20;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
+/* 2026-11-27：左下角那条目标句（.canvas-goal）不要了（用户：「底部这个不要了」）。
+ * 它只显示一句 ellipsis 截断的 doc.goal，不看图也没信息量，反倒被当成卡片的尾巴。 */
 
 .canvas-hint {
 	position: absolute;
@@ -1250,8 +1501,7 @@
 
 /* 手机上画布没法用（手势全被视口吃掉），提示与抬头都收起来 */
 @media (max-width: 400px) {
-	.canvas-hint,
-	.canvas-goal {
+	.canvas-hint {
 		display: none;
 	}
 }
