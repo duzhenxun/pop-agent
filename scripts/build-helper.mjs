@@ -48,9 +48,20 @@ if (result.status !== 0) {
 	process.exit(1);
 }
 
-const binary = join(RELEASE_DIR, "agent-computer");
-if (!existsSync(binary)) {
-	console.error(`[helper] 编译结束但没找到二进制：${binary}`);
+/**
+ * 只校验 `.app` 与分发 zip。
+ *
+ * 2026-11-26：不再产出「内嵌裸二进制」（`release/agent-computer`）—— 它跟已装的 .app 是两个
+ * TCC 身份，CLI 一旦优先 spawn 它，`screenRecording` 就永远是 false。所以这里也不能再要求它。
+ */
+const app = join(HELPER_DIR, "dist", "Agent Computer.app");
+if (!existsSync(app)) {
+	console.error(`[helper] 编译结束但没找到 .app：${app}`);
 	process.exit(1);
 }
-console.log(`[helper] macOS 内嵌二进制就绪：${binary}`);
+const zip = join(RELEASE_DIR, "Agent Computer.zip");
+if (!existsSync(zip)) {
+	console.error(`[helper] 编译结束但没找到分发 zip：${zip}`);
+	process.exit(1);
+}
+console.log(`[helper] macOS helper 就绪：${app}`);
