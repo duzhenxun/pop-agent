@@ -92,6 +92,26 @@ export function disableSkill(): void {
 	renameSync(file, join(dir, SKILL_FILE_DISABLED));
 }
 
+/**
+ * 「重新生成」：不改启用状态，只按**当前这份 CLI**（`node` 绝对路径 + cli.js 绝对路径）重写一遍。
+ *
+ * 什么时候需要：换过 node（nvm 版本切换）、挪过安装位置、Skill 是别的版本写进去的 ——
+ * 那里面写的绝对路径就过期了，Agent 一跑就是 `command not found`。
+ * 与 enableSkill 的区别：那个负责「打开」，这个负责「对齐路径」，禁用状态下也允许（写回 .disabled）。
+ */
+export function regenerateSkill(): { cli: string; enabled: boolean; file: string } {
+	const dir = skillDir();
+	const cli = cliCommand();
+	const enabled = existsSync(join(dir, SKILL_FILE));
+	const file = join(dir, enabled ? SKILL_FILE : SKILL_FILE_DISABLED);
+	if (existsSync(file) && !isManagedByUs(readFileSync(file, "utf8"))) {
+		throw new Error(`${file} 不是本应用写入的，先改名或删除它再重新生成`);
+	}
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(file, renderSkill(cli), "utf8");
+	return { cli, enabled, file };
+}
+
 export function renderSkill(cli: string): string {
 	return SKILL_TEMPLATE.replaceAll("{{CLI}}", cli);
 }
@@ -128,9 +148,9 @@ const SKILL_TEMPLATE = [
 	"0. **先看当前会话，已经是目标人就跳过搜索。** `observe 微信` 看一眼右侧聊天窗口标题（截图上标题在聊天区顶部）：**标题 == 目标联系人时，直接跳到第 4 步粘贴文案、第 5 步回车发送**，不要按 cmd+f 重搜。搜索是最容易翻车的一环（粘贴不触发实时过滤、结果行可能点错），能省就省。只有当前会话不是目标人时才做第 1~3 步。",
 	"",
 	"1. 激活：`osascript -e 'tell application \"WeChat\" to activate'`。",
-	"2. 搜索：`{{CLI}} keys 微信 cmd+f`，再 `{{CLI}} paste 微信 \"姓名\" --format text` 粘贴姓名。不要用 `type` 输入中文，不生效。",
+	'2. 搜索：`{{CLI}} keys 微信 cmd+f`，再 `{{CLI}} paste 微信 "姓名" --format text` 粘贴姓名。不要用 `type` 输入中文，不生效。',
 	"3. 回车：`{{CLI}} keys 微信 Return`。会打开最靠上的精确匹配会话，光标自动落在输入框里。",
-	"4. 粘贴文案：`{{CLI}} paste 微信 \"文案\" --format text`。",
+	'4. 粘贴文案：`{{CLI}} paste 微信 "文案" --format text`。',
 	"5. 回车发送：`{{CLI}} keys 微信 Return`。",
 	"6. 全程只需两次观察：进入会话后确认标题对得上（第 0 或第 1 步那次观察就能确认）、发送后确认气泡出现。中间不要再反复截图验收。",
 	"",
@@ -151,7 +171,7 @@ const SKILL_TEMPLATE = [
 	"修法（不用再让用户补任何授权）：让 helper 以自己的身份独立启动，改用 socket 通信。",
 	"",
 	"```bash",
-	"open -a \"/Applications/Agent Computer.app\"   # 独立进程，TCC 判定落回它自己",
+	'open -a "/Applications/Agent Computer.app"   # 独立进程，TCC 判定落回它自己',
 	"sleep 3",
 	"CLI={{CLI}}",
 	"AGENT_COMPUTER_TRANSPORT=socket $CLI status   # 应变成两个 true",
@@ -162,7 +182,7 @@ const SKILL_TEMPLATE = [
 	"```bash",
 	"cat > /tmp/ac.sh <<'EOF'",
 	"#!/bin/bash",
-	"AGENT_COMPUTER_TRANSPORT=socket exec {{CLI}} \"$@\"",
+	'AGENT_COMPUTER_TRANSPORT=socket exec {{CLI}} "$@"',
 	"EOF",
 	"chmod +x /tmp/ac.sh",
 	"```",

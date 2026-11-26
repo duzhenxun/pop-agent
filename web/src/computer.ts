@@ -75,3 +75,9 @@ export const openComputerPrivacyPane = (pane: "accessibility" | "screen") =>
 
 export const setComputerSkill = (enabled: boolean) =>
 	call<ComputerStatus>("/skill", { method: "POST", body: { enabled } });
+/**
+ * 「重新生成 Skill」：按**当前这份 CLI**（node 绝对路径 + cli.js）重写 SKILL.md，不改启用状态。
+ * 换过 node / 挪过安装位置之后，旧文件里的路径就失效了，点一下重新对齐。
+ */
+export const regenerateComputerSkill = () =>
+	call<ComputerStatus>("/skill", { method: "POST", body: { regenerate: true } });

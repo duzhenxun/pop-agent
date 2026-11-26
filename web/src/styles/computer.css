@@ -227,3 +227,31 @@
 	font-size: var(--chat-ui-font-size, 13px);
 	line-height: 1.6;
 }
+
+/* 「重新生成 Skill」：一行说明 + 一颗按钮；下面那行是生成出来的命令，供人核对路径对不对 */
+.computer-skill-regen {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: 8px;
+}
+
+.computer-skill-regen .computer-hint {
+	margin-top: 0;
+	flex: 1;
+	min-width: 0;
+}
+
+.computer-skill-cli {
+	display: block;
+	margin-top: 6px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	background: var(--bg-elev2, rgba(127, 127, 127, 0.08));
+	color: var(--text-dim);
+	font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+	font-size: 11px;
+	line-height: 1.5;
+	word-break: break-all;
+}

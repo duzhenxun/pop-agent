@@ -8,6 +8,7 @@ import {
 	openComputerPrivacyPane,
 	requestComputerAccess,
 	fetchComputerStatus,
+	regenerateComputerSkill,
 	saveComputerSettings,
 	setComputerSkill,
 	type ComputerSettings,
@@ -139,6 +140,18 @@ export function ComputerPanel() {
 			setStatus(await setComputerSkill(!(status?.skill.enabled ?? false)));
 		});
 
+	/**
+	 * 重新生成 Skill：把里面的命令重写成**当前这份 CLI**（node 绝对路径 + cli.js 绝对路径）。
+	 *
+	 * 换过 node（nvm 切版本）、挪过 pop-agent 的安装位置、或这文件是别的版本写进去的，
+	 * 旧路径就会失效 —— Agent 一跑 `command not found`，但它不会告诉你「路径过期了」。
+	 * 这里给一颗显式按钮，改完上面那行会跟着变，用户能自己核对。
+	 */
+	const regenerateSkill = () =>
+		run(async () => {
+			setStatus(await regenerateComputerSkill());
+		});
+
 	const commitSpeed = () => {
 		const value = Number(speedDraft);
 		if (!Number.isFinite(value) || value < POINTER_SPEED_RANGE.min || value > POINTER_SPEED_RANGE.max) {
@@ -239,6 +252,31 @@ export function ComputerPanel() {
 						onChange={() => void toggleSkill()}
 					/>
 				</label>
+				{/*
+				 * 「重新生成」：文件里写的是绝对路径（node + cli.js），换过 node 版本 / 挪过安装位置就过期。
+				 * 不让用户自己去编辑 markdown —— 让他点一下，再把生成出来的命令显示在下面供核对。
+				 */}
+				<div className="computer-skill-regen">
+					<span className="computer-hint">
+						{t(
+							"技能里的命令是绝对路径（node + cli.js）。换过 node 版本或挪过安装目录后点右边重新生成。",
+							"The skill embeds an absolute path (node + cli.js). Regenerate it after switching Node versions or moving the install.",
+						)}
+					</span>
+					<button
+						type="button"
+						className="computer-btn"
+						onClick={() => void regenerateSkill()}
+						disabled={busy || !status?.supported}
+					>
+						{t("重新生成 Skill", "Regenerate skill")}
+					</button>
+				</div>
+				{status?.skill.cli ? (
+					<code className="computer-skill-cli" title={status.skill.cli}>
+						{status.skill.cli}
+					</code>
+				) : null}
 			</section>
 
 			{/*
@@ -263,12 +301,7 @@ export function ComputerPanel() {
 						))}
 					</ol>
 					<div className="computer-install-actions">
-						<button
-							type="button"
-							className="computer-btn"
-							disabled={busy}
-							onClick={() => void run(installHelper)}
-						>
+						<button type="button" className="computer-btn" disabled={busy} onClick={() => void run(installHelper)}>
 							{busy ? t("正在安装…", "Installing…") : t("一键安装", "Install for me")}
 						</button>
 						<a className="computer-btn" href={status.install.downloadUrl} target="_blank" rel="noreferrer">

@@ -5,6 +5,7 @@
  *   GET  /settings          读取设置（来自 helper 的 settings.json / allow-protected.txt）
  *   PUT  /settings          写入设置（只改提交的键）
  *   POST /skill  {enabled}  启用或禁用 Skill（写入 / 改名 ~/.agents/skills/agent-computer）
+ *   POST /skill  {regenerate:true}  按当前 CLI 路径重写 SKILL.md（不改启用状态）
  *   GET  /apps?query=微信   已安装应用模糊搜索（给「解除保护的应用」输入框做联想）
  *   POST /open-privacy {pane} 打开 macOS「隐私与安全性」里对应的那一页（辅助功能 / 屏幕录制）
  */
@@ -14,7 +15,7 @@ import { getComputerStatus, requestComputerAccess } from "./status.js";
 import { installHelper, startHelper } from "./install-helper.js";
 import { listInstalledApps, searchApps } from "./apps.js";
 import { readSettings, writeSettings } from "./settings.js";
-import { disableSkill, enableSkill } from "./skill.js";
+import { disableSkill, enableSkill, regenerateSkill } from "./skill.js";
 
 function failure(res: Response, error: unknown): void {
 	res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
@@ -64,6 +65,12 @@ export function createComputerRouter(): express.Router {
 
 	router.post("/skill", async (req, res) => {
 		try {
+			// regenerate：只重写内容（把里面写死的 node / cli.js 绝对路径对齐到现在这份），不改开关
+			if (req.body?.regenerate === true) {
+				regenerateSkill();
+				res.json(await getComputerStatus());
+				return;
+			}
 			if (typeof req.body?.enabled !== "boolean") throw new Error("enabled 必须是布尔值");
 			if (req.body.enabled) enableSkill();
 			else disableSkill();
