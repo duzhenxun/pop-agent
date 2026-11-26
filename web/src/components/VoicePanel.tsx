@@ -919,7 +919,9 @@ export function VoicePanel() {
 						onChange={() => saveVoiceInputSettings({ ...voiceInput, continuous: !voiceInput.continuous })}
 					/>
 				</label>
-				<label className="voice-row voice-row-select">
+				{/* 标题一行、下拉另起一行铺满（用户 2026-11-26：「下拉框给它分一行，放到标题后面」）。
+				 * 原来是「左标题右下拉」：下拉固定 320px 上限，引擎名一长就顶到面板外、还被截断。 */}
+				<label className="voice-row voice-row-select voice-row-stacked">
 					<span className="voice-row-label">
 						{t("近讲灵敏度（越大越只认近处；0 = 关闭）", "Near-field only (higher = nearer only; 0 = off)")}
 					</span>
@@ -947,7 +949,7 @@ export function VoicePanel() {
 					</select>
 				</label>
 
-				<label className="voice-row voice-row-select">
+				<label className="voice-row voice-row-select voice-row-stacked">
 					<span className="voice-row-label">
 						{t("识别引擎（自动 = 先本地，带标点）", "Recognition engine (auto = local first)")}
 						{cloudError ? <span className="voice-row-hint">{cloudError}</span> : null}
@@ -1109,7 +1111,7 @@ export function VoicePanel() {
 					</>
 				) : null}
 
-				<label className="voice-row voice-row-select">
+				<label className="voice-row voice-row-select voice-row-stacked">
 					<span className="voice-row-label">
 						{t("说完时正在跑", "While a turn is running")}
 						<span className="voice-row-hint">
