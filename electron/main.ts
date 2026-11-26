@@ -391,9 +391,14 @@ function createWindow(url: string): BrowserWindow {
 			 * 唯一的 preload：只给渲染层一个函数（把拖进来的 File 换成真实路径）。
 			 * 拖文件/文件夹进输入框时要的是那个路径，而 Electron 32+ 删了 `File.path`，
 			 * 只能靠 `webUtils.getPathForFile`，它只在有 preload 的渲染进程里存在。
-			 * 产物和 main.js 同级（`electron-dist/electron/preload.js`，见 electron/tsconfig.json 的 outDir）。
+			 * 产物和 main.js 同级（`electron-dist/electron/preload.cjs`，见 electron/tsconfig.json 的 outDir）。
+			 *
+			 * **必须是 `.cjs`**：这个窗口是 `sandbox: true`，沙箱里的 preload 按 CJS 求值；
+			 * 而仓库 package.json 是 `type: module`，`.js` 会被当成 ESM →
+			 * `Cannot use import statement outside a module`，preload 直接不生效。
+			 * 源码因此叫 `preload.cts`（见那个文件的头注释）。
 			 */
-			preload: fileURLToPath(new URL("./preload.js", import.meta.url)),
+			preload: fileURLToPath(new URL("./preload.cjs", import.meta.url)),
 		},
 	});
 

@@ -17,6 +17,7 @@
 	},
 	"include": [
 		"./**/*.ts",
+		"./**/*.cts",
 		"../server/brand.ts",
 		"../server/util/desktop.ts",
 		"../server/util/env.ts",
