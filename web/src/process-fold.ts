@@ -65,7 +65,16 @@ export type FoldLayout = {
 	lastAnswerAt: number;
 	/** 最后一段过程（思考/工具）的下标；-1 = 没动过手。判断「哪句正文是结论」要用它 */
 	lastProcessAt: number;
-	/** 折叠之后外面还留得下结论（= 结论在最后一次动手之后）；false 就不该收，收了只剩一行按钮 */
+	/**
+	 * 折叠之后外面还留不留得下一句正文（= 这一轮动过手，且有过非空文案 / 报错）。
+	 *
+	 * 2026-11-26 修正：以前要求「最后那段文案必须在最后一次动手**之后**」——
+	 * 于是 `思考 → 说明 → 工具 → 结束` 这种收尾被判成「没有结论」，`hidesNarration` 顺手把
+	 * 最后那句说明也藏了，外面只剩一行折叠条（用户：「有时 agent 完成了，怎么没有看到最后面的文案」）。
+	 * 扫了本机 183 个会话、1768 个回合，**602 个（34%）**都是这个形状。
+	 * 现在只要有过文案就算有结论：`insideFold` 仍旧只包「最后一段之前」的全部，
+	 * 但不会再出现「一句话都不剩」。
+	 */
 	hasAnswer: boolean;
 	/**
 	 * 收起时这个下标要不要跟过程一起进折叠（最后一个结论之前的全部）。
@@ -84,8 +93,8 @@ export type FoldLayout = {
  * 空白正文不算结论（流式末尾常见一个只有换行的 text 块）。
  *
  * 没有结论的回合（插队 / 打断把这一轮截在工具调用上）**跑完后也整条进折叠**，这条规则在
- * `hidesNarration`：那一版把说明留在外面，于是“收起来”只收走了思考和工具卡，中间那几段话
- * 还在屏幕上排着，看着还是没收起（用户 2026-11-03）。
+ * `hidesNarration`；但「整条」有个下限：**最后那段非空文案永远留在外面**（2026-11-26 修正）。
+ * 以前连它一起收，于是收完只剩一行按钮、一个字都不剩 —— 用户看到的却是「最后面的文案没了」。
  */
 export function foldLayout(segments: readonly FoldSegment[]): FoldLayout {
 	let firstProcessAt = -1;
@@ -104,7 +113,7 @@ export function foldLayout(segments: readonly FoldSegment[]): FoldLayout {
 		firstProcessAt,
 		lastAnswerAt,
 		lastProcessAt,
-		hasAnswer: hasProcess && lastAnswerAt > lastProcessAt,
+		hasAnswer: hasProcess && lastAnswerAt >= 0,
 		insideFold: (index) => hasProcess && index < lastAnswerAt,
 	};
 }
@@ -153,8 +162,8 @@ export function processView(input: ProcessFold): ProcessView {
  * 收起时这一段**说明文字**（text）要不要藏？
  *   - `view` 不是 `collapsed`（铺开）：一律画；
  *   - 落在折叠范围内（最后一个结论之前的说明）：藏；
- *   - 这一轮**已经跑完却没有结论**（插队 / 打断截在工具调用上）：说明也一起藏 ——
- *     否则“收起”只收走了思考和工具卡，中间几段叙述还在屏幕上排着，看着还是没收（用户 2026-11-03）。
+ *   - 这一轮**已经跑完、而且全程一句话都没有**（只有思考 / 工具）：实在没东西可留，
+ *     就只能剩那一行按钮；**只要有过正文（hasAnswer）就一定留得下最后那一段**（2026-11-26）。
  *     **跑着的时候不藏**：那时候叙述就是「它现在在干什么」，收掉就没得看了。
  * 错误块不走这个判断：报错永远画在外面（那一行摘要报的是思考/工具，藏进去就没人知道了）。
  */
