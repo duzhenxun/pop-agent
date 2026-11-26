@@ -1,6 +1,6 @@
 {
 	"name": "pop-agent",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"bin": {
 		"pop-agent": "dist/server/cli.js",
 		"pop": "dist/server/cli.js"
