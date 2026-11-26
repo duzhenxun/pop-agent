@@ -52,7 +52,7 @@
 		"app": "npm run build && npm run build:electron && npm run app:name && electron .",
 		"app:dev": "npm run build:server && npm run build:electron && npm run app:name && electron .",
 		"app:name": "node scripts/app-name.mjs",
-		"app:dist": "npm run build && npm run build:electron && npm run build:helper && npm run runtime:fetch && npm run package:prepare && electron-builder",
+		"app:dist": "npm run build && npm run build:electron && npm run runtime:fetch && npm run package:prepare && electron-builder",
 		"start": "node dist/server/cli.js",
 		"stop": "node dist/server/cli.js stop",
 		"restart": "node dist/server/cli.js restart",
@@ -63,11 +63,10 @@
 		"format:check": "prettier --check .",
 		"icons": "node scripts/make-icons.mjs",
 		"cues": "node scripts/make-voice-cues.mjs",
-		"build:helper": "node scripts/build-helper.mjs",
 		"runtime:fetch": "node scripts/fetch-node-runtime.mjs",
 		"package:prepare": "node scripts/prepare-package.mjs",
 		"prepack": "npm run build",
-		"app:dist:thin": "npm run build && npm run build:electron && npm run build:helper && npm run package:prepare && electron-builder --config electron-builder.thin.yml"
+		"app:dist:thin": "npm run build && npm run build:electron && npm run package:prepare && electron-builder --config electron-builder.thin.yml"
 	},
 	"devDependencies": {
 		"@types/express": "^5.0.0",
