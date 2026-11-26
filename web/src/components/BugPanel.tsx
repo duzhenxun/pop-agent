@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { REPO_URL } from "../brand.ts";
+import { lastCrash } from "./ErrorBoundary.tsx";
 import { bugIssueTitle, bugIssueUrl, bugReportText, type BugReport } from "../bug-report.ts";
 import { copyText } from "../clipboard.ts";
 import { useAppSelector } from "../store.ts";
@@ -17,11 +18,25 @@ import { useT } from "../use-language.ts";
  * 提交地址是仓库自己的 issues（`REPO_URL`，见 `brand.ts`）；正文由 `bug-report.ts` 的
  * 纯函数生成（脱敏 / 截断 / 编码都在那边，这里不拼字符串）。
  */
+/**
+ * 上次界面崩溃的现场，直接铺进「多写两句」里（可删）。
+ *
+ * 为什么放在这儿而不是藏在某个诊断入口：崩溃过的人手上正好有这条 issue 要提，
+ * 让他再去找一遍堆栈等于没加。堆栈只取前 12 行（GitHub 正文不需要整段）。
+ */
+function crashPrefill(): string {
+	const crash = lastCrash();
+	if (crash === null) return "";
+	const when = new Date(crash.at).toLocaleString();
+	const stack = crash.detail.split("\n").slice(0, 12).join("\n").trim();
+	return [`【上次界面出错 ${when}】`, crash.message, stack].filter((part) => part !== "").join("\n");
+}
+
 export function BugPanel() {
 	const t = useT();
 	const snapshot = useAppSelector((state) => state.snapshot);
 	const [summary, setSummary] = useState("");
-	const [detail, setDetail] = useState("");
+	const [detail, setDetail] = useState(crashPrefill);
 
 	const report: BugReport = {
 		summary,

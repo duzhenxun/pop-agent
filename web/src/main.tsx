@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { ErrorBoundary, saveCrashReport } from "./components/ErrorBoundary.tsx";
 import { connect, startOnEmptyScreen, watchVisibility } from "./ws.ts";
 import { sessionIdFromUrl } from "./session-url.ts";
 import { resetLegacyPrefsOnce } from "./pref-reset.ts";
@@ -48,11 +49,28 @@ watchVisualViewport();
 const container = document.getElementById("root");
 if (!container) throw new Error("缺少 #root 容器");
 
+/**
+ * 白屏兜底：**兜不住的错当场留证据**。
+ *
+ * React 的渲染错误由 `<ErrorBoundary>` 接住并画在屏幕上；但事件回调（点按钮、弹窗里操作）
+ * 里抛的错不经过 React，只会冒到 window —— 那些错往往就是「点了没反应 / 界面状态乱了」的真凶。
+ * 这里统一记进 localStorage（`pop-agent.last-crash`），下次白屏至少还有现场可查。
+ */
+window.addEventListener("error", (event) => {
+	saveCrashReport(event.error ?? event.message);
+});
+window.addEventListener("unhandledrejection", (event) => {
+	saveCrashReport(event.reason);
+});
+
 const root = createRoot(container);
 const boot = () =>
 	root.render(
 		<StrictMode>
-			<App />
+			{/* 边界包在 App 外面：render 里抛一次错就会整棵卸载（= 白屏），必须有人接住 */}
+			<ErrorBoundary>
+				<App />
+			</ErrorBoundary>
 		</StrictMode>,
 	);
 

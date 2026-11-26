@@ -67,6 +67,7 @@
 @import "./styles/bug-report.css";
 @import "./styles/computer.css";
 @import "./styles/toast.css";
+@import "./styles/error-boundary.css"; /* 界面崩溃时那一屏（白屏的最后一道防线） */
 @import "./styles/image-viewer.css"; /* 点图片原地弹大图（不再开新标签页） */
 @import "./styles/mcp-panes.css";
 @import "./styles/engine-panel.css";
