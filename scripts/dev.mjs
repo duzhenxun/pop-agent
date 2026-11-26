@@ -20,6 +20,29 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
+/**
+ * 从 App 里起的终端会把壳的环境变量一并继承过来（`POP_AGENT_APP` / `POP_AGENT_WEB_DIST` …）。
+ *
+ * 开发态必须把它们**摘干净**，否则最阴的一条是 `POP_AGENT_WEB_DIST`：
+ * 后端会去读 `/Applications/PopAgent.app/…/web/dist` 那份**旧的**前端，
+ * 于是你改 `web/src` 半天、浏览器里一动不动（Vite 自己的 9090 倒是新的，两边混着更迷）。
+ * 同理不能要 `POP_AGENT_APP`（桌面模式）和 `POP_AGENT_VERSION`（抬头会写成 App 的版本）。
+ */
+const INHERITED_POP_AGENT_ENV = [
+	"POP_AGENT_APP",
+	"POP_AGENT_WEB_DIST",
+	"POP_AGENT_VERSION",
+	"POP_AGENT_CLI_NAME",
+	"POP_AGENT_FOREGROUND",
+	"POP_AGENT_UPDATE_NOTICE",
+];
+
+function cleanEnv(extra) {
+	const env = { ...process.env, ...extra };
+	for (const key of INHERITED_POP_AGENT_ENV) delete env[key];
+	return env;
+}
+
 const SERVER_PORT = process.env.POP_AGENT_BACKEND_PORT ?? "9091";
 const WEB_PORT = process.env.POP_AGENT_DEV_PORT ?? "9090";
 
@@ -83,7 +106,7 @@ function start(spec) {
 	const child = spawn(spec.command, spec.args, {
 		cwd: REPO_ROOT,
 		stdio: "inherit",
-		env: { ...process.env, ...spec.env },
+		env: cleanEnv(spec.env),
 	});
 	running.set(spec.name, child);
 	child.on("exit", (code) => {

@@ -319,13 +319,41 @@ const PROCESS_FLAGS = new Set([
 ]);
 
 /**
+ * 纯函数：该不该自己开浏览器；不该开就把**原因**一同返回（要打给人看）。
+ *
+ * `isTTY` 是主力依据：桌面壳 spawn 服务时 stdio 是**管道**，这一条自然就把它拦下了。
+ * 所以**不需要**再看 `POP_AGENT_APP`（ADR-0051 的桌面模式标记）—— 以前多那一层判断
+ * 真实坑人（用户 2026-11-26：「pop 启动时没有自动打开网页」）：从 App 起的终端会继承
+ * `POP_AGENT_APP=1`，在里面敲 `pop` 就永远不开浏览器，而且一声不响。
+ */
+export function browserOpenDecision(input: {
+	open: boolean;
+	isTTY: boolean;
+	ci: boolean;
+}): { open: true } | { open: false; why: string } {
+	if (!input.open) return { open: false, why: "用了 --no-open" };
+	if (input.ci) return { open: false, why: "CI 环境" };
+	if (!input.isTTY) return { open: false, why: "当前输出不是终端（被别的程序拉起，或重定向到了文件）" };
+	return { open: true };
+}
+
+/**
  * 打开系统浏览器。
  *
  * 什么时候**不**开：`--no-open`、没有终端（CI / 被别的程序拉起）、Linux 上没有图形会话。
- * 打不开也不报错 —— URL 已经打在终端里了，复制一下就能用。
+ * 不开的时候要**把原因和 URL 都打出来** —— 静默跳过只会让人以为「点了没反应」。
+ * 打不开（没装 xdg-open / 权限不够）也不报错 —— URL 已经在上面那一行了。
  */
 function openBrowser(url: string): void {
-	if (!process.stdout.isTTY || process.env.CI) return;
+	const decision = browserOpenDecision({
+		open: true,
+		isTTY: process.stdout.isTTY === true,
+		ci: process.env.CI !== undefined && process.env.CI !== "",
+	});
+	if (!decision.open) {
+		console.log(`没自动打开浏览器（${decision.why}）—— 手动打开：${url}`);
+		return;
+	}
 	try {
 		if (process.platform === "darwin") {
 			spawn("open", [url], { stdio: "ignore", detached: true }).unref();
@@ -469,6 +497,18 @@ function invokedDirectly(): boolean {
 	}
 }
 
+/**
+ * 纯函数：「这个进程真的是壳 spawn 出来的吗」。
+ *
+ * `POP_AGENT_APP=1` 本身不够：壳 spawn 服务时 stdio 是**管道**，而人真在终端里敲 `pop` 时
+ * stdout 是 tty。从 App 里起的终端会把 `POP_AGENT_APP` 一起继承下来（实测 2026-11-26），
+ * 于是用户在自己终端里敲 `pop` 就被当成壳的子进程 —— 不开浏览器、不问升级、只打一行 READY JSON。
+ * 所以判据是「带了桌面标记 **且** 没有终端」。
+ */
+export function isShellChild(input: { desktop: boolean; stdoutIsTTY: boolean }): boolean {
+	return input.desktop && !input.stdoutIsTTY;
+}
+
 async function main(): Promise<void> {
 	const parsed = parseArgs(process.argv.slice(2));
 	if (parsed.help) {
@@ -476,6 +516,26 @@ async function main(): Promise<void> {
 		return;
 	}
 	Object.assign(process.env, parsed.env);
+	/**
+	 * 继承来的桌面标记要**先弄清楚真假**：没有终端 = 真的是壳在起我（保留桌面行为）；
+	 * 有终端 = 用户自己在跑（撕掉标记，否则升级不会被问、浏览器不会被开）。
+	 * 这行必须在任何分支之前 —— 后面的 `applyDesktopEnv()`、ready 行、升级询问都看它。
+	 */
+	if (isDesktopMode() && !isShellChild({ desktop: true, stdoutIsTTY: process.stdout.isTTY === true })) {
+		/**
+		 * 从 App 里起的终端会把壳那一整套环境变量带回用户 shell（实测 2026-11-26：
+		 * `POP_AGENT_APP=1` / `POP_AGENT_WEB_DIST=/Applications/PopAgent.app/…/web/dist` /
+		 * `POP_AGENT_VERSION=0.1.3` / `POP_AGENT_CLI_NAME`）。逐个举例为什么必须撕：
+		 *   - `POP_AGENT_APP`：不开浏览器、不问升级、只打一行 READY JSON；
+		 *   - `POP_AGENT_WEB_DIST`：会让**别的版本**的前端配当前版本的服务端（0.1.5 的接口
+		 *     + App 里那 0.1.3 的页面）—— “改了前端没生效”也经常是这个；
+		 *   - `POP_AGENT_VERSION`：抬头会写成 App 的版本，“我明明升了怎么还显示旧版”。
+		 * `POP_AGENT_CLI_NAME` 下面会由 `invokedName()` 重写，不用管。
+		 */
+		delete process.env.POP_AGENT_APP;
+		delete process.env.POP_AGENT_WEB_DIST;
+		delete process.env.POP_AGENT_VERSION;
+	}
 	// 桌面 App（ADR-0051）：壳把 node/npm/npx 打进包里并指向 POP_AGENT_RUNTIME_DIR，
 	// 这里把它前置进 PATH。必须赶在**任何子进程**之前 —— 后面自己会被 detach 重起、
 	// 也会 spawn 引擎，子进程一律自然继承。非桌面模式下是空操作。
@@ -561,8 +621,12 @@ async function main(): Promise<void> {
 		if (line) console.log(line);
 		return;
 	}
-	// 桌面模式由壳开窗口，不再额外弹一个系统浏览器（同一个页面开两处只会让人以为起了两个）
-	if (parsed.open && !isDesktopMode()) openWhenReady();
+	/**
+	 * 不再看 `isDesktopMode()`：壳 spawn 的服务 stdout 是管道，`openBrowser` 里的
+	 * isTTY 判断已经把它拦下了。多一层标记判断反而会误伤「从 App 起的终端」（那里带着
+	 * `POP_AGENT_APP=1`，用户在里面敲 `pop` 就永远看不到浏览器，就是 2026-11-26 那次）。
+	 */
+	if (parsed.open) openWhenReady();
 	// 告诉服务层「终端在看着」：只留 warn / error，正常日志光进文件（见 index.ts 的 quietConsole）。
 	// 必须看 isTTY：后台子进程也走这个分支，但它的 stdout 是 daemon.log —— 那里要保留全部日志。
 	if (process.stdout.isTTY) process.env.POP_AGENT_FOREGROUND = "1";

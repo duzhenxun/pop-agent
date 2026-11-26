@@ -133,13 +133,13 @@ const {
 });
 let fileSink: RotatingFileSink | null = null;
 /**
- * 前台运行（CLI 默认）：终端只留 warn / error。
+ * 前台运行（CLI 默认）：终端只留 error。
  *
- * 以前后台才是默认，这些 info（装载会话索引、provider 列表……）都落在 daemon.log 里看不见；
- * 现在前台成了默认，再照旧打就会把用户自己的输机记录冲没。
- * 它们仍然**全部**进轮转日志文件；显式给了 `POP_AGENT_LOG=debug|info` 就按用户的意思正常打。
- * （每来一个客户端一条的「SSE 已连接 / 已断开」已经降到 debug：每个标签页每次重连都写一行，
- * 正常运行时纯噪声，真排查时 `POP_AGENT_LOG=debug pop` 再看。）
+ * 以前是 info，后来收到 warn/error；再收到只剩 error（用户 2026-11-26：「pop 启动时下面这堆文案
+ * 也不要显示」）—— 启动时打几行 JSON（装载会话索引、云端语音、上传…）对“我只是想打开页面”的人
+ * 就是噪声，把终端里他自己的历史冲没了。
+ * 它们仍然**全部**进轮转日志文件（`~/.pop-agent/daemon.log`）；想看回终端：
+ *   `POP_AGENT_LOG=warn pop`（只看警告）、`POP_AGENT_LOG=info|debug`（全打）。
  */
 const foreground = process.env.POP_AGENT_FOREGROUND === "1";
 const quietConsole = foreground && !process.env.POP_AGENT_LOG;
@@ -147,7 +147,7 @@ const logger = createLogger({
 	level: config.logLevel,
 	scope: "app",
 	sink: (line, level) => {
-		if (!quietConsole || level === "warn" || level === "error") process.stdout.write(`${line}\n`);
+		if (!quietConsole || level === "error") process.stdout.write(`${line}\n`);
 		fileSink?.write(line);
 	},
 });
