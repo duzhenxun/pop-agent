@@ -115,7 +115,9 @@
 	 *
 	 * 手机上不吃这条：抽屉宽度由 `responsive.css` 的 `--drawer-w` + `max-width: none` 管。
 	 */
-	max-width: max(240px, calc(100vw - 240px));
+	/* 注意这里是 `max(0px, ...)` 而不是 `max(240px, ...)`：那个 240 曾经同时充当
+	 * 「侧栏最小宽度」的兜底，现在下限取消了（见 sidebar-layout.ts）。 */
+	max-width: max(0px, calc(100vw - 240px));
 }
 
 .side-host > .sidebar {

@@ -1076,13 +1076,9 @@ html.is-resizing .appbar::after {
  * 代价（只影响桌面壳，浏览器里没有这条规则）：
  *   - 标题上的「双击改名」「右键会话菜单」收不到事件了（改名走侧栏会话行右键，或标题那颗 ✎）；
  *   - 按钮只有图标 / 文字那几像素响应，悬停高亮也只在那几像素出现。 */
-:root[data-shell="electron-mac"] .appbar :is(
-		svg,
-		.side-foot-icon,
-		.side-foot-label,
-		.newchat-pill-icon,
-		.newchat-pill-label
-	) {
+:root[data-shell="electron-mac"]
+	.appbar
+	:is(svg, .side-foot-icon, .side-foot-label, .newchat-pill-icon, .newchat-pill-label) {
 	-webkit-app-region: no-drag;
 }
 
@@ -1308,10 +1304,18 @@ html.is-resizing .appbar::after {
 }
 
 /* 分栏面板：它自己那一列现在从第 1 行开始，原有的 `-appbar-h` 上移要撤掉，
- * 否则标签条会被顶到窗口外面去。 */
-:root[data-shell] .app-split .preview-panel,
-:root[data-shell] .app-wide-lift .preview-panel {
+ * 否则标签条会被顶到窗口外面去。
+ *
+ * 铺开则相反：壳里顶栏是**浮**在内容上的（`z-index` 比面板高），面板从 y=0 起就整条钻到顶栏底下，
+ * 连带自己那条标签条一起被盖住 —— 而「铺开 → 收回」那颗按钮就在标签条里，于是再也点不到
+ * （用户 2026-11-26：「上面的条也消失了，导致无法再收回来了」）。
+ * 所以铺开这一档把面板往下推一个顶栏高，顶栏原样留在上面。 */
+:root[data-shell] .app-split .preview-panel {
 	margin-top: 0;
+}
+
+:root[data-shell] .app-wide-lift .preview-panel {
+	margin-top: var(--appbar-h, 0px);
 }
 
 /* ---- 桌面壳：顶栏内容**下移 2px**，跟原生红绿灯对齐 ----

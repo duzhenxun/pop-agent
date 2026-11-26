@@ -19,6 +19,10 @@
 	/* 内边距抽成变量：底部分隔线要「顶满整条侧栏」，得靠负 margin 抵消它 */
 	--side-pad: 10px;
 	padding: var(--side-pad);
+	/* 侧栏能被拖到很窄（`SIDEBAR_MIN_WIDTH` 已取消）：裁掉溢出的行，别让它们盖到对话区上。
+	 * 拖拽条和「收起」那颗都在 `.side-host` 上（不是 `.sidebar` 的子元素），所以不在这里面，
+	 * 侧栏压到 0 宽也照样抓得到。 */
+	overflow: hidden;
 }
 
 .sidebar-head {

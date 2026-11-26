@@ -69,7 +69,13 @@ export type WorkTool = "files" | "terminal" | "side" | "web" | "canvas";
  * 老 key 里的 620 会把这个新默认盖掉，所以换一个 key 让新默认生效一次。
  */
 const WIDTH_KEY = "pop-agent.preview.width.v2";
-const MIN_WIDTH = 360;
+/**
+ * 面板最小宽度：**没有下限**（用户 2026-11-26：「左右这 2 条线的最小位置给限制了，把限制取消」）。
+ *
+ * 拖到 0 也能拖回来：手柄在面板左边缘外侧（`left: -3px`，命中区 7px），宽度归零时仍然抓得到。
+ * 面板自己 `overflow: hidden`，所以窄到看不见时是裁掉，不会溢出到对话区上。
+ */
+const MIN_WIDTH = 0;
 const MAX_WIDTH = 1200;
 
 /* ---- 「文件列表」那根侧栏的宽度（可拖那条竖线，偏好记本机） ---- */
@@ -92,8 +98,12 @@ function readRailWidth(): number {
 
 /** 存过就用存的；没存过回 null —— 交给布局出来之后再按「跟中间那栏一样宽」算 */
 function readWidth(): number | null {
-	const raw = Number(localStorage.getItem(WIDTH_KEY));
-	return Number.isFinite(raw) && raw >= MIN_WIDTH ? Math.min(raw, MAX_WIDTH) : null;
+	const stored = localStorage.getItem(WIDTH_KEY);
+	// 没存过 / 存了个 0：都算"没有偏好"，交给布局按「跟中间那栏一样宽」算。
+	// 注意不能直接 Number(null) === 0 —— 那会让面板一开场宽度就是 0。
+	if (stored === null) return null;
+	const raw = Number(stored);
+	return Number.isFinite(raw) && raw > 0 ? Math.min(raw, MAX_WIDTH) : null;
 }
 
 /** 标签上的图标与名字：五类各自一套，散在 JSX 里会难读 */
@@ -125,7 +135,11 @@ function tabTextOf(
 	}
 	// 「完整历史 / 系统提示词」：两张只看不改的卡片，标签固定、只开一个
 	if (item.kind === "history") {
-		return { icon: "📜", label: t("完整历史", "Full history"), title: t("完整历史（pi 的会话导出页）", "Full history (pi session export)") };
+		return {
+			icon: "📜",
+			label: t("完整历史", "Full history"),
+			title: t("完整历史（pi 的会话导出页）", "Full history (pi session export)"),
+		};
 	}
 	if (item.kind === "prompt") {
 		return {
