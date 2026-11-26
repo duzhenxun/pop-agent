@@ -1,4 +1,4 @@
-import { engineBrandName, REPO_URL, UPGRADE_COMMAND } from "./brand.ts";
+import { engineBrandName, UPGRADE_COMMAND } from "./brand.ts";
 import { basename } from "./path-utils.ts";
 import { useStickToBottom } from "./stick-to-bottom.ts";
 import { nextAnchorTarget, type AnchorSeen } from "./anchor-target.ts";
@@ -2161,13 +2161,9 @@ export function App() {
 												webVersion={snapshot.versions.web}
 												latestVersion={snapshot.versions.latest}
 												outdated={snapshot.versions.outdated}
-												desktop={snapshot.desktop}
-												onUpgrade={() =>
-													// 壳里没有 npm 全局包可升级：去发布页下新安装包才是真路径
-													snapshot.desktop
-														? window.open(`${REPO_URL}/releases`, "_blank", "noopener,noreferrer")
-														: upgradeInTerminal(UPGRADE_COMMAND)
-												}
+												// 点红标就是「在底部终端里跑升级命令」：不跳发布页、不看是不是 App 壳
+												// （用户 2026-11-26：网页里点时直接用 npm 升）
+												onUpgrade={() => upgradeInTerminal(UPGRADE_COMMAND)}
 											/>
 											<NewChatTemplates
 												templates={snapshot.settings.templates ?? []}
