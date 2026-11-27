@@ -187,6 +187,8 @@ curl -s https://pop.xs25.cn/robots.txt
 - [ ] topics 里没有拼错（GitHub 不会自动纠错，`selfhosted` ≠ `self-hosted`）
 - [ ] 落地页 `og:image` 是绝对地址且能直接打开
 - [ ] Issues 模板在位；Discussions 已开
+- [ ] 传了 `PopAgent-macOS-arm64.dmg` 这份稳定文件名副本，且官网下载按钮真的 302 到了新版本（见 `docs/release.md` §七）
+- [ ] 渠道链接都带 `utm_source`（没带的访问全落 `(direct)`，见 `docs/promotion-links.md`）
 
 ---
 

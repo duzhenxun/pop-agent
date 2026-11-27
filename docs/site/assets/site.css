@@ -58,6 +58,9 @@ p{margin:0}
 .hero h1{font-size:clamp(34px,4.2vw,50px); margin:18px 0 16px; font-weight:700}
 .hero h1 em{font-style:normal; background:linear-gradient(96deg,var(--brand),var(--brand-2)); -webkit-background-clip:text; background-clip:text; color:transparent}
 .lede{font-size:17.5px; color:var(--muted); max-width:34em}
+/* 首屏按钮下面那一行「接下来干什么」：不写这句，复制完命令的人会停在原地 */
+.hero-next{margin-top:10px; font-size:13.5px; color:var(--muted); max-width:34em}
+.hero-next code{font-size:.95em; background:var(--soft); padding:1px 6px; border-radius:6px; color:var(--ink)}
 /* hero 里那三条痛点：短句 + 一个淡色方点，读起来像「这说的是我」 */
 .hero-pains{list-style:none; margin:18px 0 0; padding:0; display:grid; gap:7px; max-width:34em}
 .hero-pains li{position:relative; padding-left:17px; font-size:14.5px; line-height:1.6; color:var(--muted)}

@@ -54,7 +54,7 @@
   "isAccessibleForFree": true,
   "license": "https://opensource.org/license/mit",
   "codeRepository": "https://github.com/duzhenxun/pop-agent",
-  "downloadUrl": "https://github.com/duzhenxun/pop-agent/releases/latest",
+  "downloadUrl": "https://github.com/duzhenxun/pop-agent/releases/latest/download/PopAgent-macOS-arm64.dmg",
   "installUrl": "https://www.npmjs.com/package/pop-agent",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "author": { "@type": "Person", "name": "duzhenxun", "url": "https://github.com/duzhenxun" },
@@ -106,8 +106,8 @@ var _hmt = _hmt || [];
     </nav>
     <div class="nav-cta">
       <a class="nav-lang" href="zh.html" data-lang="zh" title="切换到中文">中文</a>
-      <a class="btn" href="https://github.com/duzhenxun/pop-agent" target="_blank" rel="noreferrer">GitHub</a>
-      <a class="btn btn-primary" href="#install">Get started</a>
+      <a class="btn" href="https://github.com/duzhenxun/pop-agent" target="_blank" rel="noreferrer" data-cta="github">GitHub</a>
+      <a class="btn btn-primary" href="#install" data-cta="nav-install">Get started</a>
     </div>
   </div>
 </header>
@@ -135,12 +135,18 @@ var _hmt = _hmt || [];
           <a href="#specials"><i>⑥</i><b>Remote access</b></a>
         </div>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="https://github.com/duzhenxun/pop-agent/releases/latest" target="_blank" rel="noreferrer">Download for macOS</a>
+          <!-- 直链：GitHub 的 latest/download 会 302 到当前版本那个文件（资产名是稳定的
+               PopAgent-macOS-arm64.dmg，每次发版要额外传一份这个名字的副本，见 docs/release.md）。
+               不要把用户丢到 /releases/latest 那个页面：那里除了 .dmg 还有 yml 和 blockmap，
+               很多人会点错。 -->
+          <a class="btn btn-primary" href="https://github.com/duzhenxun/pop-agent/releases/latest/download/PopAgent-macOS-arm64.dmg" title="Apple Silicon · .dmg · about 160 MB" data-cta="download-mac" target="_blank" rel="noreferrer">Download for macOS</a>
           <div class="install-pill">
             <code>npm -g install pop-agent</code>
-            <button class="icon-btn" data-copy="npm -g install pop-agent" title="Copy install command" aria-label="Copy install command">⧉</button>
+            <button class="icon-btn" data-copy="npm -g install pop-agent" data-cta="copy-install-command" title="Copy install command" aria-label="Copy install command">⧉</button>
           </div>
         </div>
+        <!-- 复制了那一行之后，下一个动作必须写在它跟前，否则人会停在终端里发伺 -->
+        <p class="hero-next">Then run <code>pop</code> inside your project — it opens the browser and listens on <code>127.0.0.1:9090</code>.</p>
         <div class="trust">
           <span><i></i>macOS: install and go, no Node</span>
           <span><i></i>Windows · macOS · Linux (CLI)</span>
@@ -497,7 +503,7 @@ var _hmt = _hmt || [];
         </div>
         <div class="reveal">
           <div class="codebox">
-            <header><span>Terminal</span><button class="icon-btn" data-copy="npm -g install pop-agent&#10;cd ~/code/my-proj&#10;pop" title="Copy" aria-label="Copy commands">⧉</button></header>
+            <header><span>Terminal</span><button class="icon-btn" data-copy="npm -g install pop-agent&#10;cd ~/code/my-proj&#10;pop" data-cta="copy-quickstart" title="Copy" aria-label="Copy commands">⧉</button></header>
             <pre><span class="c"># install</span>
 npm -g install pop-agent
 

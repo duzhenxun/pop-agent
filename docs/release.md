@@ -163,3 +163,42 @@ export GITHUB_PACKAGES_TOKEN=<classic PAT，勾 write:packages>
 | 发布时报 `prepack` 相关错误 / 想跑 tsc | 少了 `--ignore-scripts`：tarball 里带 `prepack: npm run build` |
 | 包发出去了但页面还是空的 | 看的是仓库的 `/packages` 顶层页，包挂在 `github.com/users/duzhenxun/packages` 下；首次还要手动改 public |
 | 用户装了之后 `pop-agent` 命令没变 | 正常：`bin` 名字没改。但**不要和 npm 那份同时全局装**，两个包的 `pop` / `pop-agent` 同名会互相覆盖 |
+
+---
+
+## 七、macOS 安装包怎么发（`release.yml` 不管这一段）
+
+npm 那条线是自动的；**`.dmg` 是本地构建 + 手动上传**，`release.yml` 只负责 npm 与 Release 对象本身。
+顺序：先把 npm 那版发完（Release 对象已存在），再传包：
+
+```bash
+npm run app:dist        # 产物在 release/：PopAgent-<version>-arm64.dmg + latest-mac.yml
+gh release upload v0.1.8 release/PopAgent-0.1.8-arm64.dmg release/latest-mac.yml --clobber
+```
+
+### 每次都必须多传一份「稳定文件名」的副本
+
+官网首屏的下载按钮指向的是 **固定名字**：
+
+```
+https://github.com/duzhenxun/pop-agent/releases/latest/download/PopAgent-macOS-arm64.dmg
+```
+
+`latest/download/<文件名>` 要求文件名跨版本不变，而 electron-builder 产出的名字里带版本号。
+所以每次补一份副本，否则官网那个按钮 404：
+
+```bash
+cp release/PopAgent-0.1.8-arm64.dmg /tmp/PopAgent-macOS-arm64.dmg
+gh release upload v0.1.8 /tmp/PopAgent-macOS-arm64.dmg --clobber
+curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" \
+  https://github.com/duzhenxun/pop-agent/releases/latest/download/PopAgent-macOS-arm64.dmg
+# 期望 302 → .../releases/download/v0.1.8/PopAgent-macOS-arm64.dmg
+```
+
+> 只传版本名那份的后果：落地页点「下载」进 404。本文件 §四 的自查清单里已经加了这一条。
+
+### 为什么不让 CI 把 dmg 也出了
+
+dmg 要 macOS 签名与公证（`electron-builder.yml` 里的 entitlements + 打包时的证书），
+在 GitHub 的 ubuntu runner 上出不来；macOS runner 又要付费分钟数，且签名证书得进 secrets。
+现阶段一个人发版，本地 `app:dist` 更省事。
