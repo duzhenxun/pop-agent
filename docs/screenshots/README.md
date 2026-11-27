@@ -123,8 +123,14 @@ magick "$f" -colors 256 -type Palette -define png:compression-level=9 "$f"
 
 > 中文版那套 `docs/site/assets/{zh,en}/*.webp` 里，`en/` 曾经是 `zh/` 的逐字节拷贝（英文官网其实一直在用中文截图）。
 > 要更新官网英文图，从这里的 `en/*.png` 重新裁切压缩，别再直接 copy 中文那份。
-> `en/hero.webp` 已按这条规则从 `docs/brand/hero-en.png` 单独转出（2400×1025，和中文版比例不同，
-> 换图时记得连同 `index.html` 里的 `width`/`height` 一起改，否则首屏会跳一下）。
+>
+> **但 `assets/en/overview.webp`（巡览全景）目前也是中文界面**，所以英文官网的 hero 仍然只能用
+> `assets/zh/hero.webp`。这是已知缺口：需要按下面的流程把界面切成英文重拍一张全图，
+> 存成 `docs/screenshots/en/00-hero.png`，再转出 `docs/site/assets/en/hero.webp`（记得同步
+> `index.html` 里的 `width`/`height`）。
+>
+> 不要拿 `docs/brand/hero-en.png` 顶这个位：那是带标题文案的**营销合成图**，
+> 套进官网的浏览器框里会变成「一张截图的截图」。
 
 ## alt 文案
 

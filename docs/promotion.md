@@ -146,6 +146,38 @@ xmllint --noout docs/site/sitemap.xml
 > `/zh` 这个无扩展名地址在 GitHub Pages 上是 **200**（`/zh.html` 会 308 跳过去），
 > 所以 canonical / hreflang 里写 `/zh` 是对的，不用改成 `.html`。
 
+### 部署有两条路，只有一条对着真域名
+
+| 目标 | 怎么发 | 谁会看到 |
+|---|---|---|
+| `pop.xs25.cn`（真域名） | `wrangler pages deploy docs/site --project-name=pop-agent --branch=main --commit-dirty=true` | 所有人 |
+| `duzhenxun.github.io/pop-agent` | 推 main，`pages.yml` 自动跑 | 几乎没人（备份） |
+
+**坑**：推 main 之后 `pages.yml` 显示 ✅，很容易以为上线了——其实真域名一个字没变。
+改完页面必须再跑一次 wrangler（或先确认 wrangler 还没接进 CI）。
+
+### 百度现在收不进来（不是本仓库的问题，但会毁掉国内渠道）
+
+`https://pop.xs25.cn/robots.txt` 前面被 Cloudflare 注入了一段托管内容，里面：
+
+```
+User-agent: Baiduspider
+Disallow: /
+```
+
+后果：**百度一条都抓不到**，而落地页只有百度统计，等于国内渠道的数据永远是零。
+这是 Cloudflare 后台的开关，改文件没用：
+
+> Cloudflare Dashboard → 选 `xs25.cn` 这个 zone → **Security → Bots / AI Crawl Control**
+> → 找到 managed robots.txt（Content Signals / AI crawler blocking）→ 把 **Baiduspider 解除拦截**，
+> 或直接关掉这个托管 robots 注入（自己的 `docs/site/robots.txt` 会接管）。
+
+验证（改完应该只看到自己那 6 行）：
+
+```bash
+curl -s https://pop.xs25.cn/robots.txt
+```
+
 ---
 
 ## 4. 发版前 5 分钟自查

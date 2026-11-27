@@ -146,7 +146,10 @@ docs/brand/captions-en.srt
 
 - [x] 分镜表 + 中英烧录字幕定稿（已落成 `docs/brand/captions-{zh,en}.srt`）
 - [x] 四张图的中英 alt 已粘回 `README.md` / `README.zh.md` / `docs/site/index.html` / `docs/site/zh.html`
-- [x] 英站 hero 用错图已修：从 `docs/brand/hero-en.png` 转出 `docs/site/assets/en/hero.webp`（2400×1025），`index.html` 的 `src` 与 `width/height` 同步改了
+- [x] 英站 hero 用错图已确认原因：`docs/brand/hero-en.png` 是**带文案的营销合成图**，不能当界面截图用
+      （试过一版，线上就成了「截图的截图」，已回退）
+- [ ] **补一张英文界面的 hero**：`docs/screenshots/en/` 里全是中文界面（包括 `overview.webp`），
+      英文官网现在只能用 `assets/zh/hero.webp`。按 `docs/screenshots/README.md` 把界面切成英文重拍全景
 - [ ] **录 45 秒主片**（照 §1 分镜表逐条对），出 1600×1000 ≤5MB + 720p 社媒版
 - [ ] 拖进 issue 拿 `user-attachments` 直链，换到 README hero 图下面（hero 图保留）
 - [ ] **补拍「手机上收到推送」这一张**（§3.4）——本次素材里唯一必须新拍的图
