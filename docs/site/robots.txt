@@ -1,0 +1,6 @@
+# 落地页只有一个入口，没有需要屏蔽的路径。
+# 加这一条是为了让爬虫知道 sitemap 在哪，而不是靠它自己猜。
+User-agent: *
+Allow: /
+
+Sitemap: https://pop.xs25.cn/sitemap.xml

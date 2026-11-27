@@ -1,0 +1,99 @@
+name: Bug report
+description: Something broke — a crash, a wrong result, a panel that won't load. / 崩了、结果不对、面板打不开。
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        填完下面四项（版本、怎么装的、系统、日志）能让问题一次定位。
+        **只要少一项，通常就要多来回问一轮** —— 而这个项目的维护者只有一个人。
+
+        > 使用上的疑问（装不上、怎么接某个引擎、某个功能怎么用）请走 [Discussions](https://github.com/duzhenxun/pop-agent/discussions)，issue 留给能复现的问题。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened / 发生了什么
+      description: 你期望发生什么，实际发生什么。有报错原文就直接贴。
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 怎么复现
+      description: 从启动到出问题，一步步写。能稳定复现的路径最有价值。
+      placeholder: |
+        1. pop 起服务
+        2. 选 pi 引擎，新建会话
+        3. 发一句「……」
+        4. 第 3 步之后面板变成空白
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it / 怎么装的
+      options:
+        - npm -g install pop-agent
+        - macOS app (.dmg)
+        - from source (git clone + npm run dev)
+        - other / 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Which engine / 哪个引擎
+      description: 如果是工作台本身的问题（不是某个引擎），选 none。
+      options:
+        - pi
+        - Codex
+        - Claude Code
+        - opencode
+        - DSH
+        - none — the workbench itself / 工作台本身
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / 版本
+      description: 终端里 `pop -v`；dmg 装的在 设置 → 关于 里看。
+      placeholder: "0.1.8"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS + Node / 系统与 Node
+      description: dmg 装的写「dmg，自带 Node」就行；源码跑的写 `node -v` 的结果。
+      placeholder: "macOS 15.3 (arm64), node 22.19.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: |
+        最后 30 行通常就够：`tail -30 ~/.pop-agent/logs/pop-agent.log`
+        面板里的报错另外把浏览器控制台（F12）的红字也贴上。
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting / 提交前
+      options:
+        - label: 我用的是最新版本（`pop upgrade` 或重新下载 dmg）
+          required: true
+        - label: 我搜过现有 issue 和 Discussions，没有重复
+          required: true

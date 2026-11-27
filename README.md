@@ -10,7 +10,7 @@
 
 ---
 
-![An external control surface for the agent you already run — open source, MIT, single user, local-first; on the right, one real session with thinking, tool calls, the diff and usage in one screen](docs/brand/hero-en.png)
+![PopAgent at 127.0.0.1:9090: the session list on the left, one real turn in the middle streaming its thinking blocks, finished commands and the files it read, and the same work laid out as a task canvas on the right where finished steps read "done". Same agent as before — the process just lives in a web page now.](docs/brand/hero-en.png)
 
 **Download**: [the macOS app (.dmg)](https://github.com/duzhenxun/pop-agent/releases/latest) · **See the UI**: [the website](https://pop.xs25.cn/) · **Command line**:
 
@@ -70,7 +70,7 @@ Voice, scheduling, computer control, canvas, push and remote access all live in 
 
 ### ④ Canvas: draw "what happens next" as a graph
 
-![Canvas: a CSV-export plan split into nodes and dependencies](docs/screenshots/en/18-canvas.png)
+![Ask for a plan in chat and the right pane lays it out as 7 nodes and 7 dependencies, each node one concrete action with its own note and its own status. The point: steps that are hard to say in prose become a graph you can check.](docs/screenshots/en/18-canvas.png)
 
 - Describe something that takes many steps and the agent lays it out as **nodes plus dependency edges** on the right; nodes carry kinds (task / milestone / risk / decision / doc), so it is obvious which step may blow up and which one needs your call.
 - **It is interactive**: mark a step running when you start it, done when you finish — progress is drawn on the graph, not just in chat.
@@ -92,7 +92,7 @@ Voice, scheduling, computer control, canvas, push and remote access all live in 
 - **Login protection**: three wrong passwords from the same origin pause logins for 30 minutes (count and window are tunable); while paused the password is not even compared, and restarting the service does not unlock it.
 - The phone really gets a phone layout: the sidebar becomes a drawer, the top bar keeps icons only, the composer goes to 18px so iOS does not zoom, the right pane becomes a full-screen second page.
 
-![Single-column layout on a phone](docs/screenshots/en/16-mobile.png)
+![The same workbench on a phone: single column, icon-only top bar, 18px composer so iOS doesn't zoom, project sidebar collapsed into a drawer. The point: the same session, away from the desk.](docs/screenshots/en/16-mobile.png)
 
 ---
 

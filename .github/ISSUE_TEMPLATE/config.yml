@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用疑问 / How do I… / 装不上
+    url: https://github.com/duzhenxun/pop-agent/discussions
+    about: 装了但用不明白、想看别人怎么用、想提个想法 —— 走 Discussions，门槛比 issue 低，也不会淹掉真正的 bug。
+  - name: 文档 · 截图 · 安装命令
+    url: https://pop.xs25.cn/
+    about: 官网：六件能力的截图、三行安装命令、以及「它不做什么」。
+  - name: 选型前先看这份对比
+    url: https://github.com/duzhenxun/pop-agent/blob/main/docs/compare.md
+    about: 和 CloudCLI / Codex WebUI / Pi Web 的四个维度对比，以及各自的适用场景。
+  - name: 常见问题（FAQ）
+    url: https://github.com/duzhenxun/pop-agent#faq
+    about: 端口占用、Node 版本、引擎没登录、远程访问密码 —— 先扫一眼这里。

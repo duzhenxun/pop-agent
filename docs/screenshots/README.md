@@ -123,3 +123,10 @@ magick "$f" -colors 256 -type Palette -define png:compression-level=9 "$f"
 
 > 中文版那套 `docs/site/assets/{zh,en}/*.webp` 里，`en/` 曾经是 `zh/` 的逐字节拷贝（英文官网其实一直在用中文截图）。
 > 要更新官网英文图，从这里的 `en/*.png` 重新裁切压缩，别再直接 copy 中文那份。
+> `en/hero.webp` 已按这条规则从 `docs/brand/hero-en.png` 单独转出（2400×1025，和中文版比例不同，
+> 换图时记得连同 `index.html` 里的 `width`/`height` 一起改，否则首屏会跳一下）。
+
+## alt 文案
+
+每张图的替代文本（中英两版、含验收标准）统一在 [`../promotion-assets.md`](../promotion-assets.md) §3。
+改图时 alt 要跟着改：**alt 不是图注，是图挂了之后替图说话的那句。**

@@ -28,9 +28,49 @@
 <meta name="twitter:image" content="https://pop.xs25.cn/assets/og.png" />
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23111827'/%3E%3Cg%20fill='%23F8FAFC'%3E%3Crect%20x='7.6'%20y='9'%20width='3.2'%20height='14'%20rx='1.6'/%3E%3Cpath%20d='M10.8%209h4.4a4.4%204.4%200%200%201%200%208.8h-4.4v-2.8h4.2a1.6%201.6%200%200%200%200-3.2h-4.2z'/%3E%3C/g%3E%3Cpolygon%20points='26.81,18.4%2026.81,22.8%2023,25%2019.19,22.8%2019.19,18.4%2023,16.2'%20fill='none'%20stroke='%2360A5FA'%20stroke-width='1.8'%20stroke-linejoin='round'/%3E%3C/svg%3E" />
-<link rel="alternate" hreflang="en" href="/" />
+<link rel="alternate" hreflang="en" href="https://pop.xs25.cn/" />
+<link rel="alternate" hreflang="zh-CN" href="https://pop.xs25.cn/zh" />
+<link rel="alternate" hreflang="x-default" href="https://pop.xs25.cn/" />
 <link rel="canonical" href="https://pop.xs25.cn/zh" />
 <link rel="stylesheet" href="assets/site.css" />
+
+<!-- 结构化数据：跟 index.html 同一份，只是语言和描述改成中文。
+     两份都要写——搜索引擎不会拿英文页的 JSON-LD 去描述中文页。 -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "PopAgent",
+  "alternateName": ["pop-agent", "pop"],
+  "url": "https://pop.xs25.cn/zh",
+  "inLanguage": "zh-CN",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Coding Agent 的 Web 工作台",
+  "operatingSystem": "macOS, Windows, Linux",
+  "softwareRequirements": "Node.js 22.19+（命令行），或 macOS 应用",
+  "description": "给你正在跑的 coding agent 配一个本地网页：看它的思考与工具调用、中途插一句纠正、改完直接看 diff，并管理模型与工具。会话就是引擎自己写在磁盘上的文件，不引数据库、不建账号。",
+  "isAccessibleForFree": true,
+  "license": "https://opensource.org/license/mit",
+  "codeRepository": "https://github.com/duzhenxun/pop-agent",
+  "downloadUrl": "https://github.com/duzhenxun/pop-agent/releases/latest",
+  "installUrl": "https://www.npmjs.com/package/pop-agent",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },
+  "author": { "@type": "Person", "name": "duzhenxun", "url": "https://github.com/duzhenxun" },
+  "sameAs": [
+    "https://github.com/duzhenxun/pop-agent",
+    "https://www.npmjs.com/package/pop-agent",
+    "https://gitee.com/duzhenxun/pop-agent"
+  ],
+  "featureList": [
+    "支持 pi / Codex / Claude Code / opencode / DSH，各跑各的原生 loop",
+    "思考块、工具调用、改动文件与花销都在同一份对话里",
+    "回合还没跑完就能插一句纠正",
+    "多步骤的事能画成节点与依赖的画布",
+    "语音输入、定时任务、电脑控制、手机推送都在同一个进程里",
+    "默认只听 127.0.0.1，远程访问必须先在本机设密码"
+  ]
+}
+</script>
 <!-- 百度统计 -->
 <script>
 var _hmt = _hmt || [];
@@ -78,6 +118,7 @@ var _hmt = _hmt || [];
       <div>
         <span class="eyebrow">开源 · MIT · 单用户 · 本地优先</span>
         <h1>给你正在跑的 agent，<br />配一个<em>外部操作页</em></h1>
+        <p class="lede">给已经在用的 coding agent 配一个网页：看它怎么想、中途插一句纠正、改完直接看 diff。会话还是引擎自己写在磁盘上的文件，不建库、不注册。</p>
         <ul class="hero-pains">
           <li>出门了，不知道它跑到哪一步 —— 还得回电脑前看。</li>
           <li>它给出一堆行动方案，全是文字，想挑一个还得自己打字。</li>
@@ -106,7 +147,7 @@ var _hmt = _hmt || [];
       <div class="hero-shot">
         <div class="frame">
           <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · pop-agent</span></div>
-          <img src="assets/zh/hero.webp" width="2400" height="1291" alt="一次真实会话：左侧项目与会话，中间对话与输入框上方的建议胶囊，右侧把同一件事摊成导图式的任务画布（节点、依赖与进度）" data-zoom />
+          <img src="assets/zh/hero.webp" width="2400" height="1291" alt="PopAgent 的界面截屏，地址栏是 127.0.0.1:9090：左栏会话列表，中间一次真实对话——思考块、已跑完的命令、读了哪些文件；右边把同一件事摊成任务画布，跑完的步骤当场标成「已完成」。agent 还是你原本那个，只是过程被搬到了网页里。" data-zoom />
         </div>
         <p class="caption">一次真实会话：对话与工具在中间，任务画布在右边，跑完的步骤在图上直接变「已完成」。</p>
       </div>
@@ -266,7 +307,7 @@ var _hmt = _hmt || [];
           <h3>④ 画布：把「接下来做什么」画成一张图</h3>
           <p>你说一件要多步才能完成的事，agent 把它拆成<b>节点 + 依赖边</b>画到右边。节点有类型 —— 任务 / 里程碑 / 风险 / 决策 / 资料 —— 一眼看出哪一步容易翻车、哪一步要你拍板。</p>
           <p class="mini">能点：开始干标「进行中」，干完标「完成」，进度直接画在图上。一步里还有小事就钻子计划，主图只留汇总。</p>
-          <div class="shot"><img src="assets/zh/canvas.webp" width="1650" height="1031" alt="画布：把「加订单导出」拆成 7 个节点与 7 条依赖" loading="lazy" data-zoom /></div>
+          <div class="shot"><img src="assets/zh/canvas.webp" width="1650" height="1031" alt="对话框里一句「用画布把步骤画出来」，右侧就摊成 7 个节点、7 条依赖：每个节点是一步能做完的动作并自带说明，已经开始的那步挂着待办状态。说明的是「说不清的步骤，能变成看得见的图」。" loading="lazy" data-zoom /></div>
         </article>
 
         <article class="card reveal">
@@ -391,7 +432,7 @@ var _hmt = _hmt || [];
           <button class="tour-tab" role="tab" aria-selected="true" data-src="assets/zh/overview.webp" data-alt="界面全景：左栏项目与会话、中间对话、右栏源码、底栏状态" data-cap="左栏项目与会话 · 中间对话 · 右栏源码 · 底栏状态">全景</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/settings.webp" data-alt="设置面板：顶栏名称可选产品名或引擎名、侧栏条数、顶栏入口" data-cap="设置 → 界面：顶栏名称（产品名 / 引擎名）、侧栏条数、顶栏入口">设置</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/slash.webp" data-alt="斜杠指令面板：/new 由工作台执行，/skill /compact /plan 交给引擎" data-cap="斜杠指令：/new 由工作台执行，其余三条交给引擎">斜杠指令</button>
-          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/mobile.webp" data-alt="手机单栏：顶栏入口只留图标、内容满宽" data-cap="手机单栏：输入框 18px，模型菜单变底部抽屉">手机</button>
+          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/mobile.webp" data-alt="手机上的同一套界面：单栏、顶栏只留图标、输入框 18px 所以 iOS 不会自动放大，项目侧栏收成抽屉" data-cap="手机单栏：输入框 18px，模型菜单变底部抽屉">手机</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/zh/mobile-drawer.webp" data-alt="手机上的项目侧栏是覆盖式抽屉" data-cap="手机上的项目侧栏是覆盖式抽屉">手机抽屉</button>
         </div>
         <div class="tour-stage frame">

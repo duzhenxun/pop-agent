@@ -30,9 +30,49 @@
 <meta name="twitter:image" content="https://pop.xs25.cn/assets/og.png" />
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23111827'/%3E%3Cg%20fill='%23F8FAFC'%3E%3Crect%20x='7.6'%20y='9'%20width='3.2'%20height='14'%20rx='1.6'/%3E%3Cpath%20d='M10.8%209h4.4a4.4%204.4%200%200%201%200%208.8h-4.4v-2.8h4.2a1.6%201.6%200%200%200%200-3.2h-4.2z'/%3E%3C/g%3E%3Cpolygon%20points='26.81,18.4%2026.81,22.8%2023,25%2019.19,22.8%2019.19,18.4%2023,16.2'%20fill='none'%20stroke='%2360A5FA'%20stroke-width='1.8'%20stroke-linejoin='round'/%3E%3C/svg%3E" />
-<link rel="alternate" hreflang="zh-CN" href="/zh" />
+<link rel="alternate" hreflang="en" href="https://pop.xs25.cn/" />
+<link rel="alternate" hreflang="zh-CN" href="https://pop.xs25.cn/zh" />
+<link rel="alternate" hreflang="x-default" href="https://pop.xs25.cn/" />
 <link rel="canonical" href="https://pop.xs25.cn/" />
 <link rel="stylesheet" href="assets/site.css" />
+
+<!-- 结构化数据：搜索引擎靠它知道这是个「免费的开发者工具」，而不是一篇博客。
+     featureList 里的句子刻意和页面文案一致——两处不一致时搜索方会挑它认为更可信的那个展示。 -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "PopAgent",
+  "alternateName": ["pop-agent", "pop"],
+  "url": "https://pop.xs25.cn/",
+  "inLanguage": "en",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Web UI for coding agents",
+  "operatingSystem": "macOS, Windows, Linux",
+  "softwareRequirements": "Node.js 22.19+ (CLI), or the macOS app",
+  "description": "A local web UI for your coding agents. Watch the reasoning stream, cut in with a correction mid-turn, read the diff, manage models and tools. Sessions stay the engine's own files — no database, no account.",
+  "isAccessibleForFree": true,
+  "license": "https://opensource.org/license/mit",
+  "codeRepository": "https://github.com/duzhenxun/pop-agent",
+  "downloadUrl": "https://github.com/duzhenxun/pop-agent/releases/latest",
+  "installUrl": "https://www.npmjs.com/package/pop-agent",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "duzhenxun", "url": "https://github.com/duzhenxun" },
+  "sameAs": [
+    "https://github.com/duzhenxun/pop-agent",
+    "https://www.npmjs.com/package/pop-agent",
+    "https://gitee.com/duzhenxun/pop-agent"
+  ],
+  "featureList": [
+    "Works with pi, Codex, Claude Code, opencode and DSH, each on its native loop",
+    "Thinking blocks, tool calls, changed files and cost in one transcript",
+    "Cut in with a correction while a turn is still running",
+    "Lay out a multi-step plan as a canvas of nodes and dependencies",
+    "Voice input, scheduled tasks, computer control and phone push in the same process",
+    "Loopback only by default; remote access needs a password set on the machine"
+  ]
+}
+</script>
 <!-- 百度统计 -->
 <script>
 var _hmt = _hmt || [];
@@ -80,6 +120,7 @@ var _hmt = _hmt || [];
       <div>
         <span class="eyebrow">Open source · MIT · Single user · Local-first</span>
         <h1>An external<br /><em>control surface</em><br />for the agent you run</h1>
+        <p class="lede">A web UI for the coding agent you already use: watch it think, correct it mid-turn, read the diff. Sessions stay the engine's own files — no database, no account.</p>
         <ul class="hero-pains">
           <li>Away from the desk — no idea how far it got.</li>
           <li>Its plan is plain text — picking one means typing.</li>
@@ -108,7 +149,7 @@ var _hmt = _hmt || [];
       <div class="hero-shot">
         <div class="frame">
           <div class="frame-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="frame-url">127.0.0.1:9090 · pop-agent</span></div>
-          <img src="assets/zh/hero.webp" width="2400" height="1291" alt="A real session: projects and sessions on the left, the conversation and its suggestion chips in the middle, and the same work laid out as a task canvas on the right" data-zoom />
+          <img src="assets/en/hero.webp" width="2400" height="1025" alt="PopAgent at 127.0.0.1:9090: the session list on the left, one real turn in the middle streaming its thinking blocks, finished commands and the files it read, and the same work laid out as a task canvas on the right where finished steps read “done”. Same agent as before — the process just lives in a web page now." data-zoom />
         </div>
         <p class="caption">A real session: the conversation and its tools in the middle, the task canvas on the right — finished steps turn “done” right on the graph.</p>
       </div>
@@ -269,7 +310,7 @@ var _hmt = _hmt || [];
           <h3>④ Canvas: draw "what happens next" as a graph</h3>
           <p>Describe something that takes many steps and the agent lays it out as <b>nodes plus dependency edges</b> on the right. Nodes carry kinds — task / milestone / risk / decision / doc — so it is obvious which step may blow up and which one needs your call.</p>
           <p class="mini">It is interactive: mark a step running when you start it and done when you finish. Sub-plans absorb the detail so the main graph stays readable.</p>
-          <div class="shot"><img src="assets/en/canvas.webp" width="1650" height="1031" alt="Canvas: a CSV-export plan split into 7 nodes and 7 dependencies" loading="lazy" data-zoom /></div>
+          <div class="shot"><img src="assets/en/canvas.webp" width="1650" height="1031" alt="Ask for a plan in chat and the right pane lays it out as 7 nodes and 7 dependencies, each node one concrete action with its own note and its own status. The point: steps that are hard to say in prose become a graph you can check." loading="lazy" data-zoom /></div>
         </article>
 
         <article class="card reveal">
@@ -393,7 +434,7 @@ var _hmt = _hmt || [];
           <button class="tour-tab" role="tab" aria-selected="true" data-src="assets/en/overview.webp" data-alt="Full UI: projects and sessions, transcript, source view, status bar" data-cap="Projects and sessions · transcript · source view · status bar">Overview</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/settings.webp" data-alt="Settings: sessions per project, top-bar entries, status-bar blocks" data-cap="Settings → Interface: sessions per project, top-bar entries, status blocks">Settings</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/slash.webp" data-alt="Slash palette: /new runs in the workbench, /skill /compact /plan go to the engine" data-cap="Slash commands: /new runs here, the other three go to the engine">Slash commands</button>
-          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/mobile.webp" data-alt="Mobile single column: icon-only entries, full-width content" data-cap="Mobile: single column, 18px composer, model menu as a bottom sheet">Mobile</button>
+          <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/mobile.webp" data-alt="The same workbench on a phone: single column, icon-only top bar, 18px composer so iOS doesn't zoom, project sidebar collapsed into a drawer" data-cap="Mobile: single column, 18px composer, model menu as a bottom sheet">Mobile</button>
           <button class="tour-tab" role="tab" aria-selected="false" data-src="assets/en/mobile-drawer.webp" data-alt="The project drawer on mobile is an overlay" data-cap="On mobile the project sidebar is an overlay drawer">Mobile drawer</button>
         </div>
         <div class="tour-stage frame">

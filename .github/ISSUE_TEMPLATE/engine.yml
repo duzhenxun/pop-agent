@@ -1,0 +1,55 @@
+name: Engine request
+description: Ask for another coding agent to be supported. / 希望支持另一个引擎。
+title: "[engine] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先说一下取舍：这个项目**只接引擎自己的原生 loop**（pi 走 SDK，Codex 走 app-server，Claude Code / opencode 走 ACP），
+        不套壳、不模拟。所以能不能接，主要看那个引擎有没有一个**程序可以驱动**的接口。
+
+        接了之后，引擎没有的能力会在界面上直接隐藏（能力矩阵），不会拿别的引擎的配置顶上去。
+        所以「接了但简配」是正常结果，不是 bug。
+
+  - type: input
+    id: engine
+    attributes:
+      label: Which engine / 哪个引擎
+      description: 名字 + 仓库或官网链接。
+      placeholder: "Gemini CLI — https://github.com/google-gemini/gemini-cli"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: interface
+    attributes:
+      label: How can a program drive it / 它怎么被程序调用
+      description: 不确定就勾最后一项，维护者会自己看。
+      options:
+        - label: 官方 SDK
+        - label: JSON-RPC / app-server 模式
+        - label: ACP（Agent Client Protocol）
+        - label: HTTP / SSE 接口
+        - label: 只有 CLI，靠子进程 + 解析输出
+        - label: 不确定 / not sure
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this one / 为什么想要它
+      description: 你现在拿它干什么、缺了它有多难受。真实的使用场景比「这个引擎很火」有用得多。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: help
+    attributes:
+      label: Can you help test / 你能否帮忙测
+      description: 新引擎的适配基本都要靠提需求的人来验，维护者手上不一定有那个环境。
+      options:
+        - 可以在本机装并帮测 / I can install and test
+        - 只能提名，测不了 / Nominate only
+        - 有真实使用场景，但不会写代码 / Real use case, no code
+    validations:
+      required: true

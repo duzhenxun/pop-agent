@@ -1,0 +1,41 @@
+1
+00:00:00,000 --> 00:00:03,000
+Your agent is working.
+You can't see it.
+
+2
+00:00:03,200 --> 00:00:07,000
+Thinking, commands, the files it read —
+all in the transcript
+
+3
+00:00:07,200 --> 00:00:14,000
+Cut in mid-turn with a correction
+
+4
+00:00:14,200 --> 00:00:20,000
+No waiting for it to finish,
+no restarting the turn
+
+5
+00:00:20,200 --> 00:00:23,000
+Which lines changed, right there
+
+6
+00:00:23,200 --> 00:00:31,000
+Steps it can't say in prose,
+it draws as nodes and edges
+
+7
+00:00:31,200 --> 00:00:36,000
+The risky step and the one
+that needs your call look different
+
+8
+00:00:36,200 --> 00:00:42,000
+You walked away —
+the finished turn pushes to your phone
+
+9
+00:00:42,200 --> 00:00:45,000
+Open source · MIT · loopback only

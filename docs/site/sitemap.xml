@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 两页站点，手写比引入生成器便宜。
+     改页面时顺手把 lastmod 改成那天的日期；不写 lastmod 也行，但写了会让重新抓取更快。 -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://pop.xs25.cn/</loc>
+    <lastmod>2026-11-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://pop.xs25.cn/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://pop.xs25.cn/zh" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://pop.xs25.cn/" />
+  </url>
+  <url>
+    <loc>https://pop.xs25.cn/zh</loc>
+    <lastmod>2026-11-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://pop.xs25.cn/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://pop.xs25.cn/zh" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://pop.xs25.cn/" />
+  </url>
+</urlset>
