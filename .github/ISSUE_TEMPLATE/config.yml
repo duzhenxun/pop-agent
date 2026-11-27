@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 使用疑问 / How do I… / 装不上
+  - name: 装不上 / 打不开（先看这一帖）
+    url: https://github.com/duzhenxun/pop-agent/discussions/2
+    about: Gatekeeper、Node 版本、端口占用、面板为空 —— 四条自查写在里面；都不是的话就在帖子里回，比开 issue 快。
+  - name: 其它疑问 / 想法 / 想看看别人怎么用
     url: https://github.com/duzhenxun/pop-agent/discussions
-    about: 装了但用不明白、想看别人怎么用、想提个想法 —— 走 Discussions，门槛比 issue 低，也不会淹掉真正的 bug。
+    about: 使用上的问题、想提需求、想把你的用法贴出来 —— 走 Discussions，门槛比 issue 低，也不会淹掉真正的 bug。
   - name: 文档 · 截图 · 安装命令
     url: https://pop.xs25.cn/
     about: 官网：六件能力的截图、三行安装命令、以及「它不做什么」。
